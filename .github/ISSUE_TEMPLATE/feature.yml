@@ -1,0 +1,28 @@
+name: Feature
+description: Spec → Implement → Tests → Bench → Docs
+labels: ["type:feature","codex-ready"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What this enables (user-facing or downstream task)
+  - type: textarea
+    id: io
+    attributes:
+      label: Inputs/Outputs & Contracts
+      description: Shapes, units, masks; pre/postconditions
+  - type: textarea
+    id: plan
+    attributes:
+      label: Plan
+      description: Minimal vertical slice, steps
+  - type: checkboxes
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      options:
+        - label: Tests pass locally and in CI
+        - label: Shapes/units validated
+        - label: Example CLI/notebook demo included
+        - label: Docs updated (README/CHANGELOG)

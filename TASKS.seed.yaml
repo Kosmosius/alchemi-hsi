@@ -1,0 +1,501 @@
+version: 1
+repo: yourname/yourrepo
+project:
+  name: HSI Foundation Model
+  fields: [Status, Phase, Area, Sensor, Priority, Estimate(h)]
+labels:
+  - epic
+  - blocked
+  - codex-ready
+  - needs-citation
+  - "phase:1"
+  - "phase:2"
+  - "phase:3"
+  - "phase:4"
+  - "area:ingest"
+  - "area:srf"
+  - "area:physics"
+  - "area:encoder"
+  - "area:alignment"
+  - "area:heads"
+  - "area:eval"
+  - "area:infra"
+  - "area:docs"
+  - "sensor:emit"
+  - "sensor:enmap"
+  - "sensor:avirisng"
+  - "sensor:hytes"
+  - "sensor:lab"
+  - "type:feature"
+  - "type:bug"
+  - "type:docs"
+  - "type:ci"
+  - "size:S"
+  - "size:M"
+  - "size:L"
+  - "priority:P0"
+  - "priority:P1"
+  - "priority:P2"
+
+milestones:
+  - key: phase-1
+    title: Phase 1 — Physics & Data Foundations
+    due: 2026-02-15
+  - key: phase-2
+    title: Phase 2 — Cross-Domain Alignment
+    due: 2026-05-15
+  - key: phase-3
+    title: Phase 3 — MAE Pretraining @Scale
+    due: 2026-08-15
+  - key: phase-4
+    title: Phase 4 — Task Heads, Calibration & Eval
+    due: 2026-11-01
+
+vars:
+  sensors_swir: [emit, enmap, avirisng]
+  sensors_lwir: [hytes]
+  sensors_all: [emit, enmap, avirisng, hytes]
+  areas: [ingest, srf, physics, encoder, alignment, heads, eval, infra, docs]
+
+epics:
+  - key: epic-ingest
+    milestone: phase-1
+    title: EPIC — Data Ingestion & Canonical Schema
+    labels: [epic, area:ingest, phase:1, priority:P0]
+    body: >
+      Implement robust loaders for EMIT, EnMAP, AVIRIS-NG, HyTES, and USGS SPLIB.
+      Enforce canonical schema: wavelengths[nm], values, quantity {radiance|reflectance|bt},
+      per-band mask, SRF linkage. Include unit tests and CLI demos.
+    acceptance:
+      - Canonical Spectrum schema validated across all loaders
+      - Units converted to nm and radiance per nm where applicable
+      - Band masks applied to water-vapor or bad bands
+      - CPU unit tests < 60s
+
+  - key: epic-srf
+    milestone: phase-1
+    title: EPIC — SRF Registry, Normalization & Convolution
+    labels: [epic, area:srf, phase:1, priority:P0]
+    body: >
+      SRF registry with trapezoidal normalization on actual grids, cache by {sensor,version,hash}.
+      Fast convolution utilities to project spectra between lab and sensor domains.
+    acceptance:
+      - SRF rows integrate to 1.0 ± 1e-6
+      - Convolution of flat spectra preserves means
+      - LRU cache hits for repeated calls
+
+  - key: epic-physics
+    milestone: phase-1
+    title: EPIC — Physics Utils (SWIR RT Approx, LWIR Planck)
+    labels: [epic, area:physics, phase:1, priority:P0]
+    body: >
+      Implement radiance↔reflectance (SWIR) and radiance↔brightness temperature (LWIR),
+      plus helpers for continuum removal and band-depth metrics.
+    acceptance:
+      - bt→L→bt round trip < 0.1 K error in [240,340] K
+      - SWIR L=τ·E0·R+Lpath inversion unit-tested
+      - Continuum removal & band-depth library ready
+
+  - key: epic-encoder
+    milestone: phase-3
+    title: "EPIC — Spectral MAE Encoder (masking: spatial+spectral)"
+    labels: [epic, area:encoder, phase:3, priority:P0]
+    body: >
+      ViT-like encoder with spectral tokenization, grouped channel masking, Flash-Attn toggle.
+      Self-supervised reconstruction on multi-sensor cubes.
+    acceptance:
+      - Masking ratios configurable
+      - Reconstruction MSE improves vs baselines
+      - DDP/bf16 stable on A100/H100
+
+  - key: epic-alignment
+    milestone: phase-2
+    title: EPIC — Lab↔Overhead Alignment (InfoNCE + cycle)
+    labels: [epic, area:alignment, phase:2, priority:P0]
+    body: >
+      SRF-aware pairing, symmetric InfoNCE, optional cycle reconstruction. Synthetic pairs
+      (lab→sensor) + real chips. Shared encoder latent space.
+    acceptance:
+      - Batch builder for positive/negative pairs
+      - Alignment retrieval@1 improves over random by > 5×
+      - Unit toy task aligns positives
+
+  - key: epic-heads
+    milestone: phase-4
+    title: EPIC — Task Heads (ID, Unmix, Gas)
+    labels: [epic, area:heads, phase:4, priority:P0]
+    body: >
+      ID head (nearest-lab matching + classifier), NNLS unmixing (top-k), gas detection head (pixel-first).
+    acceptance:
+      - ID head returns top-k with cosine/SAM
+      - Unmix head simplex-constrained; synthetic mixes MAE < 0.05 (2 endmembers)
+      - Gas head PR/AUC harness working
+
+  - key: epic-eval
+    milestone: phase-4
+    title: EPIC — Metrics, Calibration, Reports
+    labels: [epic, area:eval, phase:4, priority:P0]
+    body: >
+      SAM, band-depth, PR/AUC, retrieval, ECE. Report generators and dashboards.
+    acceptance:
+      - Reliability curve + ECE computed
+      - EMIT band-depth validators pass examples
+      - Cross-sensor retrieval metrics emitted
+
+  - key: epic-infra
+    milestone: phase-1
+    title: EPIC — Repo, CI, Labels, Project & Seeders
+    labels: [epic, area:infra, phase:1, priority:P0]
+    body: >
+      GitHub milestones/labels, project automation, issue templates, seeding scripts, fast CPU CI (<60s).
+    acceptance:
+      - "`gh` + `yq` seeding works idempotently"
+      - Project v2 auto-assign based on labels
+      - CPU tests run in CI under 60s
+
+generators:
+  # ---------- Phase 1: Ingest ----------
+  - name: ingest-loaders-swir
+    for_each:
+      sensor: ${sensors_swir}
+    blueprint:
+      milestone: phase-1
+      labels: ["area:ingest", "type:feature", "size:S", "phase:1", "codex-ready", "sensor:{sensor}"]
+      parent: epic:epic-ingest
+      estimate_h: 2
+      title: "Ingest: {sensor} L1B radiance loader (+ unit tests)"
+      body: >
+        Parse {sensor} L1B into canonical Spectrum:
+        wavelengths[nm]=strictly increasing; values=radiance per nm; quantity='radiance';
+        per-band mask for water-vapor/bad bands.
+      acceptance:
+        - Wavelengths monotonic (nm) and in expected range
+        - Units converted to W·m^-2·sr^-1·nm^-1
+        - Band mask length == band count
+        - 5 CPU tests pass
+      tests:
+        - wavelengths_monotonic_{sensor}()
+        - units_conversion_nm_{sensor}()
+        - mask_water_bands_{sensor}()
+
+  - name: ingest-loader-hytes
+    for_each:
+      sensor: ${sensors_lwir}
+    blueprint:
+      milestone: phase-1
+      labels: ["area:ingest", "type:feature", "size:S", "phase:1", "codex-ready", "sensor:{sensor}"]
+      parent: epic:epic-ingest
+      estimate_h: 2
+      title: "Ingest: HyTES brightness-temperature loader (+ unit tests)"
+      body: >
+        Parse HyTES L1 brightness temperature into canonical Spectrum:
+        wavelengths[nm]; values=brightness_temperature[K]; quantity='bt'; add per-band mask.
+      acceptance:
+        - Wavelength centers and count match spec
+        - BT to radiance conversion tested on 3 temps
+        - 5 CPU tests pass
+      tests:
+        - hytes_wavelengths_ok()
+        - bt_roundtrip_tests()
+
+  - name: ingest-usgs
+    blueprint:
+      milestone: phase-1
+      labels: ["area:ingest", "sensor:lab", "type:feature", "size:S", "phase:1", "codex-ready"]
+      parent: epic:epic-ingest
+      estimate_h: 2
+      title: "Ingest: USGS Spectral Library parser (+ cache)"
+      body: >
+        Parse SPLIB into canonical reflectance spectra (nm); index by canonical compound ID and aliases;
+        cache normalized spectra on disk.
+      acceptance:
+        - Canonical names & alias table persisted
+        - Wavelength unit nm; reflectance in [0,1]
+        - Cache hit rate > 0.9 on repeated loads
+      tests:
+        - splib_units_and_bounds()
+        - alias_resolution()
+
+  # ---------- Phase 1: SRF ----------
+  - name: srf-registry
+    for_each:
+      sensor: ${sensors_all}
+    blueprint:
+      milestone: phase-1
+      labels: ["area:srf", "type:feature", "size:S", "phase:1", "codex-ready", "sensor:{sensor}"]
+      parent: epic:epic-srf
+      estimate_h: 2
+      title: "SRF: {sensor} registry & trapezoidal normalization"
+      body: >
+        Load {sensor} SRFs, interpolate on native points, normalize (trapz) to 1.0; persist with cache key {sensor,version,hash}.
+      acceptance:
+        - All SRF rows integrate to 1.0 ± 1e-6
+        - Flat-spectrum convolution preserves mean
+        - Cache roundtrip ok
+      tests:
+        - srf_integral_{sensor}()
+        - srf_flat_response_{sensor}()
+
+  - name: srf-convolve-lab
+    for_each:
+      sensor: ${sensors_all}
+    blueprint:
+      milestone: phase-1
+      labels: ["area:srf", "type:feature", "size:S", "phase:1", "codex-ready", "sensor:{sensor}"]
+      parent: epic:epic-srf
+      estimate_h: 2
+      title: "SRF: convolve lab spectra → {sensor} band space"
+      body: >
+        Vectorized convolution lab_reflectance[n] ⨉ SRF[{sensor}] → values[B_{sensor}] for fast pairing & retrieval.
+      acceptance:
+        - Throughput ≥ 50k spectra/min on CPU
+        - Validates against analytical flat-spectrum case
+      tests:
+        - lab_to_sensor_conv_speedtest_{sensor}()
+
+  # ---------- Phase 1: Physics ----------
+  - name: physics-planck
+    blueprint:
+      milestone: phase-1
+      labels: ["area:physics", "type:feature", "size:S", "phase:1", "codex-ready", "sensor:hytes"]
+      parent: epic:epic-physics
+      estimate_h: 2
+      title: "Physics: Planck radiance↔brightness temperature utils"
+      body: >
+        Implement vectorized L(λ)↔T_b(λ) with constants; robust to FP16/FP32; clamp under/overflow.
+      acceptance:
+        - bt→L→bt error < 0.1 K (240–340 K)
+        - Handles FP16 safely (internal FP32 math)
+      tests:
+        - planck_roundtrip_grid()
+
+  - name: physics-swir-rt
+    for_each:
+      sensor: ${sensors_swir}
+    blueprint:
+      milestone: phase-1
+      labels: ["area:physics", "type:feature", "size:S", "phase:1", "codex-ready", "sensor:{sensor}"]
+      parent: epic:epic-physics
+      estimate_h: 3
+      title: "Physics: SWIR radiance↔reflectance helpers ({sensor})"
+      body: >
+        Implement L=τ·E0·R+Lpath forward/inverse stubs; continuum removal; band-depth utilities.
+      acceptance:
+        - Identity with τ=1,Lp=0 verified
+        - Band-depth matches examples within ±0.02
+      tests:
+        - rt_identity_{sensor}()
+        - band_depth_examples_{sensor}()
+
+  # ---------- Phase 2: Alignment ----------
+  - name: align-batch-builder
+    for_each:
+      sensor: ${sensors_all}
+    blueprint:
+      milestone: phase-2
+      labels: ["area:alignment", "type:feature", "size:M", "phase:2", "codex-ready", "sensor:{sensor}"]
+      parent: epic:epic-alignment
+      estimate_h: 5
+      title: "Alignment: batch builder (lab→{sensor} SRF pairing + noise)"
+      body: >
+        Build minibatches: choose {sensor}, convolve lab via SRF, add sensor-noise/augment, assemble positives/negatives.
+      acceptance:
+        - Deterministic w/ seed
+        - Class-balanced options
+      tests:
+        - pairing_repro_{sensor}()
+
+  - name: align-infonce
+    blueprint:
+      milestone: phase-2
+      labels: ["area:alignment", "type:feature", "size:M", "phase:2", "codex-ready"]
+      parent: epic:epic-alignment
+      estimate_h: 5
+      title: "Alignment: symmetric InfoNCE loss (+ temperature τ)"
+      body: >
+        Cosine similarity w/ temperature; field→lab and lab→field directions; masking-aware.
+      acceptance:
+        - Toy task aligns positives (≥95% @1)
+        - Supports variable band counts
+      tests:
+        - infonce_toy_success()
+
+  - name: align-cycle-recon
+    blueprint:
+      milestone: phase-2
+      labels: ["area:alignment", "type:feature", "size:M", "phase:2", "codex-ready"]
+      parent: epic:epic-alignment
+      estimate_h: 6
+      title: "Alignment: optional cycle reconstruction hooks"
+      body: >
+        Decoders for lab/field autoencoding; cross-decoding hooks; loss mixers.
+      acceptance:
+        - No collapse on ablation
+        - Improves retrieval@1 vs no-cycle
+      tests:
+        - cycle_ablation_regression()
+
+  # ---------- Phase 3: Encoder / MAE ----------
+  - name: encoder-tokenizer
+    blueprint:
+      milestone: phase-3
+      labels: ["area:encoder", "type:feature", "size:M", "phase:3", "codex-ready"]
+      parent: epic:epic-encoder
+      estimate_h: 6
+      title: "Encoder: spectral tokenization (+ wavelength pos-enc)"
+      body: >
+        Per-pixel spectral tokens; optional small spatial context; wavelength‑aware positional encodings.
+      acceptance:
+        - Handles variable B via masking
+        - Pos-enc includes wavelength values
+      tests:
+        - tokenizer_masks_variable_B()
+
+  - name: encoder-masking
+    blueprint:
+      milestone: phase-3
+      labels: ["area:encoder", "type:feature", "size:M", "phase:3", "codex-ready"]
+      parent: epic:epic-encoder
+      estimate_h: 6
+      title: "Encoder: combined spatial+spectral masking"
+      body: >
+        Configure ratios, spectral groupings; decoder reconstructs masked tokens and masked bands.
+      acceptance:
+        - Mask configs persisted
+        - Recon MSE < spectral-only baseline
+      tests:
+        - masking_ablation_better()
+
+  - name: training-ddp
+    blueprint:
+      milestone: phase-3
+      labels: ["area:encoder", "type:feature", "size:M", "phase:3", "codex-ready"]
+      parent: epic:epic-encoder
+      estimate_h: 4
+      title: "Training: DDP/bf16/Flash-Attn toggles + checkpoints"
+      body: >
+        Enable multi-GPU DDP; bf16/FP8 toggles; gradient checkpointing; resume-safe checkpoints.
+      acceptance:
+        - 8×A100 stable; resume works
+      tests:
+        - ddp_smoketest()
+
+  # ---------- Phase 4: Heads & Eval ----------
+  - name: head-id
+    blueprint:
+      milestone: phase-4
+      labels: ["area:heads", "type:feature", "size:M", "phase:4", "codex-ready"]
+      parent: epic:epic-heads
+      estimate_h: 5
+      title: "Head: ID (nearest-lab matching + classifier)"
+      body: >
+        Embed lab library; cosine/SAM matching; optional softmax classifier; top-k results with scores.
+      acceptance:
+        - Top-1 retrieval improves vs random by >10×
+        - API returns {compound, score, SAM}
+      tests:
+        - idhead_retrieval_smoketest()
+
+  - name: head-unmix
+    blueprint:
+      milestone: phase-4
+      labels: ["area:heads", "type:feature", "size:M", "phase:4", "codex-ready"]
+      parent: epic:epic-heads
+      estimate_h: 6
+      title: "Head: linear NNLS unmixing (top-k from ID head)"
+      body: >
+        Simplex-constrained fractions; dynamic basis from ID head; differentiable layer or softmax + L1 normalize.
+      acceptance:
+        - Synthetic 2-endmember MAE < 0.05
+        - Sum-to-1, ≥0 constraints enforced
+      tests:
+        - nnls_two_endmember_test()
+
+  - name: head-gas
+    blueprint:
+      milestone: phase-4
+      labels: ["area:heads", "type:feature", "size:M", "phase:4", "codex-ready"]
+      parent: epic:epic-heads
+      estimate_h: 6
+      title: "Head: gas detection (pixel-first)"
+      body: >
+        Binary score head; synthetic plume injection; PR/AUC harness; threshold selection for target FPR.
+      acceptance:
+        - AP improves vs anomaly baseline
+        - Threshold tuned for FPR target
+      tests:
+        - gas_pr_auc_harness()
+
+  - name: eval-metrics
+    blueprint:
+      milestone: phase-4
+      labels: ["area:eval", "type:feature", "size:M", "phase:4", "codex-ready"]
+      parent: epic:epic-eval
+      estimate_h: 5
+      title: "Eval: SAM, band-depth, retrieval, PR/AUC, ECE"
+      body: >
+        Metric suite; plots/tables; CSV+PNG artifacts saved with run metadata.
+      acceptance:
+        - Reliability curve + ECE output
+        - EMIT band-depth validators pass
+      tests:
+        - metrics_smoketest()
+
+  - name: eval-calibration
+    blueprint:
+      milestone: phase-4
+      labels: ["area:eval", "type:feature", "size:S", "phase:4", "codex-ready"]
+      parent: epic:epic-eval
+      estimate_h: 3
+      title: "Eval: temperature scaling for classification logits"
+      body: >
+        Learn scalar T on val set; save calibrated head; report ECE before/after.
+      acceptance:
+        - ECE improves vs uncalibrated
+      tests:
+        - temp_scaling_ece_drop()
+
+  # ---------- Infra & Docs ----------
+  - name: infra-backlog
+    blueprint:
+      milestone: phase-1
+      labels: ["area:infra", "type:ci", "size:S", "phase:1", "codex-ready"]
+      parent: epic:epic-infra
+      estimate_h: 2
+      title: "Infra: labels, milestones, templates, triage workflow"
+      body: >
+        Create labels; milestones; issue templates; triage workflow that adds issues to Project and sets fields.
+        acceptance:
+          - "`gh` seeding idempotent"
+          - Project rules applied
+      tests:
+        - triage_action_runs()
+
+  - name: docs-readmes
+    blueprint:
+      milestone: phase-1
+      labels: ["area:docs", "type:docs", "size:S", "phase:1", "codex-ready"]
+      parent: epic:epic-infra
+      estimate_h: 2
+      title: "Docs: CONTRIBUTING + Done Definition + CLI quickstarts"
+      body: >
+        CONTRIBUTING.md (PR/commit rules, Done Definition); docs for CLI demos; seed notebooks.
+      acceptance:
+        - Docs referenced by PR template
+      tests:
+        - n/a
+
+singleton_issues:
+  - milestone: phase-1
+    labels: ["area:infra", "type:feature", "size:S", "phase:1", "codex-ready"]
+    parent: epic:epic-infra
+    estimate_h: 2
+    title: "Repo bootstrap: pyproject, pytest, pre-commit, CI CPU tests"
+    body: >
+      Initialize repo; pyproject.toml; pytest; pre-commit hooks (black/ruff); GitHub Actions CPU job under 60s.
+      acceptance:
+        - "`pytest -q` green under 60s"
+        - pre-commit enforces format/lint
+    tests:
+      - ci_cpu_fast_suite()
+
