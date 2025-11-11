@@ -1,2 +1,2 @@
 # alchemi-hsi
-Atmosphere-aware Lab-to-scene Contrastive Hyperspectral Embeddings for Material Identity
+**A**tmosphere-aware **L**ab-to-scene **C**ontrastive **H**yperspectral **E**mbeddings for **M**aterial **I**dentity
