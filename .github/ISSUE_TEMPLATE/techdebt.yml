@@ -1,0 +1,20 @@
+name: Tech Debt / Bug
+description: Fix or refactor with tests
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: symptom
+    attributes:
+      label: Symptom
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+  - type: textarea
+    id: plan
+    attributes:
+      label: Fix Plan
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests
