@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.20"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alchemi-hsi"
+version = "0.2.0"
+description = "ALCHEMI — Atmosphere-aware Lab-to-scene Contrastive Hyperspectral Embeddings for Material Identity"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{ name = "Marshall" }]
+dependencies = [
+  "torch>=2.2",
+  "numpy>=1.24",
+  "scipy>=1.11",
+  "einops>=0.7",
+  "scikit-learn>=1.3",
+  "typer[all]>=0.12",
+  "tqdm>=4.66",
+  "rich>=13.7",
+  "pyyaml>=6.0",
+  "matplotlib>=3.8",
+  "pydantic>=2.7",
+  "joblib>=1.4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "pytest-cov>=4.1", "ruff>=0.4.0", "black>=24.3", "pre-commit>=3.7"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alchemi"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+select = ["E","F","I","B","UP","NPY","RUF","W"]
+ignore = ["E203"]

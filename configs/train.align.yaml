@@ -1,0 +1,12 @@
+train:
+  mode: align
+  batch_size: 64
+  lr: 0.0003
+  max_steps: 1000
+  log_every: 50
+  eval_every: 200
+  save_every: 200
+  embed_dim: 256
+  n_heads: 8
+  depth: 6
+  basis_K: 128

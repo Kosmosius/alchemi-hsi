@@ -1,0 +1,13 @@
+data:
+  sensors: [emit, enmap, avirisng, hytes]
+  srf_root: data/srf
+  paths:
+    emit_cube: /path/to/emit.npy
+    enmap_cube: /path/to/enmap.npy
+    aviris_cube: /path/to/avirisng.npy
+    hytes_cube_bt: /path/to/hytes_bt.npy
+  wavelengths:
+    emit: /path/to/emit_wavelengths.npy
+    enmap: /path/to/enmap_wavelengths.npy
+    avirisng: /path/to/aviris_wavelengths.npy
+    hytes: /path/to/hytes_wavelengths.npy

@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+title: "ALCHEMI — Atmosphere-aware Lab-to-scene Contrastive Hyperspectral Embeddings for Material Identity"
+authors:
+  - family-names: Marshall
+version: 0.2.0
+date-released: 2024-01-01
+license: Apache-2.0
+repository-code: https://github.com/example/alchemi-hsi
