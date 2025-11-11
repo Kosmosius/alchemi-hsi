@@ -1,0 +1,4 @@
+eval:
+  thresholds:
+    gas_fpr: 0.001
+  sam_threshold: 0.1

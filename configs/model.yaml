@@ -1,0 +1,8 @@
+model:
+  embed_dim: 256
+  n_heads: 8
+  depth: 6
+  basis_K: 128
+  masking:
+    spatial_ratio: 0.75
+    spectral_ratio: 0.5
