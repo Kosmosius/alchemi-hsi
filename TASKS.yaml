@@ -1,5 +1,5 @@
 version: 1
-repo: yourname/yourrepo
+repo: Kosmosius/alchemi-hsi
 project:
   name: HSI Foundation Model
   fields:
