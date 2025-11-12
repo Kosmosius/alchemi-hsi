@@ -28,15 +28,15 @@ done
 # -------------------- MILESTONES --------------------
 echo ">>> Seeding milestones..."
 
-# Bash associative array: milestone-key -> milestone-number
-declare -A M_NUMS
+# milestone-key -> milestone-**title** (NOT number)
+declare -A M_TITLE
 
 # Each row: KEY \t TITLE \t DUE
 while IFS=$'\t' read -r KEY TITLE DUE; do
   [[ -z "$KEY" ]] && continue
   echo "  milestone key=$KEY title=$TITLE due=$DUE"
 
-  # Check if milestone already exists (by title)
+  # Does a milestone with this title already exist?
   EXIST_NUM=$(
     gh api "repos/$REPO/milestones" --paginate \
       --jq ".[] | select(.title==\"$TITLE\") | .number" 2>/dev/null || true
@@ -52,20 +52,22 @@ while IFS=$'\t' read -r KEY TITLE DUE; do
           -f "due_on=$DUE_ISO" \
           --jq '.number'
       )
+      echo "    created milestone number=$NUM"
     else
       NUM=$(
         gh api "repos/$REPO/milestones" --method POST \
           -f "title=$TITLE" \
           --jq '.number'
       )
+      echo "    created milestone number=$NUM"
     fi
-    echo "    created milestone number=$NUM"
   else
     NUM="$EXIST_NUM"
     echo "    reusing existing milestone number=$NUM"
   fi
 
-  M_NUMS["$KEY"]="$NUM"
+  # Store TITLE, because `gh issue create --milestone` wants the title
+  M_TITLE["$KEY"]="$TITLE"
 done < <(yq -r '.milestones[] | [.key, .title, (.due // "")] | @tsv' "$TASKS")
 
 # -------------------- HELPER: create issues from a YAML node --------------------
@@ -76,7 +78,7 @@ seed_group() {
   echo ">>> Seeding $NODE ..."
 
   yq -o=json "$NODE" "$TASKS" | jq -c '.' | while read -r ITEM; do
-    local TITLE BODY M_KEY M_NUM
+    local TITLE BODY M_KEY M_NAME
 
     TITLE=$(jq -r '.title' <<<"$ITEM")
     if [[ -z "$TITLE" || "$TITLE" == "null" ]]; then
@@ -85,9 +87,9 @@ seed_group() {
     fi
 
     M_KEY=$(jq -r '.milestone // empty' <<<"$ITEM")
-    M_NUM=""
-    if [[ -n "$M_KEY" && -n "${M_NUMS[$M_KEY]:-}" ]]; then
-      M_NUM="${M_NUMS[$M_KEY]}"
+    M_NAME=""
+    if [[ -n "$M_KEY" && -n "${M_TITLE[$M_KEY]:-}" ]]; then
+      M_NAME="${M_TITLE[$M_KEY]}"
     fi
 
     BODY=$(jq -r '.body // ""' <<<"$ITEM")
@@ -120,10 +122,11 @@ seed_group() {
       BODY+=$'\n\n'"$TEST_BODY"
     fi
 
-    # Labels
+    # Labels (strip any CR that snuck in from Windows)
     mapfile -t LABELS < <(jq -r '.labels // [] | .[]' <<<"$ITEM")
     local LABEL_ARGS=()
     for lab in "${LABELS[@]}"; do
+      lab="${lab%$'\r'}"
       [[ -z "$lab" || "$lab" == "null" ]] && continue
       LABEL_ARGS+=(--label "$lab")
     done
@@ -135,8 +138,8 @@ seed_group() {
 
     echo "  issue: $FULL_TITLE"
     CMD=(gh issue create --repo "$REPO" --title "$FULL_TITLE" --body "$BODY")
-    if [[ -n "$M_NUM" ]]; then
-      CMD+=(--milestone "$M_NUM")
+    if [[ -n "$M_NAME" ]]; then
+      CMD+=(--milestone "$M_NAME")
     fi
     if ((${#LABEL_ARGS[@]})); then
       CMD+=("${LABEL_ARGS[@]}")
