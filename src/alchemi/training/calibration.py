@@ -1,4 +1,7 @@
 import numpy as np
+from scipy.optimize import minimize_scalar
+
+from .metrics import ece_score
 
 
 class TemperatureScaler:
@@ -6,16 +9,21 @@ class TemperatureScaler:
         self.T = 1.0
 
     def fit(self, logits: np.ndarray, labels: np.ndarray):
-        Ts = np.linspace(0.5, 5.0, 60)
-        best_T, best_nll = 1.0, 1e9
-        for T in Ts:
-            nll = _nll(logits / T, labels)
-            if nll < best_nll:
-                best_nll, best_T = nll, T
-        self.T = float(best_T)
+        correct = (logits.argmax(axis=1) == labels).astype(float)
+
+        def _confidences(x: np.ndarray) -> np.ndarray:
+            exps = np.exp(x)
+            denom = np.maximum(exps.sum(axis=1), 1e-12)
+            return (x.max(axis=1) / denom).astype(float)
+
+        def objective(T: float) -> float:
+            return ece_score(_confidences(logits / T), correct)
+
+        res = minimize_scalar(objective, bounds=(0.5, 5.0), method="bounded")
+        self.T = float(res.x if res.success else 1.0)
 
     def transform(self, logits: np.ndarray) -> np.ndarray:
-        return logits / self.T
+        return logits / max(self.T, 1e-6)
 
 
 def _nll(logits: np.ndarray, labels: np.ndarray) -> float:

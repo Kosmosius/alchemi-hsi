@@ -5,11 +5,12 @@ from sklearn.metrics import average_precision_score
 def spectral_angle(x: np.ndarray, y: np.ndarray) -> float:
     x = x.astype(np.float64)
     y = y.astype(np.float64)
-    num = (x * y).sum()
-    den = np.linalg.norm(x) * np.linalg.norm(y) + 1e-12
-    import numpy as _np
-
-    return float(_np.arccos(np.clip(num / den, -1.0, 1.0)))
+    num = float((x * y).sum())
+    den = float(np.linalg.norm(x) * np.linalg.norm(y))
+    if den <= 0.0:
+        return 0.0
+    ratio = np.clip(num / den, -1.0, 1.0)
+    return float(np.arccos(ratio))
 
 
 def pr_auc(y_true: np.ndarray, y_score: np.ndarray) -> float:
