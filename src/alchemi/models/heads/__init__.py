@@ -1,6 +1,6 @@
+from .domain import DomainDiscriminator
+from .gas_head import GasHead
 from .id_head import IDHead
 from .unmix_head import LinearUnmixHead
-from .gas_head import GasHead
-from .domain import DomainDiscriminator
 
-__all__ = ["IDHead", "LinearUnmixHead", "GasHead", "DomainDiscriminator"]
+__all__ = ["DomainDiscriminator", "GasHead", "IDHead", "LinearUnmixHead"]

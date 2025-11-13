@@ -1,18 +1,25 @@
-"""Adapter utilities for working with the SPLIB ingestion pipeline."""
+"""Adapter helpers for SPLIB spectra."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from alchemi.types import Spectrum
 from alchemi_hsi.io.splib import SPLIBCatalog, load_splib
 
+__all__ = ["load_splib_spectrum"]
 
-def load_splib_spectrum(path: str | Path, name: str, *, use_cache: bool = True) -> Spectrum:
-    """Load the first SPLIB spectrum matching *name* from *path*."""
 
-    catalog = load_splib(path, use_cache=use_cache)
+def load_splib_spectrum(
+    src: str | Path | Iterable[str | Path],
+    name: str,
+    *,
+    use_cache: bool = True,
+) -> Spectrum:
+    """Load the first SPLIB spectrum matching *name* from *src*."""
+
+    catalog = load_splib(src, use_cache=use_cache)
     spectra = _resolve_alias(catalog, name)
     if not spectra:
         raise KeyError(f"No SPLIB spectrum found for {name!r}")

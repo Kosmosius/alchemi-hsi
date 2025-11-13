@@ -1,13 +1,13 @@
+from .avirisng import load_avirisng_pixel
 from .emit import load_emit_pixel
 from .enmap import load_enmap_pixel
-from .avirisng import load_avirisng_pixel
 from .hytes import load_hytes_pixel
 from .splib import load_splib_spectrum
 
 __all__ = [
+    "load_avirisng_pixel",
     "load_emit_pixel",
     "load_enmap_pixel",
-    "load_avirisng_pixel",
     "load_hytes_pixel",
     "load_splib_spectrum",
 ]

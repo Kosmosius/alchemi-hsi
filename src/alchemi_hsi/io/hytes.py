@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from pathlib import Path
 
 import numpy as np
 import xarray as xr
@@ -14,7 +15,10 @@ HYTES_WAVELENGTH_MIN_NM = 7_500.0
 HYTES_WAVELENGTH_MAX_NM = 12_000.0
 
 HYTES_WAVELENGTHS_NM = np.linspace(
-    HYTES_WAVELENGTH_MIN_NM, HYTES_WAVELENGTH_MAX_NM, HYTES_BAND_COUNT, dtype=np.float64
+    HYTES_WAVELENGTH_MIN_NM,
+    HYTES_WAVELENGTH_MAX_NM,
+    HYTES_BAND_COUNT,
+    dtype=np.float64,
 )
 
 _BT_VAR_CANDIDATES: tuple[str, ...] = (
@@ -48,8 +52,15 @@ _X_DIM_CANDIDATES: tuple[str, ...] = (
     "cross_track",
 )
 
+__all__ = [
+    "HYTES_BAND_COUNT",
+    "HYTES_WAVELENGTHS_NM",
+    "hytes_pixel_bt",
+    "load_hytes_l1b_bt",
+]
 
-def load_hytes_l1b_bt(path: str) -> xr.Dataset:
+
+def load_hytes_l1b_bt(path: str | Path) -> xr.Dataset:
     """Load a HyTES L1B brightness-temperature cube.
 
     Parameters
@@ -64,6 +75,10 @@ def load_hytes_l1b_bt(path: str) -> xr.Dataset:
         variable in Kelvin and a ``wavelength_nm`` coordinate expressed in nanometres.
     """
 
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(path)
+
     src = xr.open_dataset(path)
     try:
         data = src.load()
@@ -77,11 +92,13 @@ def load_hytes_l1b_bt(path: str) -> xr.Dataset:
 
     band_dim = _find_dim(bt.dims, _BAND_DIM_CANDIDATES)
     if band_dim is None:
-        raise ValueError("Unable to identify spectral dimension in HyTES dataset")
+        msg = "Unable to identify spectral dimension in HyTES dataset"
+        raise ValueError(msg)
 
     spatial_dims = [dim for dim in bt.dims if dim != band_dim]
     if len(spatial_dims) != 2:
-        raise ValueError("HyTES brightness temperature must have exactly two spatial dimensions")
+        msg = "HyTES brightness temperature must have exactly two spatial dimensions"
+        raise ValueError(msg)
 
     y_dim = _find_dim(spatial_dims, _Y_DIM_CANDIDATES) or spatial_dims[0]
     x_dim = _find_dim(spatial_dims, _X_DIM_CANDIDATES)
@@ -89,7 +106,8 @@ def load_hytes_l1b_bt(path: str) -> xr.Dataset:
         # Pick the remaining dimension if automatic detection failed.
         remaining = [dim for dim in spatial_dims if dim != y_dim]
         if not remaining:
-            raise ValueError("Unable to determine cross-track dimension for HyTES dataset")
+            msg = "Unable to determine cross-track dimension for HyTES dataset"
+            raise ValueError(msg)
         x_dim = remaining[0]
 
     bt = bt.transpose(y_dim, x_dim, band_dim)
@@ -141,8 +159,9 @@ def load_hytes_l1b_bt(path: str) -> xr.Dataset:
 def hytes_pixel_bt(ds: xr.Dataset, y: int, x: int) -> Spectrum:
     """Extract a HyTES pixel as a :class:`~alchemi.types.Spectrum` in brightness temperature."""
 
-    if "brightness_temp" not in getattr(ds, "data_vars", {}) or "wavelength_nm" not in ds.coords:
-        raise KeyError("Dataset must contain 'brightness_temp' variable and 'wavelength_nm' coordinate")
+    if "brightness_temp" not in ds.data_vars or "wavelength_nm" not in ds.coords:
+        msg = "Dataset must contain 'brightness_temp' variable and 'wavelength_nm' coordinate"
+        raise KeyError(msg)
 
     bt = ds["brightness_temp"].sel(y=y, x=x)
     values = np.asarray(bt.values, dtype=np.float64)
@@ -154,7 +173,7 @@ def hytes_pixel_bt(ds: xr.Dataset, y: int, x: int) -> Spectrum:
     wavelengths = np.asarray(ds.coords["wavelength_nm"].values, dtype=np.float64)
 
     mask = None
-    if "band_mask" in getattr(ds, "data_vars", {}):
+    if "band_mask" in ds.data_vars:
         mask = np.asarray(ds["band_mask"].values, dtype=bool)
 
     spectrum = Spectrum(
@@ -208,5 +227,5 @@ def _ensure_kelvin(values: np.ndarray, units: str | None) -> np.ndarray:
         return values.astype(np.float64, copy=False) + 273.15
     if units in {"f", "fahrenheit"}:
         return (values.astype(np.float64, copy=False) - 32.0) * (5.0 / 9.0) + 273.15
-    raise ValueError(f"Unsupported brightness temperature units: {units!r}")
-
+    msg = f"Unsupported brightness temperature units: {units!r}"
+    raise ValueError(msg)

@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Optional, Sequence
 
 import numpy as np
 import xarray as xr
 
 from alchemi.types import Spectrum, SpectrumKind, WavelengthGrid
 
-__all__ = ["load_avirisng_l1b", "avirisng_pixel"]
+__all__ = ["avirisng_pixel", "load_avirisng_l1b"]
 
 _RAD_UNITS = "W·m^-2·sr^-1·nm^-1"
 _WATER_VAPOR_WINDOWS_NM: Sequence[tuple[float, float]] = (
@@ -24,8 +24,8 @@ _WATER_VAPOR_WINDOWS_NM: Sequence[tuple[float, float]] = (
 class _SpectralData:
     radiance: np.ndarray  # [y, x, band]
     wavelengths_nm: np.ndarray  # [band]
-    fwhm_nm: Optional[np.ndarray]
-    band_mask: Optional[np.ndarray]
+    fwhm_nm: np.ndarray | None
+    band_mask: np.ndarray | None
 
 
 def load_avirisng_l1b(path: str | Path) -> xr.Dataset:
@@ -79,7 +79,7 @@ def avirisng_pixel(ds: xr.Dataset, y: int, x: int) -> Spectrum:
     mask = ds.get("band_mask")
     fwhm = ds.get("fwhm_nm")
 
-    meta = {"sensor": ds.attrs.get("sensor", "avirisng")}
+    meta: dict[str, object] = {"sensor": ds.attrs.get("sensor", "avirisng")}
     if fwhm is not None:
         meta["fwhm_nm"] = np.asarray(fwhm.values, dtype=np.float64)
 
@@ -104,11 +104,16 @@ def _read_file_hdf5(path: Path) -> _SpectralData:
     try:
         import h5py  # type: ignore[import]
     except ModuleNotFoundError as exc:  # pragma: no cover - exercised in fallback
-        raise ModuleNotFoundError("h5py is required to read AVIRIS-NG HDF5 products") from exc
+        msg = "h5py is required to read AVIRIS-NG HDF5 products"
+        raise ModuleNotFoundError(msg) from exc
 
     with h5py.File(path, "r") as handle:
         radiance, rad_units = _read_radiance_hdf5(handle, h5py)
-        wavelengths, wavelength_units = _read_array_hdf5(handle, ["wavelength", "wavelengths"], h5py)
+        wavelengths, wavelength_units = _read_array_hdf5(
+            handle,
+            ["wavelength", "wavelengths"],
+            h5py,
+        )
         if wavelengths is None:
             raise ValueError("Could not locate wavelength information in AVIRIS-NG file")
         wavelengths = np.asarray(wavelengths, dtype=np.float64)
@@ -145,7 +150,7 @@ def _read_file_netcdf(path: Path) -> _SpectralData:
     )
 
     fwhm_var = _xr_find_variable(data, ["fwhm_nm", "fwhm", "bandwidth"])
-    fwhm = None
+    fwhm: np.ndarray | None = None
     if fwhm_var is not None:
         fwhm = _convert_wavelengths(
             np.asarray(fwhm_var.values, dtype=np.float64),
@@ -153,10 +158,16 @@ def _read_file_netcdf(path: Path) -> _SpectralData:
         )
 
     band_mask_var = _xr_find_variable(data, ["band_mask", "good_bands"])
-    band_mask = np.asarray(band_mask_var.values) if band_mask_var is not None else None
+    if band_mask_var is not None:
+        band_mask: np.ndarray | None = np.asarray(band_mask_var.values)
+    else:
+        band_mask = None
 
     bad_list_var = _xr_find_variable(data, ["bad_band_list", "bad_bands"])
-    bad_list = np.asarray(bad_list_var.values) if bad_list_var is not None else None
+    if bad_list_var is not None:
+        bad_list: np.ndarray | None = np.asarray(bad_list_var.values)
+    else:
+        bad_list = None
 
     rad_values = np.asarray(radiance.values)
     rad_values = _ensure_orientation(rad_values, wavelengths_nm.shape[0])
@@ -212,18 +223,25 @@ def _xr_find_radiance(ds: xr.Dataset) -> xr.DataArray:
         if var.ndim != 3:
             continue
         dims = {d.lower() for d in var.dims}
-        if {"y", "x"}.issubset(dims) or any("band" in d.lower() or "wave" in d.lower() for d in var.dims):
+        if {"y", "x"}.issubset(dims) or any(
+            "band" in d.lower() or "wave" in d.lower() for d in var.dims
+        ):
             return var
 
-    raise ValueError("Could not find radiance cube in dataset")
+    msg = "Could not find radiance cube in dataset"
+    raise ValueError(msg)
 
 
-def _xr_find_variable(ds: xr.Dataset, names: Iterable[str]) -> Optional[xr.DataArray]:
+def _xr_find_variable(ds: xr.Dataset, names: Iterable[str]) -> xr.DataArray | None:
     for name in names:
         if name in ds.data_vars:
             return ds[name]
         if name in ds.coords:
-            return ds.coords[name]
+            coord = ds.coords[name]
+            return xr.DataArray(coord.values, dims=coord.dims, attrs=dict(coord.attrs))
+    for var_name, var in ds.data_vars.items():
+        if any(token.lower() in var_name.lower() for token in names):
+            return var
     return None
 
 
@@ -235,7 +253,8 @@ def _convert_wavelengths(values: np.ndarray, units: str | None) -> np.ndarray:
         return np.asarray(values, dtype=np.float64)
     if units_norm in {"um", "micrometer", "micrometers", "micron", "microns"}:
         return np.asarray(values, dtype=np.float64) * 1_000.0
-    raise ValueError(f"Unsupported wavelength units: {units}")
+    msg = f"Unsupported wavelength units: {units}"
+    raise ValueError(msg)
 
 
 def _convert_radiance(values: np.ndarray, units: str | None) -> np.ndarray:
@@ -252,16 +271,27 @@ def _convert_radiance(values: np.ndarray, units: str | None) -> np.ndarray:
         prefix = 1e-3
 
     area = 1.0
-    if any(token in text for token in ["cm^-2", "cm-2", "cm^(-2)", "per square centimeter", "cm^2"]):
+    if any(
+        token in text
+        for token in [
+            "cm^-2",
+            "cm-2",
+            "cm^(-2)",
+            "per square centimeter",
+            "cm^2",
+        ]
+    ):
         area = 1e4
 
     return arr * prefix * area
 
 
 def _compose_mask_arrays(
-    band_mask: Optional[np.ndarray], bad_list: Optional[np.ndarray], band_count: int
-) -> Optional[np.ndarray]:
-    mask = None
+    band_mask: np.ndarray | None,
+    bad_list: np.ndarray | None,
+    band_count: int,
+) -> np.ndarray | None:
+    mask: np.ndarray | None = None
 
     if bad_list is not None:
         indices = np.asarray(bad_list, dtype=int).ravel()
@@ -275,15 +305,15 @@ def _compose_mask_arrays(
             mask[bad_indices] = False
 
     if band_mask is not None:
-        band_mask = np.asarray(band_mask).astype(bool)
-        if band_mask.shape[0] != band_count:
+        band_mask_bool = np.asarray(band_mask).astype(bool)
+        if band_mask_bool.shape[0] != band_count:
             raise ValueError("Band mask length mismatch")
-        mask = band_mask if mask is None else (mask & band_mask)
+        mask = band_mask_bool if mask is None else (mask & band_mask_bool)
 
     return mask
 
 
-def _finalize_mask(mask: Optional[np.ndarray], wavelengths: np.ndarray) -> np.ndarray:
+def _finalize_mask(mask: np.ndarray | None, wavelengths: np.ndarray) -> np.ndarray:
     water_mask = _water_vapor_mask(wavelengths)
     if mask is None:
         return water_mask

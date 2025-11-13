@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
 import numpy as np
 
 
-def validate_dataset(cfg: Dict[str, Any]) -> None:
+def validate_dataset(cfg: dict[str, Any]) -> None:
     dp = cfg.get("data", {})
     for key in ["paths", "wavelengths"]:
         if key not in dp:

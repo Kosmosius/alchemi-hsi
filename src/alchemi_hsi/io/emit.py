@@ -45,30 +45,31 @@ def load_emit_l1b(path: str, *, band_mask: bool = True) -> xr.Dataset:
             "y": np.arange(src.height, dtype=np.int32),
             "x": np.arange(src.width, dtype=np.int32),
             "band": np.arange(src.count, dtype=np.int32),
-            "wavelength_nm": ("band", wavelengths_nm),
         }
+        ds = xr.Dataset(coords=coords)
+        ds = ds.assign_coords(wavelength_nm=("band", wavelengths_nm))
+
+        radiance = xr.DataArray(
+            np.moveaxis(data, 0, -1),
+            dims=("y", "x", "band"),
+            coords={**coords, "wavelength_nm": ("band", wavelengths_nm)},
+            attrs={"units": TARGET_RADIANCE_UNITS},
+        )
+        ds["radiance"] = radiance
 
         band_selection = _compute_band_mask(wavelengths_nm, band_mask)
-        ds = xr.Dataset(
-            data_vars={
-                "radiance": xr.DataArray(
-                    np.moveaxis(data, 0, -1),
-                    dims=("y", "x", "band"),
-                    coords=coords,
-                    attrs={"units": TARGET_RADIANCE_UNITS},
-                ),
-                "band_mask": xr.DataArray(
-                    band_selection,
-                    dims=("band",),
-                    coords={"band": coords["band"]},
-                ),
-            },
-            coords=coords,
+        ds["band_mask"] = xr.DataArray(
+            band_selection,
+            dims=("band",),
+            coords={"band": coords["band"]},
         )
-        ds.attrs["sensor"] = "EMIT"
-        ds.attrs["radiance_units"] = TARGET_RADIANCE_UNITS
-        ds.attrs["source_radiance_units"] = source_units or TARGET_RADIANCE_UNITS
-        ds.attrs["driver"] = src.driver
+
+        ds.attrs.update(
+            sensor="EMIT",
+            radiance_units=TARGET_RADIANCE_UNITS,
+            source_radiance_units=source_units or TARGET_RADIANCE_UNITS,
+            driver=src.driver,
+        )
 
     ds.coords["wavelength_nm"].attrs["units"] = "nm"
     return ds
@@ -77,7 +78,7 @@ def load_emit_l1b(path: str, *, band_mask: bool = True) -> xr.Dataset:
 def emit_pixel(ds: xr.Dataset, y: int, x: int) -> Spectrum:
     """Extract a single EMIT pixel as a :class:`~alchemi.types.Spectrum`."""
 
-    if "radiance" not in getattr(ds, "data_vars", {}) or "wavelength_nm" not in ds.coords:
+    if "radiance" not in ds.data_vars or "wavelength_nm" not in ds.coords:
         raise KeyError("Dataset must contain 'radiance' variable and 'wavelength_nm' coordinate")
 
     radiance = ds["radiance"].sel(y=y, x=x)
@@ -86,7 +87,7 @@ def emit_pixel(ds: xr.Dataset, y: int, x: int) -> Spectrum:
     values *= _radiance_scale(units)
 
     mask = None
-    if "band_mask" in getattr(ds, "data_vars", {}):
+    if "band_mask" in ds.data_vars:
         mask = np.asarray(ds["band_mask"].values, dtype=bool)
 
     wavelengths_nm = np.asarray(ds.coords["wavelength_nm"].values, dtype=np.float64)
@@ -135,7 +136,8 @@ def _extract_wavelengths(src: rasterio.io.DatasetReader) -> np.ndarray:
             band_tags = src.tags(idx)
             value = _first_present(band_tags, keys)
             if value is None:
-                raise ValueError("Missing wavelength metadata for band {idx}")
+                msg = f"Missing wavelength metadata for band {idx}"
+                raise ValueError(msg)
             per_band.append(float(value))
         raw = np.asarray(per_band, dtype=np.float64)
 
@@ -207,7 +209,8 @@ def _ensure_nanometers(values: np.ndarray, unit: str | None) -> np.ndarray:
     elif any(token in normalized for token in ("um", "microm", "micron")):
         out *= 1000.0
     elif "nm" not in normalized and "nanom" not in normalized:
-        raise ValueError(f"Unsupported wavelength units: {unit}")
+        msg = f"Unsupported wavelength units: {unit}"
+        raise ValueError(msg)
     if np.any(np.diff(out) <= 0):
         raise ValueError("Wavelengths must be strictly increasing")
     return out

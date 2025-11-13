@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Any
 
 import numpy as np
+
+try:
+    from numpy import trapezoid as _integrate
+except ImportError:  # pragma: no cover - NumPy < 2.0 fallback
+    from numpy import trapz as _integrate  # type: ignore[attr-defined]
 
 
 class SpectrumKind(str, Enum):
@@ -30,8 +35,8 @@ class Spectrum:
     values: np.ndarray  # [B]
     kind: SpectrumKind
     units: str
-    mask: Optional[np.ndarray] = None  # [B] boolean
-    meta: Dict[str, Any] = field(default_factory=dict)
+    mask: np.ndarray | None = None  # [B] boolean
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         v = np.asarray(self.values)
@@ -44,7 +49,7 @@ class Spectrum:
                 raise ValueError("mask shape mismatch")
             self.mask = m
 
-    def masked(self) -> "Spectrum":
+    def masked(self) -> Spectrum:
         if self.mask is None:
             return self
         keep = self.mask
@@ -65,39 +70,6 @@ class SRFMatrix:
     bands_nm: list[np.ndarray]  # len B
     bands_resp: list[np.ndarray]  # len B
     version: str = "v1"
-    cache_key: Optional[str] = None
+    cache_key: str | None = None
 
     def row_integrals(self) -> np.ndarray:
-        from numpy import trapezoid
-
-        return np.array(
-            [trapezoid(r, nm) for nm, r in zip(self.bands_nm, self.bands_resp)], dtype=np.float64
-        )
-
-    def normalize_trapz(self) -> "SRFMatrix":
-        from numpy import trapezoid
-
-        nr = []
-        for nm, r in zip(self.bands_nm, self.bands_resp):
-            area = float(trapezoid(r, nm))
-            if area <= 0:
-                raise ValueError("SRF area must be >0")
-            nr.append(r / area)
-        return SRFMatrix(
-            self.sensor, self.centers_nm, self.bands_nm, nr, self.version, self.cache_key
-        )
-
-
-@dataclass
-class SampleMeta:
-    sensor_id: str
-    row: Optional[int] = None
-    col: Optional[int] = None
-    datetime: Optional[str] = None
-    georef: Optional[Dict[str, Any]] = None
-
-
-@dataclass
-class Sample:
-    spectrum: Spectrum
-    meta: SampleMeta

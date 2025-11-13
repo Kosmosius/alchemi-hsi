@@ -13,6 +13,10 @@ class ReconstructionLoss(nn.Module):
         diff = (recon - target) * (mask.unsqueeze(-1) if mask is not None else 1)
         loss = (diff**2).sum()
         if self.reduction == "mean":
-            denom = mask.sum() if mask is not None else torch.tensor(recon.numel(), device=recon.device)
+            denom = (
+                mask.sum()
+                if mask is not None
+                else torch.tensor(recon.numel(), device=recon.device)
+            )
             loss = loss / denom.clamp_min(1)
         return loss

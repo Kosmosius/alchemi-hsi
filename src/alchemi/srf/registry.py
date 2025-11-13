@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Dict
 
 import numpy as np
 
@@ -16,7 +15,7 @@ _LOG = get_logger(__name__)
 class SRFRegistry:
     def __init__(self, root: str | Path = "data/srf"):
         self.root = Path(root)
-        self._cache: Dict[str, SRFMatrix] = {}
+        self._cache: dict[str, SRFMatrix] = {}
 
     def _hash(self, payload: str) -> str:
         return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
