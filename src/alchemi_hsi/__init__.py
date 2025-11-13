@@ -17,6 +17,6 @@ alchemi = _alchemi
 for _name in _exported:
     globals()[_name] = getattr(_alchemi, _name)
 
-from . import io
+from . import io, srf
 
-__all__ = ["__version__", "alchemi", "io", *_exported]
+__all__ = ["__version__", "alchemi", "io", "srf", *_exported]
