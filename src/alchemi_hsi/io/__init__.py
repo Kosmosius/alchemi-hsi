@@ -5,9 +5,15 @@ from __future__ import annotations
 from importlib import import_module
 from importlib.util import find_spec
 
+from .avirisng import avirisng_pixel, load_avirisng_l1b
 from .enmap import enmap_pixel, load_enmap_l1b
 
-__all__ = ["enmap_pixel", "load_enmap_l1b"]
+__all__ = [
+    "avirisng_pixel",
+    "enmap_pixel",
+    "load_avirisng_l1b",
+    "load_enmap_l1b",
+]
 
 if find_spec("alchemi_hsi.io.emit") is not None:
     emit = import_module("alchemi_hsi.io.emit")
