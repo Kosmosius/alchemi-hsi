@@ -1,3 +1,5 @@
+"""Confidence calibration utilities."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -18,7 +20,7 @@ class TemperatureScaler:
         labels = np.asarray(labels, dtype=np.int64)
 
         if logits.ndim == 1 or logits.shape[-1] == 1:
-            predictions = (logits >= 0.0).astype(np.int64)
+            predictions = (logits >= 0.0).astype(int)
 
             def confidences(arr: np.ndarray) -> np.ndarray:
                 arr = np.asarray(arr, dtype=np.float64)
@@ -38,7 +40,7 @@ class TemperatureScaler:
         def objective(temperature: float) -> float:
             scaled = logits / max(temperature, 1e-6)
             conf = confidences(scaled)
-            return ece_score(conf, correct)
+            return ece_score(conf.astype(float), correct)
 
         baseline = objective(1.0)
         result = minimize_scalar(objective, bounds=(0.5, 5.0), method="bounded")
@@ -56,9 +58,7 @@ def _nll(logits: np.ndarray, labels: np.ndarray) -> float:
     if logits.ndim == 1 or logits.shape[-1] == 1:
         probabilities = 1.0 / (1.0 + np.exp(-logits))
         probabilities = np.clip(probabilities, 1e-8, 1.0 - 1e-8)
-        return float(
-            -np.mean(labels * np.log(probabilities) + (1 - labels) * np.log(1 - probabilities))
-        )
+        return float(-np.mean(labels * np.log(probabilities) + (1 - labels) * np.log(1 - probabilities)))
 
     log_partition = logsumexp(logits, axis=-1)
     log_likelihood = logits[np.arange(len(labels)), labels] - log_partition

@@ -1,0 +1,59 @@
+{
+  "labels": [
+    {
+      "name": "area:ingest",
+      "color": "0E8A16",
+      "description": "Work related to ingesting hyperspectral data."
+    },
+    {
+      "name": "area:analysis",
+      "color": "5319E7",
+      "description": "Algorithms and analytics over hyperspectral signals."
+    },
+    {
+      "name": "area:platform",
+      "color": "0052CC",
+      "description": "Platform, tooling, and infrastructure tasks."
+    },
+    {
+      "name": "sensor:emit",
+      "color": "1D76DB",
+      "description": "Emitter sensor integration or calibration."
+    },
+    {
+      "name": "sensor:collect",
+      "color": "0366D6",
+      "description": "Collector and acquisition hardware/software."
+    },
+    {
+      "name": "phase:triage",
+      "color": "FBCA04",
+      "description": "Needs team triage and label assignment."
+    },
+    {
+      "name": "phase:1",
+      "color": "FBCA04",
+      "description": "Phase 1 roadmap delivery."
+    },
+    {
+      "name": "phase:2",
+      "color": "FBCA04",
+      "description": "Phase 2 roadmap delivery."
+    },
+    {
+      "name": "priority:P0",
+      "color": "B60205",
+      "description": "Critical breakage blocking users."
+    },
+    {
+      "name": "priority:P1",
+      "color": "D93F0B",
+      "description": "High urgency requiring prompt resolution."
+    },
+    {
+      "name": "priority:P2",
+      "color": "FBCA04",
+      "description": "Standard priority tracked in the backlog."
+    }
+  ]
+}
