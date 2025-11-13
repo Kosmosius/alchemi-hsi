@@ -7,12 +7,14 @@ from importlib.util import find_spec
 
 from .avirisng import avirisng_pixel, load_avirisng_l1b
 from .enmap import enmap_pixel, load_enmap_l1b
+from .splib import load_splib, SPLIBCatalog
 
 __all__ = [
     "avirisng_pixel",
     "enmap_pixel",
     "load_avirisng_l1b",
     "load_enmap_l1b",
+    "SPLIBCatalog",
 ]
 
 if find_spec("alchemi_hsi.io.emit") is not None:
