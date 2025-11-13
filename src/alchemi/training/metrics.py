@@ -7,7 +7,7 @@ def spectral_angle(x: np.ndarray, y: np.ndarray) -> float:
     y = y.astype(np.float64)
     num = float(np.dot(x, y))
     den = float(np.linalg.norm(x) * np.linalg.norm(y))
-    if den == 0.0:
+    if den <= 0.0:
         return 0.0
     cosine = np.clip(num / den, -1.0, 1.0)
     return float(np.arccos(cosine))

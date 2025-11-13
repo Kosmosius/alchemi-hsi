@@ -25,18 +25,21 @@ class TemperatureScaler:
             def confidences(arr: np.ndarray) -> np.ndarray:
                 arr = np.asarray(arr, dtype=np.float64)
                 probs = 1.0 / (1.0 + np.exp(-arr))
-                return np.maximum(probs, 1.0 - probs)
+                return np.maximum(probs, 1.0 - probs).astype(float)
         else:
             predictions = logits.argmax(axis=1)
 
             def confidences(arr: np.ndarray) -> np.ndarray:
                 arr = np.asarray(arr, dtype=np.float64)
-                return arr.max(axis=1) / np.exp(arr).sum(axis=1)
+                preds = np.argmax(arr, axis=1)
+                top = arr[np.arange(arr.shape[0]), preds]
+                return np.exp(top - logsumexp(arr, axis=1)).astype(float)
 
         correct = (predictions == labels).astype(float)
 
         def objective(temperature: float) -> float:
-            conf = confidences(logits / temperature)
+            scaled = logits / max(temperature, 1e-6)
+            conf = confidences(scaled)
             return ece_score(conf.astype(float), correct)
 
         baseline = objective(1.0)
@@ -45,7 +48,7 @@ class TemperatureScaler:
         self.T = candidate if objective(candidate) <= baseline else 1.0
 
     def transform(self, logits: np.ndarray) -> np.ndarray:
-        return np.asarray(logits, dtype=np.float64) / self.T
+        return np.asarray(logits, dtype=np.float64) / max(self.T, 1e-6)
 
 
 def _nll(logits: np.ndarray, labels: np.ndarray) -> float:
