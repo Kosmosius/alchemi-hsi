@@ -7,6 +7,12 @@ from importlib.util import find_spec
 from .avirisng import avirisng_bad_band_mask, avirisng_srf_matrix
 from .enmap import enmap_srf_matrix
 from .fallback import build_matrix_from_centers, gaussian_srf, validate_srf_matrix
+from .resample import (
+    boxcar_resample,
+    convolve_to_bands,
+    gaussian_resample,
+    project_to_sensor,
+)
 
 __all__: list[str] = [
   "avirisng_srf_matrix", 
@@ -15,6 +21,10 @@ __all__: list[str] = [
   "gaussian_srf",
   "build_matrix_from_centers",
   "validate_srf_matrix",
+  "boxcar_resample",
+  "convolve_to_bands",
+  "gaussian_resample",
+  "project_to_sensor",
 ]
 
 if find_spec("alchemi_hsi.srf.hytes") is not None:
