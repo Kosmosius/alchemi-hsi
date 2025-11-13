@@ -12,5 +12,5 @@ __all__ = ["enmap_pixel", "load_enmap_l1b"]
 if find_spec("alchemi_hsi.io.emit") is not None:
     emit = import_module("alchemi_hsi.io.emit")
     __all__.extend(["emit_pixel", "load_emit_l1b"])
-    emit_pixel = getattr(emit, "emit_pixel")
-    load_emit_l1b = getattr(emit, "load_emit_l1b")
+    emit_pixel = emit.emit_pixel
+    load_emit_l1b = emit.load_emit_l1b

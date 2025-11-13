@@ -1,12 +1,13 @@
-import typer
-import yaml
 from pathlib import Path
 
-from .utils.logging import get_logger
+import typer
+import yaml
+
+from .data.validators import validate_dataset, validate_srf_dir
 from .srf import SRFRegistry
 from .training.seed import seed_everything
-from .training.trainer import run_pretrain_mae, run_align, run_eval
-from .data.validators import validate_dataset, validate_srf_dir
+from .training.trainer import run_align, run_eval, run_pretrain_mae
+from .utils.logging import get_logger
 
 app = typer.Typer(add_completion=False)
 _LOG = get_logger(__name__)

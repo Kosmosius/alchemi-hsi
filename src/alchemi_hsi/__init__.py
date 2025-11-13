@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from importlib import import_module
 from types import ModuleType
-from typing import Iterable
+
+from . import io
 
 __version__ = "0.2.0"
 
@@ -16,7 +18,5 @@ alchemi = _alchemi
 
 for _name in _exported:
     globals()[_name] = getattr(_alchemi, _name)
-
-from . import io
 
 __all__ = ["__version__", "alchemi", "io", *_exported]

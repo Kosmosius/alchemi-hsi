@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Tuple
-
 import numpy as np
 
 
@@ -20,7 +18,7 @@ def radiance_to_reflectance(
 
 def continuum_remove(
     wavelength_nm: np.ndarray, reflectance: np.ndarray, left_nm: float, right_nm: float
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     l_idx = np.searchsorted(wavelength_nm, left_nm)
     r_idx = np.searchsorted(wavelength_nm, right_nm)
     l_ref, r_ref = reflectance[l_idx], reflectance[r_idx]
@@ -30,8 +28,12 @@ def continuum_remove(
 
 
 def band_depth(
-    wavelength_nm: np.ndarray, reflectance: np.ndarray, center_nm: float, left_nm: float, right_nm: float
+    wavelength_nm: np.ndarray,
+    reflectance: np.ndarray,
+    center_nm: float,
+    left_nm: float,
+    right_nm: float,
 ) -> float:
-    cont, removed = continuum_remove(wavelength_nm, reflectance, left_nm, right_nm)
+    _cont, removed = continuum_remove(wavelength_nm, reflectance, left_nm, right_nm)
     c_idx = np.searchsorted(wavelength_nm, center_nm)
     return float(1.0 - removed[c_idx])

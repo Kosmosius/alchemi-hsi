@@ -6,8 +6,8 @@ from collections.abc import Sequence
 
 import numpy as np
 import rasterio
-import xarray as xr
 
+import xarray as xr
 from alchemi.types import Spectrum, SpectrumKind, WavelengthGrid
 
 TARGET_RADIANCE_UNITS = "W·m⁻²·sr⁻¹·nm⁻¹"

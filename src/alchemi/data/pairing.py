@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple
 
 import numpy as np
 from joblib import Memory
@@ -36,8 +35,8 @@ class PairBuilder:
         self.cache = LabSensorCache(cache_dir)
 
     def make_pairs(
-        self, sensor: str, field: List[Sample], lab_samples: List[Sample], seed: int = 42
-    ) -> Tuple[List[Sample], List[Sample]]:
+        self, sensor: str, field: list[Sample], lab_samples: list[Sample], seed: int = 42
+    ) -> tuple[list[Sample], list[Sample]]:
         assert len(lab_samples) >= len(field)
         lab_nm = lab_samples[0].spectrum.wavelengths.nm
         lab_vals = np.stack([s.spectrum.values for s in lab_samples], axis=0)

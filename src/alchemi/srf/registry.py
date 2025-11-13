@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Dict
 
 import numpy as np
 
@@ -16,7 +15,7 @@ _LOG = get_logger(__name__)
 class SRFRegistry:
     def __init__(self, root: str | Path = "data/srf"):
         self.root = Path(root)
-        self._cache: Dict[str, SRFMatrix] = {}
+        self._cache: dict[str, SRFMatrix] = {}
 
     def _hash(self, payload: str) -> str:
         return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
@@ -32,7 +31,13 @@ class SRFRegistry:
         centers = np.array(obj["centers_nm"], dtype=np.float64)
         bands_nm = [np.array(b["nm"], dtype=np.float64) for b in obj["bands"]]
         bands_resp = [np.array(b["resp"], dtype=np.float64) for b in obj["bands"]]
-        srf = SRFMatrix(obj["sensor"], centers, bands_nm, bands_resp, version=obj.get("version", "v1"))
+        srf = SRFMatrix(
+            obj["sensor"],
+            centers,
+            bands_nm,
+            bands_resp,
+            version=obj.get("version", "v1"),
+        )
         srf = srf.normalize_trapz()
         srf.cache_key = self._hash(path.read_text()[:2048])
         self._cache[k] = srf

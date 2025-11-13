@@ -9,7 +9,10 @@ def macro_f1(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 
 
 def banddepth_mae(
-    nm: np.ndarray, R_true: np.ndarray, R_pred: np.ndarray, windows: list[tuple[float, float, float]]
+    nm: np.ndarray,
+    R_true: np.ndarray,
+    R_pred: np.ndarray,
+    windows: list[tuple[float, float, float]],
 ) -> float:
     errs = []
     for center, left, right in windows:

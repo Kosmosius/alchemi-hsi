@@ -7,7 +7,6 @@ import re
 
 import alchemi_hsi
 
-
 SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 
 

@@ -1,3 +1,4 @@
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -6,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools import seed_labels
+seed_labels = importlib.import_module("tools.seed_labels")
 
 
 class DummyCompleted:
@@ -96,4 +97,12 @@ def test_creates_missing_labels(monkeypatch, tmp_path):
     exit_code = seed_labels.main(["--labels-path", str(labels_path)])
     assert exit_code == 0
 
-    assert ["label", "create", "area:platform", "--color", "0052CC", "--description", "Infra"] in calls
+    assert [
+        "label",
+        "create",
+        "area:platform",
+        "--color",
+        "0052CC",
+        "--description",
+        "Infra",
+    ] in calls

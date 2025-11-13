@@ -1,5 +1,3 @@
-from typing import List, Optional
-
 from pydantic import BaseModel, Field
 
 
@@ -18,7 +16,7 @@ class TrainCfg(BaseModel):
 
 
 class DataCfg(BaseModel):
-    sensors: List[str] = ["emit", "enmap", "avirisng", "hytes"]
+    sensors: list[str] = ["emit", "enmap", "avirisng", "hytes"]
     srf_root: str = "data/srf"
     paths: dict = {}
     wavelengths: dict = {}
