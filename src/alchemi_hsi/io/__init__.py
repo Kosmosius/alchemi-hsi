@@ -6,8 +6,9 @@ from importlib import import_module
 from importlib.util import find_spec
 
 from .enmap import enmap_pixel, load_enmap_l1b
+from .splib import load_splib, SPLIBCatalog
 
-__all__ = ["enmap_pixel", "load_enmap_l1b"]
+__all__ = ["enmap_pixel", "load_enmap_l1b", "load_splib", "SPLIBCatalog"]
 
 if find_spec("alchemi_hsi.io.emit") is not None:
     emit = import_module("alchemi_hsi.io.emit")
