@@ -64,13 +64,11 @@ def load_emit_l1b(path: str, *, band_mask: bool = True) -> xr.Dataset:
                 ),
             },
             coords=coords,
-            attrs={
-                "sensor": "EMIT",
-                "radiance_units": TARGET_RADIANCE_UNITS,
-                "source_radiance_units": source_units or TARGET_RADIANCE_UNITS,
-                "driver": src.driver,
-            },
         )
+        ds.attrs["sensor"] = "EMIT"
+        ds.attrs["radiance_units"] = TARGET_RADIANCE_UNITS
+        ds.attrs["source_radiance_units"] = source_units or TARGET_RADIANCE_UNITS
+        ds.attrs["driver"] = src.driver
 
     ds.coords["wavelength_nm"].attrs["units"] = "nm"
     return ds
@@ -79,16 +77,16 @@ def load_emit_l1b(path: str, *, band_mask: bool = True) -> xr.Dataset:
 def emit_pixel(ds: xr.Dataset, y: int, x: int) -> Spectrum:
     """Extract a single EMIT pixel as a :class:`~alchemi.types.Spectrum`."""
 
-    if "radiance" not in ds or "wavelength_nm" not in ds.coords:
+    if "radiance" not in getattr(ds, "data_vars", {}) or "wavelength_nm" not in ds.coords:
         raise KeyError("Dataset must contain 'radiance' variable and 'wavelength_nm' coordinate")
 
-    radiance = ds["radiance"].isel(y=y, x=x)
+    radiance = ds["radiance"].sel(y=y, x=x)
     units = radiance.attrs.get("units") or ds.attrs.get("radiance_units") or TARGET_RADIANCE_UNITS
     values = np.asarray(radiance.values, dtype=np.float64)
     values *= _radiance_scale(units)
 
     mask = None
-    if "band_mask" in ds:
+    if "band_mask" in getattr(ds, "data_vars", {}):
         mask = np.asarray(ds["band_mask"].values, dtype=bool)
 
     wavelengths_nm = np.asarray(ds.coords["wavelength_nm"].values, dtype=np.float64)

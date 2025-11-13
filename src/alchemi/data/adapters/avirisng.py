@@ -1,5 +1,21 @@
-"""Placeholder adapter for avirisng."""
+"""Adapter utilities for AVIRIS-NG samples."""
+
+from __future__ import annotations
+
+from typing import Tuple
+
+import xarray as xr
+
+from alchemi.types import Sample, SampleMeta
+from alchemi_hsi.io.avirisng import avirisng_pixel
+
+__all__ = ["load_avirisng_pixel"]
 
 
-def load_avirisng_pixel(*args, **kwargs):
-    raise NotImplementedError("Adapter not implemented")
+def load_avirisng_pixel(ds: xr.Dataset, position: Tuple[int, int]) -> Sample:
+    """Create a :class:`~alchemi.types.Sample` from a dataset and (y, x) index."""
+
+    y, x = position
+    spectrum = avirisng_pixel(ds, y=y, x=x)
+    meta = SampleMeta(sensor_id="avirisng", row=y, col=x)
+    return Sample(spectrum=spectrum, meta=meta)
