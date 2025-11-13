@@ -1,18 +1,29 @@
 name: Triage
+
 on:
   issues:
-    types: [opened, edited, labeled]
+    types: [opened, edited]
+
 jobs:
   add-to-project:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      project: write
     steps:
       - name: Add to project
         uses: actions/add-to-project@v0.6.1
         with:
           project-url: https://github.com/orgs/${{ github.repository_owner }}/projects/1
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Normalize labels
+          field-values: >-
+            {
+              "Status": "Triage",
+              "Phase": "Phase 1",
+              "Priority": "P2"
+            }
+      - name: Ensure phase:triage label
+        if: contains(github.event.issue.labels.*.name, 'phase:triage') == false
         uses: actions-ecosystem/action-add-labels@v1
         with:
-          labels: codex-ready
-        if: contains(github.event.issue.labels.*.name, 'codex-ready') == false
+          labels: phase:triage
