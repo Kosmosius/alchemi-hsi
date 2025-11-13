@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from importlib import import_module
 from types import ModuleType
 
-from . import io
+from . import io, srf
 
 __version__ = "0.2.0"
 
@@ -19,4 +19,4 @@ alchemi = _alchemi
 for _name in _exported:
     globals()[_name] = getattr(_alchemi, _name)
 
-__all__ = ["__version__", "alchemi", "io", *_exported]
+__all__ = ["__version__", "alchemi", "io", "srf", *_exported]

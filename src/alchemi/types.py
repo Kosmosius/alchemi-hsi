@@ -73,36 +73,3 @@ class SRFMatrix:
     cache_key: str | None = None
 
     def row_integrals(self) -> np.ndarray:
-        return np.array(
-            [
-                _integrate(resp, nm)
-                for nm, resp in zip(self.bands_nm, self.bands_resp, strict=False)
-            ],
-            dtype=np.float64,
-        )
-
-    def normalize_trapz(self) -> SRFMatrix:
-        nr = []
-        for nm, resp in zip(self.bands_nm, self.bands_resp, strict=False):
-            area = float(_integrate(resp, nm))
-            if area <= 0:
-                raise ValueError("SRF area must be >0")
-            nr.append(resp / area)
-        return SRFMatrix(
-            self.sensor, self.centers_nm, self.bands_nm, nr, self.version, self.cache_key
-        )
-
-
-@dataclass
-class SampleMeta:
-    sensor_id: str
-    row: int | None = None
-    col: int | None = None
-    datetime: str | None = None
-    georef: dict[str, Any] | None = None
-
-
-@dataclass
-class Sample:
-    spectrum: Spectrum
-    meta: SampleMeta

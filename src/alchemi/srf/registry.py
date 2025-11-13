@@ -37,9 +37,11 @@ class SRFRegistry:
             bands_nm,
             bands_resp,
             version=obj.get("version", "v1"),
+            cache_key=obj.get("cache_key"),
         )
         srf = srf.normalize_trapz()
-        srf.cache_key = self._hash(path.read_text()[:2048])
+        if not srf.cache_key:
+            srf.cache_key = self._hash(path.read_text()[:2048])
         self._cache[k] = srf
         _LOG.info("Loaded SRF for %s (%d bands)", k, len(centers))
         return srf

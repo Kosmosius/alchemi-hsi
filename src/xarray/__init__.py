@@ -48,7 +48,7 @@ class DataArray:
 
     def rename(self, mapping: Mapping[str, str]) -> DataArray:
         new_dims = tuple(mapping.get(d, d) for d in self.dims)
-        new_coords = {}
+        new_coords: dict[str, Coordinate] = {}
         for name, coord in self.coords.items():
             new_name = mapping.get(name, name)
             new_coords[new_name] = coord.rename(mapping)
@@ -62,7 +62,7 @@ class DataArray:
         return DataArray(data, dims, self.coords, dict(self.attrs))
 
     def sel(self, **indexers) -> DataArray:
-        index_map = {dim: slice(None) for dim in self.dims}
+        index_map: dict[str, int | slice] = {dim: slice(None) for dim in self.dims}
         for dim, value in indexers.items():
             if dim not in self.dims:
                 raise KeyError(dim)
@@ -77,15 +77,18 @@ class DataArray:
         slices = tuple(index_map[d] for d in self.dims)
         data = self._data[slices]
         remaining_dims = tuple(d for d in self.dims if not isinstance(index_map[d], int))
+
         remaining_coords: dict[str, Coordinate] = {}
         for name, coord in self.coords.items():
+            # If coord depends on selected dims, we may need to reduce it
             if any(dim in indexers for dim in coord.dims):
                 if all(dim in indexers for dim in coord.dims):
+                    # Fully indexed out -> drop
                     continue
                 keep_dims = tuple(d for d in coord.dims if d not in indexers)
                 if not keep_dims:
                     continue
-                keep_slices = []
+                keep_slices: list[int | slice] = []
                 for dim in coord.dims:
                     if dim in indexers:
                         matches = np.where(coord.values == indexers[dim])[0]
@@ -97,10 +100,11 @@ class DataArray:
                 remaining_coords[name] = Coordinate(new_values, keep_dims, dict(coord.attrs))
             else:
                 remaining_coords[name] = coord
+
         return DataArray(data, remaining_dims, remaining_coords, dict(self.attrs))
 
     def isel(self, **indexers) -> DataArray:
-        selectors = []
+        selectors: list[int | slice] = []
         for dim in self.dims:
             index = indexers.get(dim, slice(None))
             if isinstance(index, slice):
@@ -113,9 +117,10 @@ class DataArray:
             for dim, selector in zip(self.dims, selectors, strict=False)
             if not isinstance(selector, int)
         )
+
         remaining_coords: dict[str, Coordinate] = {}
         for name, coord in self.coords.items():
-            coord_selectors = []
+            coord_selectors: list[int | slice] = []
             for dim in coord.dims:
                 coord_selectors.append(indexers.get(dim, slice(None)))
             values = coord.values[tuple(coord_selectors)]
@@ -126,6 +131,7 @@ class DataArray:
             )
             if coord_dims:
                 remaining_coords[name] = Coordinate(values, coord_dims, dict(coord.attrs))
+
         return DataArray(data, remaining_dims, remaining_coords, dict(self.attrs))
 
     def to_serializable(self):
@@ -157,13 +163,16 @@ class Dataset:
             return DataArray(coord.values, coord.dims, attrs=dict(coord.attrs))
         raise KeyError(key)
 
+    def __contains__(self, key: str) -> bool:
+        return key in self.data_vars or key in self.coords
+
     def __setitem__(self, key: str, value) -> None:
         if isinstance(value, DataArray):
             self.data_vars[key] = value
         else:
             dims, data = value[:2]
             attrs = value[2] if len(value) > 2 else None
-            coords = {}
+            coords: dict[str, Coordinate] = {}
             if isinstance(dims, str):
                 dims = (dims,)
             for dim in dims:
@@ -242,7 +251,7 @@ def open_dataset(path) -> Dataset:
     for name, coord in payload.get("coords", {}).items():
         ds.coords[name] = coord
     for name, info in payload.get("data_vars", {}).items():
-        coords = {}
+        coords: dict[str, Coordinate] = {}
         for cname, coord in info.get("coords", {}).items():
             coords[cname] = coord
         ds.data_vars[name] = DataArray(
