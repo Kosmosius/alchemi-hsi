@@ -68,18 +68,18 @@ class SRFMatrix:
     cache_key: Optional[str] = None
 
     def row_integrals(self) -> np.ndarray:
-        from numpy import trapz
+        from numpy import trapezoid
 
         return np.array(
-            [trapz(r, nm) for nm, r in zip(self.bands_nm, self.bands_resp)], dtype=np.float64
+            [trapezoid(r, nm) for nm, r in zip(self.bands_nm, self.bands_resp)], dtype=np.float64
         )
 
     def normalize_trapz(self) -> "SRFMatrix":
-        from numpy import trapz
+        from numpy import trapezoid
 
         nr = []
         for nm, r in zip(self.bands_nm, self.bands_resp):
-            area = float(trapz(r, nm))
+            area = float(trapezoid(r, nm))
             if area <= 0:
                 raise ValueError("SRF area must be >0")
             nr.append(r / area)
