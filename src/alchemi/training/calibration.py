@@ -12,9 +12,12 @@ class TemperatureScaler:
         correct = (logits.argmax(axis=1) == labels).astype(float)
 
         def _confidences(x: np.ndarray) -> np.ndarray:
-            exps = np.exp(x)
+            preds = np.argmax(x, axis=1)
+            shifted = x - x.max(axis=1, keepdims=True)
+            exps = np.exp(shifted)
             denom = np.maximum(exps.sum(axis=1), 1e-12)
-            return (x.max(axis=1) / denom).astype(float)
+            numerator = exps[np.arange(len(preds)), preds]
+            return (numerator / denom).astype(float)
 
         def objective(T: float) -> float:
             return ece_score(_confidences(logits / T), correct)
