@@ -61,6 +61,32 @@ class DataArray:
         data = self._data.transpose(order)
         return DataArray(data, dims, self.coords, dict(self.attrs))
 
+    def isel(self, **indexers) -> "DataArray":
+        index_map = {dim: slice(None) for dim in self.dims}
+        for dim, value in indexers.items():
+            if dim not in self.dims:
+                raise KeyError(dim)
+            index_map[dim] = int(value)
+        slices = tuple(index_map[d] for d in self.dims)
+        data = self._data[slices]
+        remaining_dims = tuple(d for d in self.dims if not isinstance(index_map[d], int))
+        remaining_coords: Dict[str, Coordinate] = {}
+        for name, coord in self.coords.items():
+            if all(dim in indexers for dim in coord.dims):
+                continue
+            keep_dims = tuple(d for d in coord.dims if d not in indexers)
+            if not keep_dims:
+                continue
+            coord_slices = []
+            for dim in coord.dims:
+                if dim in indexers:
+                    coord_slices.append(index_map[dim])
+                else:
+                    coord_slices.append(slice(None))
+            new_values = coord.values[tuple(coord_slices)]
+            remaining_coords[name] = Coordinate(new_values, keep_dims, dict(coord.attrs))
+        return DataArray(data, remaining_dims, remaining_coords, dict(self.attrs))
+
     def sel(self, **indexers) -> "DataArray":
         index_map = {dim: slice(None) for dim in self.dims}
         for dim, value in indexers.items():
@@ -128,6 +154,9 @@ class Dataset:
             return DataArray(coord.values, coord.dims, attrs=dict(coord.attrs))
         raise KeyError(key)
 
+    def __contains__(self, key: str) -> bool:
+        return key in self.data_vars or key in self.coords
+
     def __setitem__(self, key: str, value) -> None:
         if isinstance(value, DataArray):
             self.data_vars[key] = value
@@ -177,6 +206,10 @@ class Dataset:
             for dim, size in zip(arr.dims, arr.values.shape):
                 sizes[dim] = size
         return sizes
+
+    @property
+    def dims(self) -> Dict[str, int]:
+        return self.sizes
 
     def to_netcdf(self, path):
         payload = {
