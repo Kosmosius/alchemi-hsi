@@ -7,9 +7,9 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
 
 LABEL_FILE_DEFAULT = Path(__file__).resolve().parent / "data" / "labels.json"
 
@@ -23,7 +23,7 @@ class Label:
     description: str | None = None
 
     @classmethod
-    def from_dict(cls, data: Dict[str, str]) -> "Label":
+    def from_dict(cls, data: dict[str, str]) -> Label:
         return cls(
             name=data["name"],
             color=data["color"].upper(),
@@ -47,7 +47,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def load_desired_labels(path: Path) -> List[Label]:
+def load_desired_labels(path: Path) -> list[Label]:
     with path.open("r", encoding="utf-8") as fh:
         payload = json.load(fh)
     raw_labels = payload.get("labels", [])
@@ -63,10 +63,10 @@ def gh_command(args: Iterable[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-def fetch_existing_labels() -> Dict[str, Label]:
+def fetch_existing_labels() -> dict[str, Label]:
     result = gh_command(["label", "list", "--limit", "1000", "--json", "name,color,description"])
     data = json.loads(result.stdout or "[]")
-    labels: Dict[str, Label] = {}
+    labels: dict[str, Label] = {}
     for entry in data:
         labels[entry["name"]] = Label(
             name=entry["name"],
@@ -82,8 +82,8 @@ class Action:
     label: Label
 
 
-def calculate_actions(desired: Sequence[Label], existing: Dict[str, Label]) -> List[Action]:
-    actions: List[Action] = []
+def calculate_actions(desired: Sequence[Label], existing: dict[str, Label]) -> list[Action]:
+    actions: list[Action] = []
     for label in desired:
         current = existing.get(label.name)
         if current is None:

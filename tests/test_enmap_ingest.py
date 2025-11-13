@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
-import xarray as xr
 
+import xarray as xr
 from alchemi_hsi.io.enmap import enmap_pixel, load_enmap_l1b
 
 

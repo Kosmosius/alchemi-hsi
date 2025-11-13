@@ -58,7 +58,9 @@ def _nll(logits: np.ndarray, labels: np.ndarray) -> float:
     if logits.ndim == 1 or logits.shape[-1] == 1:
         probabilities = 1.0 / (1.0 + np.exp(-logits))
         probabilities = np.clip(probabilities, 1e-8, 1.0 - 1e-8)
-        return float(-np.mean(labels * np.log(probabilities) + (1 - labels) * np.log(1 - probabilities)))
+        return float(
+            -np.mean(labels * np.log(probabilities) + (1 - labels) * np.log(1 - probabilities))
+        )
 
     log_partition = logsumexp(logits, axis=-1)
     log_likelihood = logits[np.arange(len(labels)), labels] - log_partition

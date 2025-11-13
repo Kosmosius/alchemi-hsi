@@ -1,10 +1,17 @@
-from .types import Spectrum, SpectrumKind, SRFMatrix, Sample, SampleMeta, WavelengthGrid
+from .types import (
+    Sample,
+    SampleMeta,
+    Spectrum,
+    SpectrumKind,
+    SRFMatrix,
+    WavelengthGrid,
+)
 
 __all__ = [
-    "Spectrum",
-    "SpectrumKind",
     "SRFMatrix",
     "Sample",
     "SampleMeta",
+    "Spectrum",
+    "SpectrumKind",
     "WavelengthGrid",
 ]

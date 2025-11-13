@@ -18,7 +18,7 @@ def evaluate_gases(mask_true, score_map, thresh=0.5):
 
 def evaluate_alignment(emb_field, emb_lab, gt_index, k=1):
     return {
-        "retrieval@%d" % k: retrieval_at_k(
+        f"retrieval@{k}": retrieval_at_k(
             np.asarray(emb_field), np.asarray(emb_lab), np.asarray(gt_index), k
         )
     }

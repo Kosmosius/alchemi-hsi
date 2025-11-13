@@ -6,8 +6,8 @@ from collections.abc import Sequence
 
 import numpy as np
 import rasterio
-import xarray as xr
 
+import xarray as xr
 from alchemi.types import Spectrum, SpectrumKind, WavelengthGrid
 
 TARGET_RADIANCE_UNITS = "W·m⁻²·sr⁻¹·nm⁻¹"
@@ -45,31 +45,30 @@ def load_emit_l1b(path: str, *, band_mask: bool = True) -> xr.Dataset:
             "y": np.arange(src.height, dtype=np.int32),
             "x": np.arange(src.width, dtype=np.int32),
             "band": np.arange(src.count, dtype=np.int32),
-            "wavelength_nm": ("band", wavelengths_nm),
         }
+        ds = xr.Dataset(coords=coords)
+        ds = ds.assign_coords(wavelength_nm=("band", wavelengths_nm))
+
+        radiance = xr.DataArray(
+            np.moveaxis(data, 0, -1),
+            dims=("y", "x", "band"),
+            coords={**coords, "wavelength_nm": ("band", wavelengths_nm)},
+            attrs={"units": TARGET_RADIANCE_UNITS},
+        )
+        ds["radiance"] = radiance
 
         band_selection = _compute_band_mask(wavelengths_nm, band_mask)
-        ds = xr.Dataset(
-            data_vars={
-                "radiance": xr.DataArray(
-                    np.moveaxis(data, 0, -1),
-                    dims=("y", "x", "band"),
-                    coords=coords,
-                    attrs={"units": TARGET_RADIANCE_UNITS},
-                ),
-                "band_mask": xr.DataArray(
-                    band_selection,
-                    dims=("band",),
-                    coords={"band": coords["band"]},
-                ),
-            },
-            coords=coords,
-            attrs={
-                "sensor": "EMIT",
-                "radiance_units": TARGET_RADIANCE_UNITS,
-                "source_radiance_units": source_units or TARGET_RADIANCE_UNITS,
-                "driver": src.driver,
-            },
+        ds["band_mask"] = xr.DataArray(
+            band_selection,
+            dims=("band",),
+            coords={"band": coords["band"]},
+        )
+
+        ds.attrs.update(
+            sensor="EMIT",
+            radiance_units=TARGET_RADIANCE_UNITS,
+            source_radiance_units=source_units or TARGET_RADIANCE_UNITS,
+            driver=src.driver,
         )
 
     ds.coords["wavelength_nm"].attrs["units"] = "nm"
@@ -79,7 +78,7 @@ def load_emit_l1b(path: str, *, band_mask: bool = True) -> xr.Dataset:
 def emit_pixel(ds: xr.Dataset, y: int, x: int) -> Spectrum:
     """Extract a single EMIT pixel as a :class:`~alchemi.types.Spectrum`."""
 
-    if "radiance" not in ds or "wavelength_nm" not in ds.coords:
+    if "radiance" not in ds.data_vars or "wavelength_nm" not in ds.coords:
         raise KeyError("Dataset must contain 'radiance' variable and 'wavelength_nm' coordinate")
 
     radiance = ds["radiance"].isel(y=y, x=x)
@@ -88,7 +87,7 @@ def emit_pixel(ds: xr.Dataset, y: int, x: int) -> Spectrum:
     values *= _radiance_scale(units)
 
     mask = None
-    if "band_mask" in ds:
+    if "band_mask" in ds.data_vars:
         mask = np.asarray(ds["band_mask"].values, dtype=bool)
 
     wavelengths_nm = np.asarray(ds.coords["wavelength_nm"].values, dtype=np.float64)

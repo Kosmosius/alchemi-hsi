@@ -1,17 +1,17 @@
-from .datasets import SpectrumDataset, PairingDataset
-from .transforms import SpectralNoise, RandomBandDropout
-from .validators import validate_dataset, validate_srf_dir
-from .pairing import PairBuilder, LabSensorCache
+from .datasets import PairingDataset, SpectrumDataset
 from .gas_sim import inject_synthetic_plume
+from .pairing import LabSensorCache, PairBuilder
+from .transforms import RandomBandDropout, SpectralNoise
+from .validators import validate_dataset, validate_srf_dir
 
 __all__ = [
-    "SpectrumDataset",
+    "LabSensorCache",
+    "PairBuilder",
     "PairingDataset",
-    "SpectralNoise",
     "RandomBandDropout",
+    "SpectralNoise",
+    "SpectrumDataset",
+    "inject_synthetic_plume",
     "validate_dataset",
     "validate_srf_dir",
-    "PairBuilder",
-    "LabSensorCache",
-    "inject_synthetic_plume",
 ]

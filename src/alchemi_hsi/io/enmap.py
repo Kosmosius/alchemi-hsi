@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
-import xarray as xr
 
+import xarray as xr
 from alchemi.types import Spectrum, SpectrumKind, WavelengthGrid
 
-__all__ = ["load_enmap_l1b", "enmap_pixel"]
+__all__ = ["enmap_pixel", "load_enmap_l1b"]
 
 _RAD_UNITS = "W·m^-2·sr^-1·nm^-1"
 
@@ -20,8 +19,8 @@ _RAD_UNITS = "W·m^-2·sr^-1·nm^-1"
 class _SpectralSlice:
     radiance: xr.DataArray
     wavelengths_nm: np.ndarray
-    fwhm_nm: Optional[np.ndarray]
-    mask: Optional[np.ndarray]
+    fwhm_nm: np.ndarray | None
+    mask: np.ndarray | None
 
 
 def load_enmap_l1b(path_vnir: str | Path, path_swir: str | Path) -> xr.Dataset:
@@ -160,7 +159,10 @@ def _standardize_dims(arr: xr.DataArray) -> tuple[xr.DataArray, str]:
 def _extract_wavelengths(ds: xr.Dataset, band_dim: str, arr: xr.DataArray) -> np.ndarray:
     band_coord = arr.coords.get("band")
     if band_coord is not None and band_coord.ndim == 1:
-        return _to_nm(np.asarray(band_coord.values, dtype=np.float64), band_coord.attrs.get("units"))
+        return _to_nm(
+            np.asarray(band_coord.values, dtype=np.float64),
+            band_coord.attrs.get("units"),
+        )
 
     for name in list(ds.coords) + list(ds.data_vars):
         if name == band_dim:
@@ -177,7 +179,7 @@ def _extract_wavelengths(ds: xr.Dataset, band_dim: str, arr: xr.DataArray) -> np
     raise ValueError("Could not locate wavelength coordinate")
 
 
-def _extract_fwhm(ds: xr.Dataset, band_dim: str) -> Optional[np.ndarray]:
+def _extract_fwhm(ds: xr.Dataset, band_dim: str) -> np.ndarray | None:
     for name in list(ds.data_vars):
         low = name.lower()
         if "fwhm" in low or "bandwidth" in low:
@@ -187,7 +189,7 @@ def _extract_fwhm(ds: xr.Dataset, band_dim: str) -> Optional[np.ndarray]:
     return None
 
 
-def _extract_mask(ds: xr.Dataset, band_dim: str) -> Optional[np.ndarray]:
+def _extract_mask(ds: xr.Dataset, band_dim: str) -> np.ndarray | None:
     for name in list(ds.data_vars):
         low = name.lower()
         if any(key in low for key in ["mask", "quality", "valid"]):
@@ -238,7 +240,7 @@ def _is_per_micrometer(units: str) -> bool:
     return any(f"/{tok}" in units for tok in tokens)
 
 
-def _to_nm(values: np.ndarray, unit: Optional[str]) -> np.ndarray:
+def _to_nm(values: np.ndarray, unit: str | None) -> np.ndarray:
     if unit is None:
         return _infer_nm(values)
     unit_l = unit.lower()

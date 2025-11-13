@@ -1,6 +1,6 @@
 import numpy as np
 
-from alchemi.physics import radiance_to_bt, bt_to_radiance
+from alchemi.physics import bt_to_radiance, radiance_to_bt
 
 
 def test_bt_roundtrip():

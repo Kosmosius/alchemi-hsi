@@ -3,14 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import yaml
+from torch.utils.data import DataLoader, TensorDataset
 
-from .amp import autocast
-from .config import TrainCfg
-from .loss_mixer import Weights
-from ..losses import InfoNCELoss, ReconstructionLoss, SAMLoss, SpectralSmoothnessLoss
+from ..losses import InfoNCELoss, ReconstructionLoss, SpectralSmoothnessLoss
 from ..models import (
     DomainDiscriminator,
     MAEDecoder,
@@ -20,6 +16,9 @@ from ..models import (
 )
 from ..utils.ckpt import save_checkpoint
 from ..utils.logging import get_logger
+from .amp import autocast
+from .config import TrainCfg
+from .loss_mixer import Weights
 
 _LOG = get_logger(__name__)
 
@@ -53,7 +52,6 @@ def run_pretrain_mae(config_path: str):
         embed_dim=cfg.embed_dim, depth=max(1, cfg.depth // 2), n_heads=cfg.n_heads, out_dim=1
     )
     recon_loss = ReconstructionLoss()
-    sam_loss = SAMLoss()
     smooth_loss = SpectralSmoothnessLoss()
     opt = torch.optim.AdamW(
         list(basis.parameters())
@@ -64,16 +62,14 @@ def run_pretrain_mae(config_path: str):
     )
     weights = Weights(recon=1.0, nce=0.0, sam=0.0, smooth=1e-4)
 
-    from torch.utils.data import DataLoader, TensorDataset
-
     loader = DataLoader(TensorDataset(torch.randn(128, 32)), batch_size=cfg.batch_size)
 
     step = 0
-    for batch in loader:
+    for _batch in loader:
         step += 1
         x = torch.randn(64, 64)
         band_mask = torch.ones(64, dtype=torch.bool)
-        masked, idx_masked = _mask_spectral(x[:, 0], band_mask, spectral_mask_ratio=0.5)
+        masked, _ = _mask_spectral(x[:, 0], band_mask, spectral_mask_ratio=0.5)
         with autocast(enabled=False):
             z = enc(x.unsqueeze(0))
             y = dec(z)
@@ -106,16 +102,14 @@ def run_align(config_path: str):
         lr=cfg.lr,
     )
 
-    from torch.utils.data import DataLoader
-
     Xf = torch.randn(512, 64)
     Xl = torch.randn(512, 64)
-    loader = DataLoader(list(zip(Xf, Xl)), batch_size=cfg.batch_size, shuffle=True)
+    loader = DataLoader(list(zip(Xf, Xl, strict=False)), batch_size=cfg.batch_size, shuffle=True)
 
-    for step, (f, l) in enumerate(loader, start=1):
+    for step, (f, lab) in enumerate(loader, start=1):
         with autocast(enabled=False):
             zf = enc(f.unsqueeze(1)).squeeze(1)
-            zl = enc(l.unsqueeze(1)).squeeze(1)
+            zl = enc(lab.unsqueeze(1)).squeeze(1)
             loss = nce(zf, zl)
         opt.zero_grad(set_to_none=True)
         loss.backward()
