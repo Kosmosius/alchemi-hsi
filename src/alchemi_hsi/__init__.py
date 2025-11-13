@@ -1,5 +1,20 @@
-"""Utilities for ingesting and handling hyperspectral imagery products."""
+"""ALCHEMI hyperspectral imaging public interface."""
 
-from .io.emit import load_emit_l1b, emit_pixel
+from __future__ import annotations
 
-__all__ = ["load_emit_l1b", "emit_pixel"]
+from importlib import import_module
+from types import ModuleType
+from typing import Iterable
+
+__version__ = "0.2.0"
+
+_alchemi: ModuleType = import_module("alchemi")
+_exported: Iterable[str] = getattr(_alchemi, "__all__", ())
+
+# Mirror the alchemi namespace for backwards compatibility while exposing the package version.
+alchemi = _alchemi
+
+for _name in _exported:
+    globals()[_name] = getattr(_alchemi, _name)
+
+__all__ = ["__version__", "alchemi", *_exported]
