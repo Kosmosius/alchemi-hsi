@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.optimize import minimize_scalar
+from scipy.special import logsumexp
 
 from .metrics import ece_score
 
@@ -13,11 +14,8 @@ class TemperatureScaler:
 
         def _confidences(x: np.ndarray) -> np.ndarray:
             preds = np.argmax(x, axis=1)
-            shifted = x - x.max(axis=1, keepdims=True)
-            exps = np.exp(shifted)
-            denom = np.maximum(exps.sum(axis=1), 1e-12)
-            numerator = exps[np.arange(len(preds)), preds]
-            return (numerator / denom).astype(float)
+            top = x[np.arange(len(preds)), preds]
+            return np.exp(top - logsumexp(x, axis=1)).astype(float)
 
         def objective(T: float) -> float:
             return ece_score(_confidences(logits / T), correct)
@@ -30,8 +28,6 @@ class TemperatureScaler:
 
 
 def _nll(logits: np.ndarray, labels: np.ndarray) -> float:
-    from scipy.special import logsumexp
-
     if logits.ndim == 1:
         p = 1.0 / (1.0 + np.exp(-logits))
         eps = 1e-8
