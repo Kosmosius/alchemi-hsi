@@ -10,6 +10,7 @@ _NP_GENERATOR: np.random.Generator | None = None
 def seed_everything(seed: int = 42):
     global _NP_GENERATOR
     random.seed(seed)
+    np.random.seed(seed)  # noqa: NPY002 - ensure legacy NumPy RNGs remain deterministic
     _NP_GENERATOR = np.random.default_rng(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
@@ -42,7 +41,9 @@ def load_hytes_l1b_bt(path: str | Path) -> xr.Dataset:
     dataset = dataset.assign_coords(wavelength_nm=("band", wavelengths))
     dataset.attrs.update(sensor="hytes", quantity="brightness_temp", units="K")
 
-    mask = _extract_mask(data, bt.dims)
+    band_axis = bt.dims.index("band") if "band" in bt.dims else -1
+    band_size = bt.values.shape[band_axis]
+    mask = _extract_mask(data, "band", band_size)
     if mask is not None:
         dataset["band_mask"] = ("band", mask)
 
@@ -110,20 +111,29 @@ def _extract_wavelengths(ds: xr.Dataset, bt: xr.DataArray) -> np.ndarray:
     return data.astype(np.float64)
 
 
-def _extract_mask(ds: xr.Dataset, dims: Iterable[str]) -> np.ndarray | None:
+def _extract_mask(ds: xr.Dataset, band_dim: str, band_size: int) -> np.ndarray | None:
     for name, var in ds.data_vars.items():
-        if "mask" in name.lower() or "quality" in name.lower():
-            values = np.asarray(var.values)
-            if values.ndim == 1:
-                return values.astype(bool)
-            band_dim = None
-            for dim in dims:
-                if dim in var.dims and values.shape[var.dims.index(dim)] == values.shape[-1]:
-                    band_dim = dim
-                    break
-            if band_dim is not None:
-                axis = var.dims.index(band_dim)
-                return np.asarray(values, dtype=bool).reshape(-1)[-values.shape[axis] :]
+        if "mask" not in name.lower() and "quality" not in name.lower():
+            continue
+
+        if band_dim not in var.dims:
+            continue
+
+        values = np.asarray(var.values)
+        axis = var.dims.index(band_dim)
+        if values.shape[axis] != band_size:
+            continue
+
+        mask = np.asarray(values, dtype=bool)
+        if mask.ndim == 1:
+            return mask
+
+        reduce_axes = tuple(idx for idx in range(mask.ndim) if idx != axis)
+        if not reduce_axes:
+            return mask.reshape(band_size)
+
+        reduced = np.all(mask, axis=reduce_axes)
+        return np.asarray(reduced, dtype=bool)
     return None
 
 
