@@ -1,3 +1,4 @@
+__all__ = ["emit_srf_matrix"]
 """Sensor response function utilities for packaged hyperspectral sensors."""
 
 from __future__ import annotations
@@ -6,6 +7,7 @@ from importlib import import_module
 from importlib.util import find_spec
 from .avirisng import avirisng_bad_band_mask, avirisng_srf_matrix
 from .enmap import enmap_srf_matrix
+from .emit import emit_srf_matrix
 from .fallback import build_matrix_from_centers, gaussian_srf, validate_srf_matrix
 from .resample import (
     boxcar_resample,
@@ -18,6 +20,7 @@ __all__: list[str] = [
   "avirisng_srf_matrix", 
   "avirisng_bad_band_mask", 
   "enmap_srf_matrix",
+  "emit_srf_matrix"
   "gaussian_srf",
   "build_matrix_from_centers",
   "validate_srf_matrix",
