@@ -5,7 +5,8 @@ from .emit import emit_srf_matrix
 from .enmap import enmap_srf_matrix
 from .fallback import build_matrix_from_centers, gaussian_srf, validate_srf_matrix
 from .hytes import hytes_srf_matrix
-from .registry import SRFRegistry
+from .mako import MAKO_BAND_COUNT, build_mako_srf_from_header, mako_lwir_grid_nm
+from .registry import SRFRegistry, get_srf
 from .resample import (
     boxcar_resample,
     convolve_to_bands,
@@ -27,6 +28,10 @@ __all__ = [
     "gaussian_resample",
     "gaussian_srf",
     "hytes_srf_matrix",
+    "MAKO_BAND_COUNT",
+    "build_mako_srf_from_header",
+    "get_srf",
+    "mako_lwir_grid_nm",
     "project_to_sensor",
     "validate_srf_matrix",
 ]

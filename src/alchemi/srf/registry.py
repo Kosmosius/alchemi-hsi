@@ -3,13 +3,19 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 
 from ..types import SRFMatrix
 from ..utils.logging import get_logger
+from .mako import build_mako_srf_from_header, mako_lwir_grid_nm
 
 _LOG = get_logger(__name__)
+
+_DEFAULT_MAKO_WAVELENGTHS_NM = np.linspace(7600.0, 13200.0, 128, dtype=np.float64)
+_DEFAULT_MAKO_VERSION = "comex-l2s-gaussian-v1"
+_DEFAULT_MAKO_FWHM = 44.0
 
 
 class SRFRegistry:
@@ -45,3 +51,47 @@ class SRFRegistry:
         self._cache[k] = srf
         _LOG.info("Loaded SRF for %s (%d bands)", k, len(centers))
         return srf
+
+
+def _mako_builder(
+    *,
+    version: str | None,
+    wavelengths_nm: np.ndarray | None,
+    fwhm_nm: float | None,
+) -> tuple[SRFMatrix, np.ndarray]:
+    centers = (
+        _DEFAULT_MAKO_WAVELENGTHS_NM
+        if wavelengths_nm is None
+        else np.asarray(wavelengths_nm, dtype=np.float64)
+    )
+    fwhm = float(_DEFAULT_MAKO_FWHM if fwhm_nm is None else fwhm_nm)
+    srf = build_mako_srf_from_header(centers, fwhm_nm=fwhm)
+    srf.version = version or _DEFAULT_MAKO_VERSION
+    grid = mako_lwir_grid_nm()
+    return srf, grid
+
+
+_BUILTIN_BUILDERS: dict[str, Callable[..., tuple[SRFMatrix, np.ndarray]]] = {
+    "mako": _mako_builder,
+}
+
+
+def get_srf(
+    sensor: str,
+    *,
+    version: str | None = None,
+    wavelengths_nm: np.ndarray | None = None,
+    fwhm_nm: float | None = None,
+) -> tuple[SRFMatrix, np.ndarray]:
+    """Return a builtin SRF matrix together with its canonical wavelength grid."""
+
+    key = sensor.lower()
+    try:
+        builder = _BUILTIN_BUILDERS[key]
+    except KeyError as exc:  # pragma: no cover - defensive guard
+        msg = f"Unsupported builtin SRF sensor: {sensor!r}"
+        raise ValueError(msg) from exc
+    return builder(version=version, wavelengths_nm=wavelengths_nm, fwhm_nm=fwhm_nm)
+
+
+__all__ = ["SRFRegistry", "get_srf"]
