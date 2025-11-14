@@ -1,5 +1,6 @@
 """Physics helper utilities for spectral conversions."""
 
+from .augment import augment_radiance, random_swirlike_atmosphere
 from .planck import (
     C,
     H,
@@ -10,7 +11,12 @@ from .planck import (
     radiance_to_bt_K,
 )
 from .solar import get_E0_nm, sun_earth_factor
-from .swir import band_depth, continuum_remove, radiance_to_reflectance, reflectance_to_radiance
+from .swir import (
+    band_depth,
+    continuum_remove,
+    radiance_to_reflectance,
+    reflectance_to_radiance,
+)
 from .swir_avirisng import (
     avirisng_bad_band_mask,
     radiance_to_reflectance_avirisng,
@@ -19,6 +25,7 @@ from .swir_avirisng import (
 
 __all__ = [
     "band_depth",
+    "augment_radiance",
     "avirisng_bad_band_mask",
     "bt_K_to_radiance",
     "bt_to_radiance",
@@ -33,5 +40,6 @@ __all__ = [
     "radiance_to_reflectance_avirisng",
     "reflectance_to_radiance",
     "reflectance_to_radiance_avirisng",
+    "random_swirlike_atmosphere",
     "sun_earth_factor",
 ]
