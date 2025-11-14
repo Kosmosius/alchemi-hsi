@@ -1,239 +1,111 @@
+"""Canonical hyperspectral cube representation and helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import json
-from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
-import xarray as xr
 
-__all__ = ["Cube"]
+__all__ = ["Cube", "GeoInfo", "geo_from_attrs"]
+
+_ALLOWED_AXIS_UNITS = {"wavelength_nm", "wavenumber_cm1"}
+_ALLOWED_VALUE_KINDS = {"radiance", "reflectance", "brightness_temp"}
 
 
-@dataclass
+@dataclass(slots=True)
+class GeoInfo:
+    """Geospatial metadata describing the cube layout."""
+
+    crs: Any | None
+    transform: Any | None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise the geospatial information into a JSON-friendly mapping."""
+
+        return {"crs": self.crs, "transform": self.transform}
+
+
+@dataclass(slots=True)
 class Cube:
-    """Canonical in-memory representation of a hyperspectral cube."""
+    """Typed wrapper around an (H, W, C) hyperspectral cube."""
 
-    sensor: str
-    quantity: str
-    values: np.ndarray
-    axes: tuple[str, ...]
-    units: str
-    axis_coords: dict[str, np.ndarray] = field(default_factory=dict)
-    wavelength_nm: np.ndarray | None = None
-    band_mask: np.ndarray | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    data: np.ndarray
+    axis: np.ndarray
+    axis_unit: str
+    value_kind: str
+    srf_id: str | None = None
+    geo: GeoInfo | None = None
+    attrs: dict[str, Any] = field(default_factory=dict)
 
-    @classmethod
-    def from_xarray(cls, dataset: xr.Dataset, *, data_var: str | None = None) -> "Cube":
-        var_name = data_var or _guess_data_variable(dataset)
-        data = dataset[var_name]
-        values = np.asarray(data.values)
-        axes = tuple(str(dim) for dim in data.dims)
-        units = _guess_units(dataset, data)
-        sensor = str(dataset.attrs.get("sensor", "unknown"))
-        quantity = _guess_quantity(dataset, data, var_name)
+    def __post_init__(self) -> None:
+        self.data = np.asarray(self.data)
+        if self.data.ndim != 3:
+            msg = "Cube.data must have exactly three dimensions (height, width, channels)"
+            raise ValueError(msg)
 
-        axis_coords: dict[str, np.ndarray] = {}
-        for dim in axes:
-            coord = data.coords.get(dim)
-            if coord is not None:
-                axis_coords[dim] = np.asarray(coord.values)
-            else:
-                axis_coords[dim] = np.arange(values.shape[data.get_axis_num(dim)])
+        self.axis = np.asarray(self.axis, dtype=np.float64)
+        if self.axis.ndim != 1:
+            msg = "Cube.axis must be a one-dimensional spectral coordinate"
+            raise ValueError(msg)
+        if self.data.shape[-1] != self.axis.shape[0]:
+            msg = "Cube.axis length must match the spectral dimension of Cube.data"
+            raise ValueError(msg)
 
-        spectral_axis = axes[-1] if axes else None
-        wavelength_nm = _extract_wavelengths(dataset, spectral_axis, values.shape[-1] if axes else 0)
-        band_mask = _extract_band_mask(dataset, spectral_axis, values.shape[-1] if axes else 0)
+        if self.axis_unit not in _ALLOWED_AXIS_UNITS:
+            msg = f"axis_unit must be one of {_ALLOWED_AXIS_UNITS!r}"
+            raise ValueError(msg)
 
-        metadata = {
-            key: _json_ready(value)
-            for key, value in dataset.attrs.items()
-            if key not in {"sensor", "quantity", "units"}
-        }
+        if self.value_kind not in _ALLOWED_VALUE_KINDS:
+            msg = f"value_kind must be one of {_ALLOWED_VALUE_KINDS!r}"
+            raise ValueError(msg)
 
-        return cls(
-            sensor=sensor,
-            quantity=quantity,
-            values=values,
-            axes=axes,
-            units=units,
-            axis_coords=axis_coords,
-            wavelength_nm=wavelength_nm,
-            band_mask=band_mask,
-            metadata=metadata,
-        )
+        if self.geo is not None and not isinstance(self.geo, GeoInfo):
+            msg = "geo must be a GeoInfo instance when provided"
+            raise TypeError(msg)
+
+        if self.attrs is None:
+            self.attrs = {}
+        else:
+            self.attrs = dict(self.attrs)
 
     @property
-    def shape(self) -> tuple[int, ...]:
-        return self.values.shape
+    def shape(self) -> tuple[int, int, int]:
+        """Return the cube shape as ``(height, width, channels)``."""
 
-    def to_npz(self, path: Path | str) -> None:
-        path = Path(path)
-        payload: dict[str, Any] = {
-            "values": self.values,
-            "axes": np.asarray(self.axes, dtype=object),
-        }
-        for axis, coord in self.axis_coords.items():
-            payload[f"axis_{axis}"] = coord
-        if self.wavelength_nm is not None:
-            payload["wavelength_nm"] = self.wavelength_nm
-        if self.band_mask is not None:
-            payload["band_mask"] = self.band_mask
+        height, width, channels = self.data.shape
+        return int(height), int(width), int(channels)
 
-        attrs = {
-            "sensor": self.sensor,
-            "quantity": self.quantity,
-            "units": self.units,
-            "metadata": self.metadata,
-        }
-        payload["attrs_json"] = np.array(json.dumps(attrs, default=_json_default))
-        np.savez(path, **payload)
+    @property
+    def band_count(self) -> int:
+        """Number of spectral bands represented by the cube."""
 
-    def to_zarr(self, path: Path | str) -> None:
-        try:
-            import zarr  # type: ignore[import-not-found]
-        except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
-            msg = "zarr is required to write canonical Zarr cubes"
-            raise ModuleNotFoundError(msg) from exc
-
-        path = Path(path)
-        if path.exists():
-            if path.is_dir():
-                for child in path.iterdir():
-                    if child.is_dir():
-                        _rmtree(child)
-                    else:
-                        child.unlink()
-            else:
-                path.unlink()
-        store = zarr.DirectoryStore(str(path))
-        root = zarr.group(store=store, overwrite=True)
-        root.attrs.put({
-            "sensor": self.sensor,
-            "quantity": self.quantity,
-            "units": self.units,
-            "axes": list(self.axes),
-            "metadata": _json_ready(self.metadata),
-        })
-
-        chunks = _default_chunks(self.values.shape)
-        root.create_dataset("values", data=self.values, chunks=chunks, compressor=None)
-        axes_group = root.create_group("axes")
-        for name, coord in self.axis_coords.items():
-            axes_group.create_dataset(name, data=coord, compressor=None)
-        if self.wavelength_nm is not None:
-            root.create_dataset("wavelength_nm", data=self.wavelength_nm, compressor=None)
-        if self.band_mask is not None:
-            root.create_dataset("band_mask", data=self.band_mask.astype(bool), compressor=None)
-
-    def as_dict(self) -> dict[str, Any]:
-        data: dict[str, Any] = {
-            "sensor": self.sensor,
-            "quantity": self.quantity,
-            "units": self.units,
-            "axes": list(self.axes),
-            "values": self.values,
-            "axis_coords": {k: v for k, v in self.axis_coords.items()},
-        }
-        if self.wavelength_nm is not None:
-            data["wavelength_nm"] = self.wavelength_nm
-        if self.band_mask is not None:
-            data["band_mask"] = self.band_mask
-        if self.metadata:
-            data["metadata"] = self.metadata
-        return data
+        return self.data.shape[-1]
 
 
-def _guess_data_variable(dataset: xr.Dataset) -> str:
-    if dataset.attrs.get("quantity") and dataset.attrs["quantity"] in dataset:
-        return str(dataset.attrs["quantity"])
-    priority = (
-        "radiance",
-        "reflectance",
-        "brightness_temp",
-        "brightness_temperature",
-        "bt",
-    )
-    for name in priority:
-        if name in dataset.data_vars:
-            return name
-    for name, var in dataset.data_vars.items():
-        if var.ndim == 3:
-            return name
-    if dataset.data_vars:
-        return next(iter(dataset.data_vars))
-    raise ValueError("Dataset contains no variables")
+def geo_from_attrs(attrs: Mapping[str, Any]) -> GeoInfo | None:
+    """Extract a :class:`GeoInfo` instance from dataset attributes."""
 
+    if not attrs:
+        return None
 
-def _guess_units(dataset: xr.Dataset, data: xr.DataArray) -> str:
-    units = data.attrs.get("units")
-    if units:
-        return str(units)
-    for key in ("units", "radiance_units", "brightness_temp_units", "bt_units"):
-        value = dataset.attrs.get(key)
-        if value:
-            return str(value)
-    return ""
+    crs = None
+    transform = None
 
+    crs_keys = ("crs", "crs_wkt", "spatial_ref", "srs")
+    transform_keys = ("transform", "GeoTransform", "geotransform", "affine")
 
-def _guess_quantity(dataset: xr.Dataset, data: xr.DataArray, default: str) -> str:
-    quantity = data.attrs.get("quantity") or dataset.attrs.get("quantity")
-    if quantity:
-        return str(quantity)
-    return default
+    for key in crs_keys:
+        if key in attrs:
+            crs = attrs[key]
+            break
 
+    for key in transform_keys:
+        if key in attrs:
+            transform = attrs[key]
+            break
 
-def _extract_wavelengths(dataset: xr.Dataset, spectral_axis: str | None, bands: int) -> np.ndarray | None:
-    if "wavelength_nm" in dataset.coords:
-        coord = dataset.coords["wavelength_nm"]
-        if coord.ndim == 1 and (spectral_axis is None or spectral_axis in coord.dims):
-            arr = np.asarray(coord.values, dtype=np.float64)
-            if arr.size == bands:
-                return arr
-    for key in ("wavelength", "lambda", "wavelengths"):
-        if key in dataset.coords:
-            coord = dataset.coords[key]
-            if coord.ndim == 1 and (spectral_axis is None or spectral_axis in coord.dims):
-                arr = np.asarray(coord.values, dtype=np.float64)
-                if arr.size == bands:
-                    return arr
-    return None
+    if crs is None and transform is None:
+        return None
 
-
-def _extract_band_mask(dataset: xr.Dataset, spectral_axis: str | None, bands: int) -> np.ndarray | None:
-    if "band_mask" in dataset.data_vars:
-        mask = dataset["band_mask"]
-        if mask.ndim == 1 and (spectral_axis is None or spectral_axis in mask.dims):
-            arr = np.asarray(mask.values, dtype=bool)
-            if arr.size == bands:
-                return arr
-    return None
-
-
-def _default_chunks(shape: tuple[int, ...]) -> tuple[int, ...]:
-    return tuple(max(1, min(64, dim)) for dim in shape)
-
-
-def _json_ready(value: Any) -> Any:
-    return json.loads(json.dumps(value, default=_json_default))
-
-
-def _json_default(obj: Any) -> Any:
-    if isinstance(obj, (np.floating, np.integer)):
-        return obj.item()
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    if isinstance(obj, Path):
-        return str(obj)
-    return str(obj)
-
-
-def _rmtree(path: Path) -> None:
-    for child in path.iterdir():
-        if child.is_dir():
-            _rmtree(child)
-        else:
-            child.unlink()
-    path.rmdir()
+    return GeoInfo(crs=crs, transform=transform)
