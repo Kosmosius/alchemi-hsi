@@ -47,7 +47,7 @@ raster = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/alchemi", "src/alchemi_hsi"]
+packages = ["src/alchemi"]
 
 [tool.black]
 line-length = 100
