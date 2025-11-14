@@ -12,4 +12,4 @@ pytest -q                   # CPU-fast tests
 python -m alchemi.cli --help
 ```
 
-See docs/ for PRD, ARCH, DATA_SPEC, EVAL, ROADMAP, DECISIONS, APPENDIX.
+See docs/ for PRD, ARCH, DATA_SPEC, EVAL, ROADMAP, DECISIONS, APPENDIX. Phase‑1 quickstarts are collected under [`docs/quickstarts/`](docs/quickstarts/)—start with the [CLI walkthrough](docs/quickstarts/cli.md) to explore dataset validation and canonical cube exports end-to-end.
