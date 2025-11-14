@@ -1,3 +1,4 @@
+from . import io
 from .datasets import PairingDataset, SpectrumDataset
 from .gas_sim import inject_synthetic_plume
 from .pairing import LabSensorCache, PairBuilder
@@ -12,6 +13,7 @@ __all__ = [
     "SpectralNoise",
     "SpectrumDataset",
     "inject_synthetic_plume",
+    "io",
     "validate_dataset",
     "validate_srf_dir",
 ]

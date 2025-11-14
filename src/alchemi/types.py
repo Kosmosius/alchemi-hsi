@@ -73,3 +73,63 @@ class SRFMatrix:
     cache_key: str | None = None
 
     def row_integrals(self) -> np.ndarray:
+        integrals = [
+            float(
+                _integrate(
+                    np.asarray(resp, dtype=np.float64),
+                    np.asarray(nm, dtype=np.float64),
+                )
+            )
+            for nm, resp in zip(self.bands_nm, self.bands_resp, strict=True)
+        ]
+        return np.asarray(integrals, dtype=np.float64)
+
+    def normalize_trapz(self) -> SRFMatrix:
+        bands_nm: list[np.ndarray] = []
+        bands_resp: list[np.ndarray] = []
+        for nm, resp in zip(self.bands_nm, self.bands_resp, strict=True):
+            nm_arr = np.asarray(nm, dtype=np.float64)
+            resp_arr = np.asarray(resp, dtype=np.float64)
+            area = float(_integrate(resp_arr, nm_arr))
+            if not np.isfinite(area) or area <= 0.0:
+                msg = "SRF bands must integrate to a positive finite area"
+                raise ValueError(msg)
+            bands_nm.append(nm_arr.copy())
+            bands_resp.append(resp_arr / area)
+
+        return SRFMatrix(
+            self.sensor,
+            np.asarray(self.centers_nm, dtype=np.float64).copy(),
+            bands_nm,
+            bands_resp,
+            version=self.version,
+            cache_key=self.cache_key,
+        )
+
+
+@dataclass
+class SampleMeta:
+    sensor_id: str
+    row: int
+    col: int
+    datetime: Any | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {"sensor": self.sensor_id, "row": self.row, "col": self.col}
+        if self.datetime is not None:
+            data["datetime"] = self.datetime
+        data.update(self.extras)
+        return data
+
+
+@dataclass
+class Sample:
+    spectrum: Spectrum
+    meta: SampleMeta | dict[str, Any]
+
+    def __post_init__(self) -> None:
+        if isinstance(self.meta, SampleMeta):
+            self.meta = self.meta.as_dict()
+        else:
+            self.meta = dict(self.meta)

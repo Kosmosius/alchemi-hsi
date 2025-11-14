@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import xarray as xr
 
-from alchemi_hsi.io.avirisng import avirisng_pixel, load_avirisng_l1b
+from alchemi.data.io import avirisng_pixel, load_avirisng_l1b
 
 
 def _write_avirisng_file(

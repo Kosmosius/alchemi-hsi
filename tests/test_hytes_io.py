@@ -4,7 +4,7 @@ import xarray as xr
 
 from alchemi.physics import bt_to_radiance, radiance_to_bt
 from alchemi.types import SpectrumKind
-from alchemi_hsi.io.hytes import (
+from alchemi.data.io import (
     HYTES_BAND_COUNT,
     HYTES_WAVELENGTHS_NM,
     hytes_pixel_bt,

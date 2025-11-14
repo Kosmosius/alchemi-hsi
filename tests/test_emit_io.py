@@ -5,7 +5,7 @@ pytest.importorskip("rasterio")
 import rasterio
 
 from alchemi.types import SpectrumKind
-from alchemi_hsi.io.emit import emit_pixel, load_emit_l1b
+from alchemi.data.io import emit_pixel, load_emit_l1b
 
 
 @pytest.fixture()
