@@ -1,7 +1,7 @@
 import numpy as np
 
+from alchemi.srf import emit_srf_matrix
 from alchemi.srf.batch_convolve import batch_convolve_lab_to_sensor
-from alchemi_hsi.srf.emit import emit_srf_matrix
 
 
 def _highres_grid() -> np.ndarray:

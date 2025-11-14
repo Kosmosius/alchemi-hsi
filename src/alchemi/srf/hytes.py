@@ -22,7 +22,7 @@ from typing import Dict, Tuple
 import numpy as np
 
 from alchemi.types import SRFMatrix
-from alchemi_hsi.io.hytes import HYTES_WAVELENGTHS_NM
+from alchemi.data.io import HYTES_WAVELENGTHS_NM
 
 _SENSOR_NAME = "HyTES"
 _DEFAULT_VERSION = "v1"

@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from alchemi.types import Spectrum
-from alchemi_hsi.io.splib import SPLIBCatalog, load_splib
+from alchemi.data.io import SPLIBCatalog, load_splib
 
 __all__ = ["load_splib_spectrum"]
 

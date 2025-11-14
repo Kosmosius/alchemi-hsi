@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import xarray as xr
 from alchemi.types import Sample, SampleMeta
-from alchemi_hsi.io.hytes import hytes_pixel_bt
+from alchemi.data.io import hytes_pixel_bt
 
 __all__ = ["load_hytes_pixel"]
 

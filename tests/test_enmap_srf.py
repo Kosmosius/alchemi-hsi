@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from alchemi.srf import SRFRegistry, convolve_lab_to_sensor
+from alchemi.srf import SRFRegistry, convolve_lab_to_sensor, enmap_srf_matrix
 from alchemi.types import Spectrum, SpectrumKind, WavelengthGrid
-from alchemi_hsi.srf import enmap_srf_matrix
 
 
 def _flat_spectrum(start: float, stop: float, value: float = 0.32) -> Spectrum:

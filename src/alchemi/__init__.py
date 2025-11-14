@@ -1,3 +1,4 @@
+from . import data, eval, models, physics, srf, training, utils
 from .types import (
     Sample,
     SampleMeta,
@@ -14,4 +15,11 @@ __all__ = [
     "Spectrum",
     "SpectrumKind",
     "WavelengthGrid",
+    "data",
+    "eval",
+    "models",
+    "physics",
+    "srf",
+    "training",
+    "utils",
 ]

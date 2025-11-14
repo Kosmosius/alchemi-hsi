@@ -1,6 +1,6 @@
 import numpy as np
 
-from alchemi_hsi.srf.hytes import hytes_srf_matrix
+from alchemi.srf import hytes_srf_matrix
 
 
 def test_srf_integral_hytes():

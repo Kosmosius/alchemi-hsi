@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 import xarray as xr
-from alchemi_hsi.io.enmap import enmap_pixel, load_enmap_l1b
+from alchemi.data.io import enmap_pixel, load_enmap_l1b
 
 
 def _write_slice(path, wavelengths_um, radiance_value=1.0, units="W m-2 sr-1 um-1", mask=None):

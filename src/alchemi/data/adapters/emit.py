@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from alchemi_hsi.io.emit import emit_pixel as _emit_pixel
-from alchemi_hsi.io.emit import load_emit_l1b
+from alchemi.data.io import emit_pixel as _emit_pixel
+from alchemi.data.io import load_emit_l1b
 
 __all__ = ["load_emit_l1b", "load_emit_pixel"]
 
