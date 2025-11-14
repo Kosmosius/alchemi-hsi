@@ -1,15 +1,28 @@
-from pathlib import Path
+from __future__ import annotations
 
+from dataclasses import dataclass
+import json
+from pathlib import Path
+from typing import Callable
+
+import numpy as np
 import typer
+import xarray as xr
 import yaml
 
+from .data.cube import Cube
+from .data.io import load_avirisng_l1b, load_emit_l1b, load_enmap_l1b, load_hytes_l1b_bt
 from .data.validators import validate_dataset, validate_srf_dir
+from .io.mako import open_mako_ace, open_mako_btemp, open_mako_l2s
 from .srf import SRFRegistry
 from .training.seed import seed_everything
 from .training.trainer import run_align, run_eval, run_pretrain_mae
 from .utils.logging import get_logger
 
+
 app = typer.Typer(add_completion=False)
+data_app = typer.Typer(add_completion=False)
+app.add_typer(data_app, name="data")
 _LOG = get_logger(__name__)
 
 
@@ -43,6 +56,184 @@ def align(config: str = "configs/train.align.yaml"):
 @app.command()
 def evaluate(config: str = "configs/eval.yaml"):
     run_eval(config)
+
+
+@data_app.command("info")
+def data_info(path: Path) -> None:
+    """Inspect a hyperspectral cube and print a short summary."""
+
+    cube = _load_cube(path)
+    _print_cube_summary(cube)
+
+
+@data_app.command("to-canonical")
+def data_to_canonical(path: Path, out: str = typer.Option("npz", "--out")) -> None:
+    """Write the canonical representation of a hyperspectral cube."""
+
+    cube = _load_cube(path)
+    fmt, destination = _resolve_output_path(path, out)
+
+    if fmt == "npz":
+        cube.to_npz(destination)
+    elif fmt == "zarr":
+        cube.to_zarr(destination)
+    else:  # pragma: no cover - guard against misuse
+        raise typer.BadParameter(f"Unsupported output format: {fmt}")
+
+    typer.echo(f"Wrote canonical {fmt.upper()} cube to {destination}")
+
+
+@dataclass
+class _SniffResult:
+    loader: Callable[[], xr.Dataset]
+    description: str
+
+
+def _load_cube(path: Path) -> Cube:
+    path = path.expanduser()
+    sniffed = _sniff_dataset(path)
+    if sniffed is None:
+        raise typer.BadParameter(f"Could not determine sensor for: {path}")
+    dataset = sniffed.loader()
+    return Cube.from_xarray(dataset)
+
+
+def _resolve_output_path(source: Path, out: str) -> tuple[str, Path]:
+    out_lower = out.lower()
+    if out_lower in {"npz", "zarr"}:
+        destination = source.with_name(f"{source.stem}.canonical.{out_lower}")
+        return out_lower, destination
+
+    destination = Path(out)
+    suffix = destination.suffix.lower().lstrip(".")
+    if suffix not in {"npz", "zarr"}:
+        raise typer.BadParameter("Output must be a .npz or .zarr path or format keyword")
+    return suffix, destination
+
+
+def _sniff_dataset(path: Path) -> _SniffResult | None:
+    for sniff in (
+        _sniff_emit,
+        _sniff_enmap,
+        _sniff_avirisng,
+        _sniff_hytes,
+        _sniff_mako,
+    ):
+        result = sniff(path)
+        if result is not None:
+            return result
+    return None
+
+
+def _sniff_emit(path: Path) -> _SniffResult | None:
+    if not path.is_file():
+        return None
+    name = path.name.lower()
+    if "emit" not in name and path.suffix.lower() not in {".tif", ".tiff"}:
+        return None
+
+    return _SniffResult(lambda: load_emit_l1b(str(path)), "EMIT L1B")
+
+
+def _sniff_enmap(path: Path) -> _SniffResult | None:
+    if path.is_dir():
+        vnir = _find_first(path, "vnir")
+        swir = _find_first(path, "swir")
+        if vnir and swir:
+            return _SniffResult(
+                lambda: load_enmap_l1b(str(vnir), str(swir)),
+                "EnMAP L1B",
+            )
+        return None
+
+    name = path.name.lower()
+    if "enmap" not in name:
+        return None
+
+    partner = _find_partner(path)
+    if partner is None:
+        return None
+
+    if "vnir" in name:
+        return _SniffResult(
+            lambda: load_enmap_l1b(str(path), str(partner)),
+            "EnMAP L1B",
+        )
+    return _SniffResult(
+        lambda: load_enmap_l1b(str(partner), str(path)),
+        "EnMAP L1B",
+    )
+
+
+def _sniff_avirisng(path: Path) -> _SniffResult | None:
+    if not path.is_file():
+        return None
+    name = path.name.lower()
+    if not ("aviris" in name or name.startswith("ang")):
+        if path.suffix.lower() not in {".h5", ".he5", ".hdf", ".nc"}:
+            return None
+
+    return _SniffResult(lambda: load_avirisng_l1b(str(path)), "AVIRIS-NG L1B")
+
+
+def _sniff_hytes(path: Path) -> _SniffResult | None:
+    if not path.is_file():
+        return None
+    name = path.name.lower()
+    if "hytes" not in name and path.suffix.lower() not in {".nc", ".cdf"}:
+        return None
+
+    return _SniffResult(lambda: load_hytes_l1b_bt(str(path)), "HyTES L1B")
+
+
+def _sniff_mako(path: Path) -> _SniffResult | None:
+    if not path.exists():
+        return None
+
+    name = path.name.lower()
+    suffix = path.suffix.lower()
+    if suffix not in {".hdr", ".img", ".dat"} and "mako" not in name and "comex" not in name:
+        return None
+
+    if "ace" in name:
+        return _SniffResult(lambda: open_mako_ace(path), "Mako ACE")
+    if "bt" in name or "btemp" in name:
+        return _SniffResult(lambda: open_mako_btemp(path), "Mako BTEMP")
+    return _SniffResult(lambda: open_mako_l2s(path), "Mako L2S")
+
+
+def _find_first(root: Path, keyword: str) -> Path | None:
+    keyword = keyword.lower()
+    for candidate in sorted(root.iterdir()):
+        if keyword in candidate.name.lower():
+            return candidate
+    return None
+
+
+def _find_partner(path: Path) -> Path | None:
+    keyword = "swir" if "vnir" in path.name.lower() else "vnir"
+    return _find_first(path.parent, keyword)
+
+
+def _print_cube_summary(cube: Cube) -> None:
+    typer.echo(f"Sensor: {cube.sensor}")
+    typer.echo(f"Quantity: {cube.quantity} [{cube.units}]")
+    axis_parts = [f"{name}={size}" for name, size in zip(cube.axes, cube.shape)]
+    typer.echo("Shape: " + ", ".join(axis_parts))
+
+    if cube.wavelength_nm is not None and cube.wavelength_nm.size:
+        start = float(cube.wavelength_nm[0])
+        end = float(cube.wavelength_nm[-1])
+        typer.echo(f"Spectral range: {start:.2f}–{end:.2f} nm ({cube.wavelength_nm.size} bands)")
+
+    if cube.band_mask is not None:
+        total = cube.band_mask.size
+        good = int(np.count_nonzero(cube.band_mask))
+        typer.echo(f"Band mask: {good}/{total} bands marked good")
+
+    if cube.metadata:
+        meta_json = json.dumps(cube.metadata, sort_keys=True)
+        typer.echo(f"Metadata: {meta_json}")
 
 
 if __name__ == "__main__":
