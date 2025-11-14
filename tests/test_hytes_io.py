@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from alchemi.physics import bt_to_radiance, radiance_to_bt
+from alchemi.physics import bt_K_to_radiance, radiance_to_bt_K
 from alchemi.types import SpectrumKind
 from alchemi.data.io import (
     HYTES_BAND_COUNT,
@@ -66,6 +66,6 @@ def test_load_hytes_l1b_bt_and_pixel(tmp_path):
 @pytest.mark.parametrize("temps", [np.array([220.0, 280.0, 330.0], dtype=np.float64)])
 def test_bt_roundtrip_tests(temps):
     wavelengths = HYTES_WAVELENGTHS_NM[[0, HYTES_BAND_COUNT // 2, HYTES_BAND_COUNT - 1]]
-    radiance = bt_to_radiance(temps, wavelengths)
-    recovered = radiance_to_bt(radiance, wavelengths)
+    radiance = bt_K_to_radiance(temps, wavelengths)
+    recovered = radiance_to_bt_K(radiance, wavelengths)
     np.testing.assert_allclose(recovered, temps, rtol=1e-6, atol=1e-6)
