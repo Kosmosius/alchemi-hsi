@@ -1,4 +1,5 @@
 from . import io
+from .cube import Cube, GeoInfo, geo_from_attrs
 from .datasets import PairingDataset, SpectrumDataset
 from .gas_sim import inject_synthetic_plume
 from .pairing import LabSensorCache, PairBuilder
@@ -12,8 +13,11 @@ __all__ = [
     "RandomBandDropout",
     "SpectralNoise",
     "SpectrumDataset",
+    "Cube",
+    "GeoInfo",
     "inject_synthetic_plume",
     "io",
+    "geo_from_attrs",
     "validate_dataset",
     "validate_srf_dir",
 ]
