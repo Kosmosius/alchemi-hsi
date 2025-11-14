@@ -7,4 +7,4 @@ select = ["E", "F", "I", "B", "UP", "NPY", "RUF", "W"]
 ignore = ["E203"]
 
 [lint.isort]
-known-first-party = ["alchemi", "alchemi_hsi"]
+known-first-party = ["alchemi"]
