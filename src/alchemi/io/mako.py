@@ -10,13 +10,23 @@ import xarray as xr
 
 from alchemi.types import Spectrum, SpectrumKind, WavelengthGrid
 
-__all__ = ["MAKO_BAND_COUNT", "open_mako_l2s", "mako_pixel_radiance"]
+__all__ = [
+    "ACE_GAS_NAMES",
+    "MAKO_BAND_COUNT",
+    "open_mako_ace",
+    "open_mako_btemp",
+    "open_mako_l2s",
+    "mako_pixel_bt",
+    "mako_pixel_radiance",
+]
 
 MAKO_BAND_COUNT = 128
 MAKO_SENSOR_ID = "mako"
 _TARGET_RADIANCE_UNITS = "W·m⁻²·sr⁻¹·nm⁻¹"
 _SOURCE_RADIANCE_UNITS = "µW·cm⁻²·sr⁻¹·µm⁻¹"
 _MICROFLICK_TO_W_M2_SR_NM = 1e-5
+_CELSIUS_TO_KELVIN = 273.15
+ACE_GAS_NAMES = ["NH3", "CO2", "CH4", "NO2", "N2O"]
 
 
 def open_mako_l2s(path: Path | str) -> xr.Dataset:
@@ -82,6 +92,62 @@ def open_mako_l2s(path: Path | str) -> xr.Dataset:
     ds.coords["wavelength_nm"].attrs["units"] = "nm"
     return ds
 
+
+def open_mako_btemp(path: Path | str) -> xr.Dataset:
+    """Open a COMEX Mako Level-3 BTEMP cube with temperatures in Kelvin."""
+
+    data_path, header_path = _resolve_paths(Path(path))
+    header = _read_envi_header(header_path)
+
+    wavelengths_nm = _wavelengths_from_header(header)
+    if wavelengths_nm.size != MAKO_BAND_COUNT:
+        msg = "Mako BTEMP cubes must contain 128 spectral bands"
+        raise ValueError(msg)
+
+    band_mask = _band_mask_from_header(header)
+
+    with rasterio.open(data_path) as src:
+        data = src.read(out_dtype=np.float64)
+        height, width = src.height, src.width
+
+    if data.shape[0] != MAKO_BAND_COUNT:
+        msg = "ENVI cube band count does not match Mako specification"
+        raise ValueError(msg)
+
+    bt_kelvin = np.moveaxis(data, 0, -1) + _CELSIUS_TO_KELVIN
+
+    coords = {
+        "y": np.arange(height, dtype=np.int32),
+        "x": np.arange(width, dtype=np.int32),
+        "band": np.arange(MAKO_BAND_COUNT, dtype=np.int32),
+    }
+
+    ds = xr.Dataset(coords=coords)
+    ds = ds.assign_coords(wavelength_nm=("band", wavelengths_nm))
+
+    ds["bt"] = xr.DataArray(
+        bt_kelvin,
+        dims=("y", "x", "band"),
+        coords={**coords, "wavelength_nm": ("band", wavelengths_nm)},
+        attrs={"units": "K", "source_units": "°C"},
+    )
+
+    if band_mask is not None:
+        ds["band_mask"] = xr.DataArray(
+            band_mask,
+            dims=("band",),
+            coords={"band": coords["band"]},
+        )
+
+    ds.attrs.update(
+        sensor=MAKO_SENSOR_ID,
+        bt_units="K",
+        source_bt_units="°C",
+    )
+    ds.coords["wavelength_nm"].attrs["units"] = "nm"
+    return ds
+
+
 def mako_pixel_radiance(ds: xr.Dataset, row: int, col: int) -> Spectrum:
     """Extract a single pixel spectrum from a Mako L2S dataset."""
 
@@ -116,6 +182,76 @@ def mako_pixel_radiance(ds: xr.Dataset, row: int, col: int) -> Spectrum:
         mask=mask,
         meta=meta,
     )
+
+
+def mako_pixel_bt(ds: xr.Dataset, row: int, col: int) -> Spectrum:
+    """Extract a single pixel BTEMP spectrum with values expressed in Kelvin."""
+
+    if "bt" not in ds.data_vars or "wavelength_nm" not in ds.coords:
+        msg = "Dataset must contain 'bt' variable and 'wavelength_nm' coordinate"
+        raise KeyError(msg)
+
+    bt = ds["bt"].sel(y=row, x=col)
+    values = np.asarray(bt.values, dtype=np.float64)
+
+    units = bt.attrs.get("units") or ds.attrs.get("bt_units")
+    values = _ensure_kelvin(values, units)
+
+    wavelengths = np.asarray(ds.coords["wavelength_nm"].values, dtype=np.float64)
+
+    mask = None
+    if "band_mask" in ds.data_vars:
+        mask = np.asarray(ds["band_mask"].values, dtype=bool)
+
+    meta = {
+        "sensor": ds.attrs.get("sensor", MAKO_SENSOR_ID),
+        "y": int(ds.coords["y"].values[row]) if "y" in ds.coords else int(row),
+        "x": int(ds.coords["x"].values[col]) if "x" in ds.coords else int(col),
+    }
+
+    return Spectrum(
+        wavelengths=WavelengthGrid(wavelengths),
+        values=values,
+        kind=SpectrumKind.BT,
+        units="K",
+        mask=mask,
+        meta=meta,
+    )
+
+
+def open_mako_ace(path: Path | str) -> xr.Dataset:
+    """Open a COMEX Mako Level-3 ACE cube with named gas bands."""
+
+    data_path, header_path = _resolve_paths(Path(path))
+    _ = _read_envi_header(header_path)
+
+    with rasterio.open(data_path) as src:
+        data = src.read(out_dtype=np.float64)
+        height, width = src.height, src.width
+
+    if data.shape[0] != len(ACE_GAS_NAMES):
+        msg = "Mako ACE cubes must contain five gas bands"
+        raise ValueError(msg)
+
+    ace_scores = np.moveaxis(data, 0, -1)
+
+    coords = {
+        "y": np.arange(height, dtype=np.int32),
+        "x": np.arange(width, dtype=np.int32),
+        "gas_band": np.arange(len(ACE_GAS_NAMES), dtype=np.int32),
+        "gas_name": xr.IndexVariable("gas_band", np.asarray(ACE_GAS_NAMES, dtype=object)),
+    }
+
+    ds = xr.Dataset(coords=coords)
+    ds["ace"] = xr.DataArray(
+        ace_scores,
+        dims=("y", "x", "gas_band"),
+        coords={**coords, "gas_name": ("gas_band", ACE_GAS_NAMES)},
+        attrs={"units": "dimensionless"},
+    )
+
+    ds.attrs.update(sensor=MAKO_SENSOR_ID)
+    return ds
 
 
 def _resolve_paths(path: Path) -> tuple[Path, Path]:
@@ -213,6 +349,20 @@ def _ensure_nanometres(wavelengths: np.ndarray, units: str | None) -> np.ndarray
     if normalized in {"um", "µm", "micron", "microns", "micrometer", "micrometers"}:
         return wavelengths * 1000.0
     msg = f"Unsupported wavelength units: {units}"
+    raise ValueError(msg)
+
+
+def _ensure_kelvin(values: np.ndarray, units: str | None) -> np.ndarray:
+    if units is None:
+        return values
+
+    normalized = units.strip().lower()
+    if normalized in {"k", "kelvin"}:
+        return values
+    if normalized in {"c", "°c", "degc", "celsius", "degrees c", "degrees-c"}:
+        return values + _CELSIUS_TO_KELVIN
+
+    msg = f"Unsupported BT units: {units}"
     raise ValueError(msg)
 
 
