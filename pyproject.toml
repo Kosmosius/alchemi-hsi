@@ -36,6 +36,7 @@ dev = [
   "isort>=5.13.2",
   "mypy>=1.10.0",
   "pre-commit>=3.7",
+  "hypothesis>=6.100",
 ]
 io = [
   "h5py>=3.10",
