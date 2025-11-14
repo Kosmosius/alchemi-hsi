@@ -33,6 +33,7 @@ labels:
   - sensor:enmap
   - sensor:avirisng
   - sensor:hytes
+  - sensor:mako
   - sensor:lab
   - type:feature
   - type:bug
