@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -18,19 +17,19 @@ def _synthetic_cube() -> Cube:
         "x": np.array([10, 11, 12], dtype=np.int32),
         "band": np.arange(4, dtype=np.int32),
     }
-    wavelength_nm = np.linspace(400, 700, 4, dtype=np.float64)
     band_mask = np.array([True, False, True, True])
-    metadata = {"mission": "synthetic"}
+    wavelength_nm = np.linspace(400, 700, 4, dtype=np.float64)
     return Cube(
-        sensor="synthetic",
-        quantity="radiance",
-        values=values,
-        axes=("y", "x", "band"),
-        units="W·m⁻²·sr⁻¹·nm⁻¹",
+        data=values,
+        axis=wavelength_nm,
+        axis_unit="wavelength_nm",
+        value_kind="radiance",
+        axis_names=("y", "x", "band"),
         axis_coords=axis_coords,
-        wavelength_nm=wavelength_nm,
         band_mask=band_mask,
-        metadata=metadata,
+        sensor="synthetic",
+        units="W·m⁻²·sr⁻¹·nm⁻¹",
+        attrs={"mission": "synthetic"},
     )
 
 
@@ -44,7 +43,7 @@ def test_data_info_prints_summary(monkeypatch):
     assert result.exit_code == 0
     assert "Sensor: synthetic" in result.stdout
     assert "Shape: y=2, x=3, band=4" in result.stdout
-    assert "Spectral range: 400.00–700.00 nm" in result.stdout
+    assert "Spectral range: 400.00-700.00 nm" in result.stdout
     assert "Band mask: 3/4 bands marked good" in result.stdout
 
 

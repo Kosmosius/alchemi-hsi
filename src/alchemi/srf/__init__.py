@@ -13,14 +13,23 @@ from .resample import (
     gaussian_resample,
     project_to_sensor,
 )
-from .synthetic import rand_srf_grid
+from .synthetic import (
+    ProjectedSpectrum,
+    SyntheticSensorConfig,
+    project_lab_to_synthetic,
+    rand_srf_grid,
+)
 
 __all__ = [
+    "MAKO_BAND_COUNT",
+    "ProjectedSpectrum",
     "SRFRegistry",
+    "SyntheticSensorConfig",
     "avirisng_bad_band_mask",
     "avirisng_srf_matrix",
     "batch_convolve_lab_to_sensor",
     "boxcar_resample",
+    "build_mako_srf_from_header",
     "build_matrix_from_centers",
     "convolve_lab_to_sensor",
     "convolve_to_bands",
@@ -28,12 +37,11 @@ __all__ = [
     "enmap_srf_matrix",
     "gaussian_resample",
     "gaussian_srf",
-    "hytes_srf_matrix",
-    "MAKO_BAND_COUNT",
-    "build_mako_srf_from_header",
     "get_srf",
+    "hytes_srf_matrix",
     "mako_lwir_grid_nm",
-    "rand_srf_grid",
+    "project_lab_to_synthetic",
     "project_to_sensor",
+    "rand_srf_grid",
     "validate_srf_matrix",
 ]
