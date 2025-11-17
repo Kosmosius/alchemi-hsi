@@ -1,28 +1,137 @@
-"""Synthetic sensor response generator for randomized SRFs."""
+"""Synthetic sensor response generator for SRF-randomised training paths."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Literal, Sequence
+from typing import Literal
 
 import numpy as np
 
-from alchemi.types import SRFMatrix
+from ..types import SRFMatrix
+from .resample import project_to_sensor
 
-try:
+try:  # NumPy >= 2.0
     from numpy import trapezoid as _integrate
-except ImportError:  # pragma: no cover - NumPy < 2.0 fallback
+except ImportError:  # pragma: no cover - fallback for NumPy < 2.0
     from numpy import trapz as _integrate  # type: ignore[attr-defined]
 
 ShapeKind = Literal["gaussian", "box", "hamming"]
+
+
+@dataclass(slots=True)
+class SyntheticSensorConfig:
+    """Configuration describing the randomised synthetic sensor."""
+
+    highres_axis_nm: np.ndarray
+    n_bands: int
+    center_jitter_nm: float = 0.0
+    fwhm_range_nm: tuple[float, float] = (5.0, 15.0)
+    shape: ShapeKind = "gaussian"
+    seed: int | None = None
+
+    def axis(self) -> np.ndarray:
+        return _validate_grid(self.highres_axis_nm)
+
+
+@dataclass(slots=True)
+class ProjectedSpectrum:
+    """Container for spectra projected onto a synthetic sensor."""
+
+    values: np.ndarray
+    centers_nm: np.ndarray
+    fwhm_nm: np.ndarray
+    srf_matrix: np.ndarray
+    srf_axis_nm: np.ndarray
 
 
 @dataclass(frozen=True)
 class _RandomSpec:
     centers_nm: np.ndarray
     fwhm_nm: np.ndarray
-    bands_nm: list[np.ndarray]
-    bands_resp: list[np.ndarray]
+    dense_resp: np.ndarray
+
+
+def rand_srf_grid(
+    highres_axis: Sequence[float],
+    *,
+    n_bands: int,
+    center_jitter_nm: float,
+    fwhm_range_nm: Iterable[float] | float,
+    shape: ShapeKind,
+    seed: int | np.random.Generator | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Sample a dense SRF matrix expressed on ``highres_axis`` (nm)."""
+
+    wl = _validate_grid(highres_axis)
+    rng = seed if isinstance(seed, np.random.Generator) else np.random.default_rng(seed)
+
+    spec = _generate_random_spec(
+        wl,
+        n_bands=n_bands,
+        center_jitter_nm=center_jitter_nm,
+        fwhm_range_nm=fwhm_range_nm,
+        shape=shape,
+        rng=rng,
+    )
+    return spec.centers_nm.copy(), spec.dense_resp.copy()
+
+
+def project_lab_to_synthetic(
+    lab_values: Sequence[float],
+    lab_axis_nm: Sequence[float],
+    cfg: SyntheticSensorConfig,
+    *,
+    seed: int | None = None,
+) -> ProjectedSpectrum:
+    """Project a lab spectrum onto a randomly sampled synthetic sensor."""
+
+    lab_axis = _validate_grid(lab_axis_nm)
+    lab_vals = np.asarray(lab_values, dtype=np.float64)
+    if lab_vals.ndim != 1 or lab_vals.shape[0] != lab_axis.shape[0]:
+        raise ValueError("lab_values must align with lab_axis_nm")
+
+    highres = cfg.axis()
+    interp = np.interp(highres, lab_axis, lab_vals)
+
+    rng_seed = seed if seed is not None else cfg.seed
+    centers, dense = rand_srf_grid(
+        highres,
+        n_bands=cfg.n_bands,
+        center_jitter_nm=cfg.center_jitter_nm,
+        fwhm_range_nm=cfg.fwhm_range_nm,
+        shape=cfg.shape,
+        seed=rng_seed,
+    )
+    matrix = _dense_to_matrix(highres, centers, dense, cfg.shape)
+    projected = project_to_sensor(highres, interp, centers, srf=matrix)
+
+    fwhm = np.asarray([estimate_fwhm(highres, row) for row in dense], dtype=np.float64)
+    return ProjectedSpectrum(
+        values=np.asarray(projected, dtype=np.float64),
+        centers_nm=centers,
+        fwhm_nm=fwhm,
+        srf_matrix=dense.astype(np.float32, copy=False),
+        srf_axis_nm=highres.copy(),
+    )
+
+
+def _dense_to_matrix(
+    highres_axis: np.ndarray,
+    centers: np.ndarray,
+    dense: np.ndarray,
+    shape: ShapeKind,
+) -> SRFMatrix:
+    bands_nm = [highres_axis.copy() for _ in range(dense.shape[0])]
+    bands_resp = [row.astype(np.float64, copy=True) for row in dense]
+    matrix = SRFMatrix(
+        sensor=f"synthetic_{shape}",
+        centers_nm=centers.copy(),
+        bands_nm=bands_nm,
+        bands_resp=bands_resp,
+        version="synthetic",
+    )
+    return matrix.normalize_trapz()
 
 
 def _validate_grid(grid_nm: Sequence[float]) -> np.ndarray:
@@ -36,7 +145,9 @@ def _validate_grid(grid_nm: Sequence[float]) -> np.ndarray:
     return wl
 
 
-def _validate_fwhm_range(fwhm_range_nm: Iterable[float] | float, n_bands: int) -> tuple[np.ndarray, bool]:
+def _validate_fwhm_range(
+    fwhm_range_nm: Iterable[float] | float, n_bands: int
+) -> tuple[np.ndarray, bool]:
     if np.isscalar(fwhm_range_nm):
         width = float(fwhm_range_nm)
         if not np.isfinite(width) or width <= 0:
@@ -138,66 +249,11 @@ def _generate_random_spec(
         else:
             fwhm = rng.uniform(lo, hi, size=n_bands)
 
-    bands_nm: list[np.ndarray] = []
-    bands_resp: list[np.ndarray] = []
-    for center, width in zip(centers, fwhm, strict=True):
-        resp = _band_response(wl, float(center), float(width), shape)
-        bands_nm.append(wl.copy())
-        bands_resp.append(resp)
+    dense_resp = np.zeros((n_bands, wl.shape[0]), dtype=np.float64)
+    for idx, (center, width) in enumerate(zip(centers, fwhm, strict=True)):
+        dense_resp[idx] = _band_response(wl, float(center), float(width), shape)
 
-    return _RandomSpec(centers, np.asarray(fwhm, dtype=np.float64), bands_nm, bands_resp)
-
-
-def rand_srf_grid(
-    grid_nm: Sequence[float],
-    *,
-    n_bands: int,
-    center_jitter_nm: float,
-    fwhm_range_nm: Iterable[float] | float,
-    shape: ShapeKind,
-    seed: int | np.random.Generator | None = None,
-) -> tuple[np.ndarray, SRFMatrix]:
-    """Sample a random SRF matrix over ``grid_nm``.
-
-    Parameters
-    ----------
-    grid_nm:
-        Monotonic wavelength grid describing the high-resolution support (nm).
-    n_bands:
-        Number of sensor bands to synthesize.
-    center_jitter_nm:
-        Maximum absolute perturbation applied to evenly spaced band centers (nm).
-    fwhm_range_nm:
-        Either a scalar FWHM (nm) or a ``(min, max)`` iterable sampled uniformly.
-    shape:
-        Response profile to use when drawing SRFs.
-    seed:
-        Optional random seed or generator for determinism.
-    """
-
-    wl = _validate_grid(grid_nm)
-    if isinstance(seed, np.random.Generator):
-        rng = seed
-    else:
-        rng = np.random.default_rng(seed)
-
-    spec = _generate_random_spec(
-        wl,
-        n_bands=n_bands,
-        center_jitter_nm=center_jitter_nm,
-        fwhm_range_nm=fwhm_range_nm,
-        shape=shape,
-        rng=rng,
-    )
-
-    matrix = SRFMatrix(
-        sensor=f"synthetic_{shape}",
-        centers_nm=spec.centers_nm,
-        bands_nm=spec.bands_nm,
-        bands_resp=spec.bands_resp,
-        version="synthetic",
-    )
-    return wl.copy(), matrix
+    return _RandomSpec(centers, np.asarray(fwhm, dtype=np.float64), dense_resp)
 
 
 def estimate_fwhm(band_wl_nm: np.ndarray, band_resp: np.ndarray) -> float:
@@ -225,7 +281,6 @@ def estimate_fwhm(band_wl_nm: np.ndarray, band_resp: np.ndarray) -> float:
     if left == right:
         return 0.0
 
-    # Linear interpolation for the leading edge
     if left == 0:
         left_pos = wl[left]
     else:
@@ -234,7 +289,6 @@ def estimate_fwhm(band_wl_nm: np.ndarray, band_resp: np.ndarray) -> float:
         frac_left = (half - y0) / (y1 - y0) if y1 != y0 else 0.0
         left_pos = x0 + frac_left * (x1 - x0)
 
-    # Linear interpolation for the trailing edge
     if right == wl.size - 1:
         right_pos = wl[right]
     else:
@@ -247,3 +301,13 @@ def estimate_fwhm(band_wl_nm: np.ndarray, band_resp: np.ndarray) -> float:
             right_pos = x0r + frac_right * (x1r - x0r)
 
     return float(right_pos - left_pos)
+
+
+__all__ = [
+    "ProjectedSpectrum",
+    "SyntheticSensorConfig",
+    "estimate_fwhm",
+    "project_lab_to_synthetic",
+    "rand_srf_grid",
+]
+

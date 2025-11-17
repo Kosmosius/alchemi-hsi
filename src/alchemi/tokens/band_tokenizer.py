@@ -2,81 +2,62 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Iterable, Literal, Sequence
+from typing import Literal, TypeAlias
 
 import numpy as np
+import numpy.typing as npt
 
-from ..srf.registry import SRFRegistry, get_srf
+from ..srf.utils import default_band_widths
 
 AxisUnit = Literal["nm", "cm-1"]
+ValueNorm = Literal["none", "per_spectrum_zscore", "global_zscore", "robust"]
+FloatArray: TypeAlias = npt.NDArray[np.float64]
+
+
+@dataclass(slots=True)
+class ValueStats:
+    """Global statistics used when applying ``global_zscore`` normalisation."""
+
+    mean: FloatArray | Sequence[float] | float
+    std: FloatArray | Sequence[float] | float
 
 
 @dataclass(slots=True)
 class BandTokConfig:
-    """Configuration for :class:`BandTokenizer`.
+    """Configuration parameters describing the band tokeniser behaviour."""
 
-    Parameters
-    ----------
-    value_norm:
-        Normalisation strategy applied to band values. ``"zscore"`` expects
-        pre-computed global statistics (``value_mean`` and ``value_std``), while
-        ``"robust"`` performs per-spectrum median/IQR scaling.
-    lambda_norm:
-        Normalisation applied to wavelength coordinates. ``"zscore"`` relies on
-        the provided (or inferred) mean and standard deviation, whereas
-        ``"minmax"`` rescales to ``[0, 1]`` on the configured range.
-    n_frequencies:
-        Number of Fourier frequencies used for positional encoding.
-    frequency_base:
-        Base multiplier for the Fourier frequencies. Each subsequent frequency
-        is ``frequency_base * 2**k`` for ``k`` in ``[0, n_frequencies)``.
-    sensor_id:
-        Optional SRF sensor identifier used when estimating missing FWHM values.
-    default_fwhm_nm:
-        Constant fallback FWHM value (in nanometres) applied when no other
-        information is available. When left ``None`` and ``sensor_id`` is also
-        ``None`` a uniform spacing heuristic is used.
-    pooled_kind:
-        Reduction strategy used for pooled token sequence.
-    epsilon:
-        Numerical stability constant applied to denominators.
-    """
-
-    value_norm: Literal["zscore", "robust"] = "robust"
-    value_mean: np.ndarray | Sequence[float] | float | None = None
-    value_std: np.ndarray | Sequence[float] | float | None = None
-    lambda_norm: Literal["zscore", "minmax"] = "zscore"
-    lambda_mean_nm: float | None = None
-    lambda_std_nm: float | None = None
-    lambda_min_nm: float | None = None
-    lambda_max_nm: float | None = None
-    n_frequencies: int = 8
-    frequency_base: float = 1.0
+    n_fourier_frequencies: int = 6
+    value_norm: ValueNorm = "per_spectrum_zscore"
+    lambda_unit: AxisUnit = "nm"
+    include_width: bool = True
+    include_srf_embed: bool = False
+    token_dim: int = 0
+    axis_norm: Literal["zscore", "minmax"] = "zscore"
+    srf_embed_dim: int = 8
+    projection_seed: int = 7
     sensor_id: str | None = None
-    srf_registry: SRFRegistry | None = None
-    default_fwhm_nm: float | None = None
-    pooled_kind: Literal["mean", "median"] = "mean"
     epsilon: float = 1e-6
 
 
 @dataclass(slots=True)
 class TokenMeta:
-    """Metadata accompanying a tokenised spectrum."""
+    """Metadata captured alongside band tokens."""
 
     axis_unit: AxisUnit
-    value_norm: Literal["zscore", "robust"]
-    wavelength_encoding: Literal["zscore", "minmax"]
-    n_frequencies: int
-    width_unit: Literal["nm"]
-    used_fwhm_default: bool
+    value_norm: ValueNorm
+    token_dim: int
+    n_fourier_frequencies: int
+    include_width: bool
+    include_srf_embed: bool
     invalid_mask: np.ndarray
-    pooled_kind: Literal["mean", "median"]
+    used_default_width: bool
 
 
 @dataclass(slots=True)
 class Tokens:
-    """Container for band-wise tokens and their pooled summary."""
+    """Container for band tokens and pooled summary."""
 
     bands: np.ndarray
     pooled: np.ndarray
@@ -86,8 +67,15 @@ class Tokens:
 class BandTokenizer:
     """Transform spectral bands into fixed-dimensional token representations."""
 
-    def __init__(self, config: BandTokConfig | None = None):
+    def __init__(
+        self,
+        config: BandTokConfig | None = None,
+        stats: ValueStats | None = None,
+    ) -> None:
         self._config = config or BandTokConfig()
+        self._stats = stats
+        self._feature_proj: FloatArray | None = None
+        self._srf_proj: FloatArray | None = None
 
     @property
     def config(self) -> BandTokConfig:
@@ -96,293 +84,226 @@ class BandTokenizer:
     def __call__(
         self,
         values: Sequence[float],
-        lambda_or_nu: Sequence[float],
+        axis: Sequence[float],
         *,
         axis_unit: AxisUnit,
-        fwhm: Sequence[float] | float | None = None,
-        config: BandTokConfig | None = None,
+        width: Sequence[float] | float | None = None,
+        srf_row: np.ndarray | None = None,
     ) -> Tokens:
-        cfg = config or self._config
+        cfg = self._config
 
-        values_arr = np.asarray(values, dtype=np.float64)
-        if values_arr.ndim != 1:
-            msg = "values must be a one-dimensional array"
-            raise ValueError(msg)
+        vals = np.asarray(values, dtype=np.float64)
+        coords = np.asarray(axis, dtype=np.float64)
+        if vals.ndim != 1 or coords.ndim != 1:
+            raise ValueError("values and axis must be one-dimensional")
+        if vals.shape != coords.shape:
+            raise ValueError("values and axis must have matching lengths")
 
-        lambda_arr = self._to_wavelength_nm(lambda_or_nu, axis_unit)
-        if lambda_arr.shape != values_arr.shape:
-            msg = "Spectral axis and values must share the same length"
-            raise ValueError(msg)
+        axis_nm = self._to_nm(coords, axis_unit)
+        axis_target = self._convert_axis(coords, axis_unit, cfg.lambda_unit)
 
-        fwhm_nm, used_fallback = self._prepare_fwhm(fwhm, axis_unit, lambda_arr, cfg)
+        norm_values, invalid_mask = self._normalise_values(vals)
+        axis_features = self._normalise_axis(axis_target)
+        fourier = self._fourier_features(axis_features)
 
-        value_tokens = self._normalise_values(values_arr, cfg)
-        lambda_norm = self._normalise_lambda(lambda_arr, cfg)
-        fourier_feats = self._fourier_features(lambda_norm, cfg)
-        width_ratio = self._bandwidth_ratio(lambda_arr, fwhm_nm, cfg)
+        width_features = None
+        used_default = False
+        if cfg.include_width:
+            width_nm, used_default = self._resolve_width(width, axis_nm, axis_unit)
+            width_features = self._normalise_width(width_nm)
 
-        bands = np.concatenate(
-            [
-                value_tokens[:, None],
-                lambda_norm[:, None],
-                fourier_feats,
-                width_ratio[:, None],
-            ],
-            axis=1,
+        srf_features = None
+        if cfg.include_srf_embed and srf_row is not None:
+            srf_features = self._compress_srf_features(srf_row)
+
+        features = [norm_values[:, None], axis_features[:, None], fourier]
+        if width_features is not None:
+            features.append(width_features[:, None])
+        if srf_features is not None:
+            features.append(srf_features)
+        raw = np.concatenate([feat for feat in features if feat.size], axis=1).astype(
+            np.float64, copy=False
         )
 
-        pooled = self._pool_tokens(bands, cfg)
+        bands = self._project_features(raw).astype(np.float32, copy=False)
+        pooled = np.nanmean(bands, axis=0).astype(np.float32, copy=False)
 
         meta = TokenMeta(
             axis_unit=axis_unit,
             value_norm=cfg.value_norm,
-            wavelength_encoding=cfg.lambda_norm,
-            n_frequencies=cfg.n_frequencies,
-            width_unit="nm",
-            used_fwhm_default=used_fallback,
-            invalid_mask=~np.isfinite(values_arr),
-            pooled_kind=cfg.pooled_kind,
+            token_dim=bands.shape[1],
+            n_fourier_frequencies=cfg.n_fourier_frequencies,
+            include_width=cfg.include_width,
+            include_srf_embed=cfg.include_srf_embed,
+            invalid_mask=invalid_mask,
+            used_default_width=used_default,
         )
-
         return Tokens(bands=bands, pooled=pooled, meta=meta)
 
-    def _pool_tokens(self, bands: np.ndarray, cfg: BandTokConfig) -> np.ndarray:
-        if bands.size == 0:
-            return np.zeros(bands.shape[1], dtype=np.float64)
-        if cfg.pooled_kind == "mean":
-            pooled = np.nanmean(bands, axis=0)
-        else:
-            pooled = np.nanmedian(bands, axis=0)
-        return pooled.astype(np.float64, copy=False)
-
-    def _normalise_values(self, values: np.ndarray, cfg: BandTokConfig) -> np.ndarray:
-        finite_mask = np.isfinite(values)
-        cleaned = values.copy()
-        cleaned[~finite_mask] = 0.0
-
+    def _normalise_values(self, values: FloatArray) -> tuple[FloatArray, np.ndarray]:
+        cfg = self._config
         eps = cfg.epsilon
+        mask = np.isfinite(values)
+        if not np.any(mask):
+            return np.zeros_like(values), ~mask
 
-        if cfg.value_norm == "zscore" and cfg.value_mean is not None and cfg.value_std is not None:
-            mean = _broadcastable(cfg.value_mean, cleaned.shape)
-            std = _broadcastable(cfg.value_std, cleaned.shape)
+        if cfg.value_norm == "none":
+            cleaned = np.where(mask, values, 0.0).astype(np.float64, copy=False)
+            return cleaned, ~mask
+
+        cleaned = np.where(mask, values, np.nan).astype(np.float64, copy=False)
+
+        if cfg.value_norm == "per_spectrum_zscore":
+            mean_scalar = float(np.nanmean(cleaned))
+            std_scalar = float(np.nanstd(cleaned))
+            mean = np.full(values.shape, mean_scalar, dtype=np.float64)
+            std = np.full(values.shape, std_scalar, dtype=np.float64)
+        elif cfg.value_norm == "robust":
+            median = float(np.nanmedian(cleaned))
+            quantiles: FloatArray = np.nanpercentile(cleaned, [25.0, 75.0]).astype(
+                np.float64, copy=False
+            )
+            q25 = float(quantiles[0])
+            q75 = float(quantiles[1])
+            mean = np.full(values.shape, median, dtype=np.float64)
+            std = np.full(values.shape, float(q75 - q25), dtype=np.float64)
+        elif cfg.value_norm == "global_zscore":
+            if self._stats is None:
+                raise ValueError("global_zscore requested but ValueStats were not provided")
+            mean = self._broadcast(values.shape, self._stats.mean)
+            std = self._broadcast(values.shape, self._stats.std)
         else:
-            valid = cleaned[finite_mask]
-            if valid.size == 0:
-                mean = 0.0
-                std = 1.0
-            elif cfg.value_norm == "zscore":
-                mean = float(np.mean(valid))
-                std = float(np.std(valid))
-            else:
-                median = float(np.median(valid))
-                q25, q75 = np.quantile(valid, [0.25, 0.75])
-                mean = median
-                std = float(q75 - q25)
+            raise ValueError(f"Unsupported value normalisation '{cfg.value_norm}'")
 
-        std = np.maximum(np.asarray(std, dtype=np.float64), eps)
-        mean = np.asarray(mean, dtype=np.float64)
+        std = np.maximum(std, eps)
+        normed = (cleaned - mean) / std
+        normed[~mask] = 0.0
+        return normed.astype(np.float64, copy=False), ~mask
 
-        tokens = (cleaned - mean) / std
-        tokens[~finite_mask] = 0.0
-        return tokens
-
-    def _normalise_lambda(self, lambda_nm: np.ndarray, cfg: BandTokConfig) -> np.ndarray:
+    def _normalise_axis(self, axis: FloatArray) -> FloatArray:
+        cfg = self._config
         eps = cfg.epsilon
-        if cfg.lambda_norm == "zscore":
-            mean = cfg.lambda_mean_nm if cfg.lambda_mean_nm is not None else np.mean(lambda_nm)
-            std = cfg.lambda_std_nm if cfg.lambda_std_nm is not None else np.std(lambda_nm)
-            std = float(max(std, eps))
-            normed = (lambda_nm - mean) / std
-        else:
-            min_nm = cfg.lambda_min_nm if cfg.lambda_min_nm is not None else float(np.min(lambda_nm))
-            max_nm = cfg.lambda_max_nm if cfg.lambda_max_nm is not None else float(np.max(lambda_nm))
-            span = max(max_nm - min_nm, eps)
-            normed = (lambda_nm - min_nm) / span
-        return np.asarray(normed, dtype=np.float64)
+        if cfg.axis_norm == "zscore":
+            mean = float(np.mean(axis))
+            std = float(np.std(axis))
+            std = max(std, eps)
+            return ((axis - mean) / std).astype(np.float64, copy=False)
+        if cfg.axis_norm == "minmax":
+            lo = float(np.min(axis))
+            hi = float(np.max(axis))
+            span = max(hi - lo, eps)
+            return ((axis - lo) / span).astype(np.float64, copy=False)
+        raise ValueError(f"Unsupported axis_norm '{cfg.axis_norm}'")
 
-    def _fourier_features(self, lambda_norm: np.ndarray, cfg: BandTokConfig) -> np.ndarray:
-        n_freq = int(max(cfg.n_frequencies, 0))
+    def _fourier_features(self, axis_norm: FloatArray) -> FloatArray:
+        n_freq = max(int(self._config.n_fourier_frequencies), 0)
         if n_freq == 0:
-            return np.zeros((lambda_norm.shape[0], 0), dtype=np.float64)
+            return np.zeros((axis_norm.shape[0], 0), dtype=np.float64)
+        freq_indices: FloatArray = np.arange(n_freq, dtype=np.float64)
+        scales = np.pi * (2.0**freq_indices)
+        angles = np.outer(axis_norm, scales)
+        return np.concatenate([np.sin(angles), np.cos(angles)], axis=1).astype(np.float64, copy=False)
 
-        freqs = cfg.frequency_base * (2.0 ** np.arange(n_freq, dtype=np.float64))
-        angles = 2.0 * np.pi * np.outer(lambda_norm, freqs)
-        sin_feats = np.sin(angles)
-        cos_feats = np.cos(angles)
-        return np.concatenate([sin_feats, cos_feats], axis=1)
-
-    def _bandwidth_ratio(
-        self, lambda_nm: np.ndarray, fwhm_nm: np.ndarray, cfg: BandTokConfig
-    ) -> np.ndarray:
-        deltas = _band_spacing(lambda_nm)
-        eps = cfg.epsilon
-        denom = np.maximum(fwhm_nm, eps)
-        ratio = deltas / denom
-        ratio[~np.isfinite(ratio)] = 0.0
-        return ratio
-
-    def _prepare_fwhm(
+    def _resolve_width(
         self,
-        fwhm: Sequence[float] | float | None,
+        width: Sequence[float] | float | None,
+        axis_nm: FloatArray,
         axis_unit: AxisUnit,
-        lambda_nm: np.ndarray,
-        cfg: BandTokConfig,
-    ) -> tuple[np.ndarray, bool]:
-        if fwhm is not None:
-            fwhm_arr = np.asarray(fwhm, dtype=np.float64)
-            if fwhm_arr.ndim == 0:
-                fwhm_arr = np.full_like(lambda_nm, float(fwhm_arr))
-            if fwhm_arr.shape != lambda_nm.shape:
-                msg = "FWHM array must match the spectral axis length"
-                raise ValueError(msg)
+    ) -> tuple[FloatArray, bool]:
+        cfg = self._config
+        if width is not None:
+            arr = np.asarray(width, dtype=np.float64)
+            if arr.ndim == 0:
+                arr = np.full(axis_nm.shape, float(arr), dtype=np.float64)
+            if arr.shape != axis_nm.shape:
+                raise ValueError("width must align with the spectral axis")
             if axis_unit == "cm-1":
-                fwhm_arr = _wavenumber_to_wavelength_width(lambda_nm, fwhm_arr)
-            return fwhm_arr, False
+                # Convert from wavenumber (cm^-1) to nanometres via derivative dλ/dnu.
+                nu = 1.0e7 / axis_nm
+                arr = (1.0e7 / (nu**2)) * arr
+            return arr.astype(np.float64, copy=False), False
 
-        fwhm_nm, source = self._estimate_fwhm(lambda_nm, cfg)
-        return fwhm_nm, source != "srf"
+        widths = default_band_widths(cfg.sensor_id, axis_nm)
+        return widths.astype(np.float64, copy=False), True
 
-    def _estimate_fwhm(
-        self, lambda_nm: np.ndarray, cfg: BandTokConfig
-    ) -> tuple[np.ndarray, str]:
-        if cfg.sensor_id:
-            registry = cfg.srf_registry
-            srf = None
-            if registry is not None:
-                try:
-                    srf = registry.get(cfg.sensor_id)
-                except FileNotFoundError:
-                    srf = None
-            if srf is None:
-                try:
-                    srf, _ = get_srf(cfg.sensor_id)
-                except ValueError:
-                    srf = None
-            if srf is not None:
-                fwhm = _fwhm_from_srf(srf, lambda_nm)
-                if fwhm is not None:
-                    return fwhm, "srf"
+    def _normalise_width(self, width_nm: FloatArray) -> FloatArray:
+        eps = self._config.epsilon
+        width = np.asarray(width_nm, dtype=np.float64)
+        width[width <= 0] = np.nan
+        fallback = float(np.nanmean(width)) if np.any(np.isfinite(width)) else 1.0
+        logw = np.log1p(np.nan_to_num(width, nan=fallback))
+        logw -= np.nanmean(logw)
+        std_val = float(np.nanstd(logw))
+        std = max(std_val, eps)
+        return (logw / std).astype(np.float64, copy=False)
 
-        if cfg.default_fwhm_nm is not None:
-            arr = np.full(lambda_nm.shape, float(cfg.default_fwhm_nm), dtype=np.float64)
-            return arr, "default"
+    def _compress_srf_features(self, srf_features: np.ndarray) -> FloatArray:
+        cfg = self._config
+        rows = np.asarray(srf_features, dtype=np.float64)
+        if rows.ndim == 1:
+            rows = rows[:, None]
+        if rows.shape[1] == cfg.srf_embed_dim:
+            return rows.astype(np.float64, copy=False)
+        proj = self._srf_proj
+        if proj is None or proj.shape[0] != rows.shape[1]:
+            rng = np.random.default_rng(cfg.projection_seed + 1)
+            proj = rng.standard_normal((rows.shape[1], cfg.srf_embed_dim))
+            norms = np.linalg.norm(proj, axis=0, keepdims=True) + cfg.epsilon
+            proj = proj / norms
+            self._srf_proj = proj
+        return (rows @ proj).astype(np.float64, copy=False)
 
-        deltas = _band_spacing(lambda_nm)
-        mean_delta = float(np.mean(deltas)) if deltas.size else 0.0
-        if mean_delta <= 0.0:
-            mean_delta = 1.0
-        arr = np.full(lambda_nm.shape, mean_delta, dtype=np.float64)
-        return arr, "uniform"
+    def _project_features(self, features: FloatArray) -> FloatArray:
+        cfg = self._config
+        if cfg.token_dim <= 0 or features.shape[1] == cfg.token_dim:
+            return features
+        proj = self._feature_proj
+        if proj is None or proj.shape[0] != features.shape[1]:
+            rng = np.random.default_rng(cfg.projection_seed)
+            proj = rng.standard_normal((features.shape[1], cfg.token_dim))
+            norms = np.linalg.norm(proj, axis=0, keepdims=True) + cfg.epsilon
+            proj = proj / norms
+            self._feature_proj = proj
+        return (features @ proj).astype(np.float64, copy=False)
 
     @staticmethod
-    def _to_wavelength_nm(axis: Sequence[float], axis_unit: AxisUnit) -> np.ndarray:
-        arr = np.asarray(axis, dtype=np.float64)
-        if arr.ndim != 1:
-            msg = "Spectral axis must be one-dimensional"
-            raise ValueError(msg)
+    def _to_nm(axis: np.ndarray, axis_unit: AxisUnit) -> FloatArray:
         if axis_unit == "nm":
-            return arr
+            return axis.astype(np.float64, copy=False)
         if axis_unit == "cm-1":
-            if np.any(arr <= 0):
-                msg = "Wavenumber axis must contain positive values"
-                raise ValueError(msg)
-            return 1.0e7 / arr
-        raise ValueError(f"Unsupported axis unit: {axis_unit!r}")
+            if np.any(axis <= 0):
+                raise ValueError("Wavenumber axis must contain positive values")
+            return (1.0e7 / axis).astype(np.float64, copy=False)
+        raise ValueError(f"Unsupported axis unit '{axis_unit}'")
 
+    def _convert_axis(
+        self,
+        axis: np.ndarray,
+        src_unit: AxisUnit,
+        dst_unit: AxisUnit,
+    ) -> FloatArray:
+        if src_unit == dst_unit:
+            return axis.astype(np.float64, copy=False)
+        if src_unit == "nm" and dst_unit == "cm-1":
+            if np.any(axis <= 0):
+                raise ValueError("Wavelength axis must contain positive values")
+            return (1.0e7 / axis).astype(np.float64, copy=False)
+        if src_unit == "cm-1" and dst_unit == "nm":
+            return self._to_nm(axis, "cm-1")
+        raise ValueError(f"Unsupported axis conversion {src_unit!r} -> {dst_unit!r}")
 
-def _band_spacing(lambda_nm: np.ndarray) -> np.ndarray:
-    if lambda_nm.size == 0:
-        return np.empty(0, dtype=np.float64)
-    diffs = np.diff(lambda_nm)
-    if diffs.size == 0:
-        return np.zeros_like(lambda_nm)
-    spacing = np.empty_like(lambda_nm)
-    spacing[1:-1] = 0.5 * (np.abs(diffs[1:]) + np.abs(diffs[:-1]))
-    spacing[0] = np.abs(diffs[0])
-    spacing[-1] = np.abs(diffs[-1])
-    return spacing
-
-
-def _wavenumber_to_wavelength_width(lambda_nm: np.ndarray, width_cm1: np.ndarray) -> np.ndarray:
-    nu_cm1 = 1.0e7 / lambda_nm
-    return (1.0e7 / (nu_cm1**2)) * width_cm1
-
-
-def _fwhm_from_srf(srf, lambda_nm: np.ndarray) -> np.ndarray | None:
-    centers = np.asarray(srf.centers_nm, dtype=np.float64)
-    if centers.shape != lambda_nm.shape:
-        return None
-
-    widths: list[float] = []
-    for nm, resp in zip(srf.bands_nm, srf.bands_resp, strict=True):
-        nm_arr = np.asarray(nm, dtype=np.float64)
-        resp_arr = np.asarray(resp, dtype=np.float64)
-        if nm_arr.size == 0 or resp_arr.size == 0:
-            widths.append(np.nan)
-            continue
-        peak = float(np.max(resp_arr))
-        if not np.isfinite(peak) or peak <= 0:
-            widths.append(np.nan)
-            continue
-        half = peak * 0.5
+    @staticmethod
+    def _broadcast(
+        shape: tuple[int, ...], values: FloatArray | Sequence[float] | float
+    ) -> FloatArray:
+        arr = np.asarray(values, dtype=np.float64)
         try:
-            left_idx = np.where(resp_arr >= half)[0][0]
-            right_idx = np.where(resp_arr >= half)[0][-1]
-        except IndexError:
-            widths.append(np.nan)
-            continue
-
-        left_nm = _interp_half_max(nm_arr, resp_arr, left_idx, half, reverse=True)
-        right_nm = _interp_half_max(nm_arr, resp_arr, right_idx, half, reverse=False)
-        widths.append(abs(right_nm - left_nm))
-
-    widths_arr = np.asarray(widths, dtype=np.float64)
-    if np.all(~np.isfinite(widths_arr)):
-        return None
-
-    mean_width = float(np.nanmean(widths_arr))
-    widths_arr = np.where(np.isfinite(widths_arr), widths_arr, mean_width)
-    widths_arr = np.where(widths_arr <= 0, mean_width, widths_arr)
-    return widths_arr
+            broadcasted = np.broadcast_to(arr, shape)
+            return np.asarray(broadcasted, dtype=np.float64)
+        except ValueError as exc:  # pragma: no cover - defensive
+            msg = "Provided statistics could not be broadcast to spectrum shape"
+            raise ValueError(msg) from exc
 
 
-def _interp_half_max(
-    nm: np.ndarray,
-    resp: np.ndarray,
-    idx: int,
-    half: float,
-    *,
-    reverse: bool,
-) -> float:
-    i0 = idx
-    i1 = idx - 1 if reverse else idx + 1
-    i1 = np.clip(i1, 0, resp.size - 1)
-    if i0 == i1:
-        return float(nm[i0])
-    x0 = resp[i0]
-    x1 = resp[i1]
-    y0 = nm[i0]
-    y1 = nm[i1]
-    if x0 == x1:
-        return float(y0)
-    t = (half - x0) / (x1 - x0)
-    return float(y0 + t * (y1 - y0))
-
-
-def _broadcastable(values: Sequence[float] | float, shape: Iterable[int]) -> np.ndarray:
-    arr = np.asarray(values, dtype=np.float64)
-    try:
-        return np.broadcast_to(arr, shape)
-    except ValueError as exc:  # pragma: no cover - defensive guard
-        msg = "Provided statistics cannot be broadcast to data shape"
-        raise ValueError(msg) from exc
-
-
-__all__ = [
-    "AxisUnit",
-    "BandTokConfig",
-    "BandTokenizer",
-    "TokenMeta",
-    "Tokens",
-]
+__all__ = ["AxisUnit", "BandTokConfig", "BandTokenizer", "TokenMeta", "Tokens", "ValueStats"]
 

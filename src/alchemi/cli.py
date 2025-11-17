@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import typer
@@ -19,7 +20,6 @@ from .train.alignment_trainer import AlignmentTrainer
 from .training.seed import seed_everything
 from .training.trainer import run_eval, run_pretrain_mae
 from .utils.logging import get_logger
-
 
 app = typer.Typer(add_completion=False)
 data_app = typer.Typer(add_completion=False)
@@ -223,23 +223,35 @@ def _find_partner(path: Path) -> Path | None:
 
 
 def _print_cube_summary(cube: Cube) -> None:
-    typer.echo(f"Sensor: {cube.sensor}")
-    typer.echo(f"Quantity: {cube.quantity} [{cube.units}]")
-    axis_parts = [f"{name}={size}" for name, size in zip(cube.axes, cube.shape)]
+    # Prefer explicit attributes, fall back to metadata if missing
+    sensor = cube.sensor or cube.metadata.get("sensor", "unknown")
+    units = cube.units or cube.metadata.get("units", "unknown")
+
+    typer.echo(f"Sensor: {sensor}")
+    typer.echo(f"Quantity: {cube.quantity} [{units}]")
+
+    axis_parts = [
+        f"{name}={size}" for name, size in zip(cube.axes, cube.shape, strict=True)
+    ]
     typer.echo("Shape: " + ", ".join(axis_parts))
 
-    if cube.wavelength_nm is not None and cube.wavelength_nm.size:
-        start = float(cube.wavelength_nm[0])
-        end = float(cube.wavelength_nm[-1])
-        typer.echo(f"Spectral range: {start:.2f}–{end:.2f} nm ({cube.wavelength_nm.size} bands)")
+    axis_nm = cube.wavelength_nm
+    if axis_nm is not None and axis_nm.size:
+        start = float(axis_nm[0])
+        end = float(axis_nm[-1])
+        typer.echo(f"Spectral range: {start:.2f}-{end:.2f} nm ({axis_nm.size} bands)")
 
     if cube.band_mask is not None:
         total = cube.band_mask.size
         good = int(np.count_nonzero(cube.band_mask))
         typer.echo(f"Band mask: {good}/{total} bands marked good")
 
-    if cube.metadata:
-        meta_json = json.dumps(_json_ready(cube.metadata), sort_keys=True)
+    # Print metadata, excluding things already surfaced above
+    metadata = dict(cube.metadata) if cube.metadata else {}
+    metadata.pop("sensor", None)
+    metadata.pop("units", None)
+    if metadata:
+        meta_json = json.dumps(_json_ready(metadata), sort_keys=True, default=str)
         typer.echo(f"Metadata: {meta_json}")
 
 
