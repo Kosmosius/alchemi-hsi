@@ -1,12 +1,11 @@
-from . import align, data, eval, io, models, physics, srf, tokens, training, utils
-from .types import (
-    Sample,
-    SampleMeta,
-    Spectrum,
-    SpectrumKind,
-    SRFMatrix,
-    WavelengthGrid,
-)
+"""Top-level package exports with lazy submodule loading."""
+
+from __future__ import annotations
+
+import importlib
+from typing import Any
+
+from .types import Sample, SampleMeta, Spectrum, SpectrumKind, SRFMatrix, WavelengthGrid
 
 __all__ = [
     "SRFMatrix",
@@ -26,3 +25,13 @@ __all__ = [
     "training",
     "utils",
 ]
+
+_SUBMODULES = {name for name in __all__ if name not in {"SRFMatrix", "Sample", "SampleMeta", "Spectrum", "SpectrumKind", "WavelengthGrid"}}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _SUBMODULES:
+        module = importlib.import_module(f"{__name__}.{name}")
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

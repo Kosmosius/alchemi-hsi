@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
@@ -29,7 +31,7 @@ class GeoInfo:
         return {"crs": self.crs, "transform": self.transform}
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, init=False)
 class Cube:
     """Typed wrapper around an (H, W, C) hyperspectral cube."""
 
@@ -40,6 +42,51 @@ class Cube:
     srf_id: str | None = None
     geo: GeoInfo | None = None
     attrs: dict[str, Any] = field(default_factory=dict)
+
+    def __init__(
+        self,
+        data: np.ndarray | None = None,
+        axis: np.ndarray | None = None,
+        axis_unit: str | None = None,
+        value_kind: str | None = None,
+        *,
+        srf_id: str | None = None,
+        geo: GeoInfo | None = None,
+        attrs: Mapping[str, Any] | None = None,
+        **legacy: Any,
+    ) -> None:
+        if data is None:
+            if "values" in legacy:
+                data = np.asarray(legacy.pop("values"))
+            else:
+                raise TypeError("Cube() missing required argument 'data'")
+        if axis is None:
+            if "wavelength_nm" in legacy:
+                axis = np.asarray(legacy.pop("wavelength_nm"))
+                axis_unit = axis_unit or "wavelength_nm"
+            else:
+                raise TypeError("Cube() missing required argument 'axis'")
+        axis_unit = axis_unit or "wavelength_nm"
+        if value_kind is None:
+            value_kind = legacy.pop("quantity", "radiance")
+
+        metadata: dict[str, Any] = dict(attrs or {})
+        meta = legacy.pop("metadata", None)
+        if meta:
+            metadata.update(meta)
+        for key in ("sensor", "units", "axes", "axis_coords", "band_mask"):
+            if key in legacy:
+                metadata[key] = legacy.pop(key)
+        metadata.update(legacy)
+
+        self.data = data
+        self.axis = axis
+        self.axis_unit = axis_unit
+        self.value_kind = value_kind
+        self.srf_id = srf_id
+        self.geo = geo
+        self.attrs = metadata
+        self.__post_init__()
 
     def __post_init__(self) -> None:
         self.data = np.asarray(self.data)
@@ -78,6 +125,54 @@ class Cube:
 
         height, width, channels = self.data.shape
         return int(height), int(width), int(channels)
+
+    @property
+    def values(self) -> np.ndarray:
+        """Alias for the underlying spectral data array."""
+
+        return self.data
+
+    @property
+    def units(self) -> Any:
+        """Return the units stored in the cube metadata (if any)."""
+
+        return self.attrs.get("units")
+
+    @property
+    def sensor(self) -> Any:
+        """Return the originating sensor metadata (if any)."""
+
+        return self.attrs.get("sensor")
+
+    @property
+    def quantity(self) -> str:
+        """Alias for the stored value kind."""
+
+        return self.value_kind
+
+    @property
+    def axes(self) -> tuple[str, ...]:
+        axes = self.attrs.get("axes")
+        if axes is None:
+            return ("y", "x", "band")
+        return tuple(axes)
+
+    @property
+    def band_mask(self) -> np.ndarray | None:
+        mask = self.attrs.get("band_mask")
+        if mask is None:
+            return None
+        return np.asarray(mask)
+
+    @property
+    def wavelength_nm(self) -> np.ndarray | None:
+        if self.axis_unit == "wavelength_nm":
+            return self.axis
+        return None
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        return self.attrs
 
     @property
     def band_count(self) -> int:
@@ -140,6 +235,42 @@ class Cube:
             config=config,
         )
 
+    def to_npz(self, destination: str | Path) -> None:
+        metadata_str = _encode_metadata(self.attrs)
+        payload = {
+            "values": self.data,
+            "axis": self.axis,
+            "axis_unit": np.array(self.axis_unit),
+            "value_kind": np.array(self.value_kind),
+            "attrs_json": np.array(metadata_str),
+        }
+        np.savez_compressed(destination, **payload)
+
+    def to_zarr(self, destination: str | Path) -> None:
+        import zarr  # pragma: no cover - optional dependency
+
+        root = zarr.open_group(str(destination), mode="w")
+        root.create_dataset("values", data=self.data, overwrite=True)
+        root.create_dataset("axis", data=self.axis, overwrite=True)
+        root.attrs["axis_unit"] = self.axis_unit
+        root.attrs["value_kind"] = self.value_kind
+        root.attrs["metadata"] = _encode_metadata(self.attrs)
+
+    @classmethod
+    def from_xarray(cls, dataset: Any) -> "Cube":
+        data_var = next(iter(dataset.data_vars))
+        data_arr = dataset[data_var]
+        data = np.asarray(data_arr.values)
+        axes = tuple(data_arr.dims)
+        axis_coords = {name: np.asarray(dataset.coords[name].values) for name in axes if name in dataset.coords}
+        spectral = axis_coords.get("band")
+        axis = spectral if spectral is not None else np.arange(data.shape[-1], dtype=np.float64)
+        axis_unit = "wavelength_nm" if spectral is not None else "wavenumber_cm1"
+        attrs = dict(dataset.attrs)
+        attrs.setdefault("axes", axes)
+        attrs.setdefault("axis_coords", axis_coords)
+        return cls(data=data, axis=axis, axis_unit=axis_unit, value_kind=attrs.get("quantity", "radiance"), attrs=attrs)
+
 
 def geo_from_attrs(attrs: Mapping[str, Any]) -> GeoInfo | None:
     """Extract a :class:`GeoInfo` instance from dataset attributes."""
@@ -167,3 +298,18 @@ def geo_from_attrs(attrs: Mapping[str, Any]) -> GeoInfo | None:
         return None
 
     return GeoInfo(crs=crs, transform=transform)
+
+
+def _encode_metadata(attrs: Mapping[str, Any]) -> str:
+    def _convert(value: Any) -> Any:
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, (np.generic,)):
+            return value.item()
+        if isinstance(value, dict):
+            return {k: _convert(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_convert(v) for v in value]
+        return value
+
+    return json.dumps({k: _convert(v) for k, v in attrs.items()})

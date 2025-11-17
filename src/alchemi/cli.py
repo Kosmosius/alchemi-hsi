@@ -15,14 +15,17 @@ from .data.io import load_avirisng_l1b, load_emit_l1b, load_enmap_l1b, load_hyte
 from .data.validators import validate_dataset, validate_srf_dir
 from .io.mako import open_mako_ace, open_mako_btemp, open_mako_l2s
 from .srf import SRFRegistry
+from .train.alignment_trainer import AlignmentTrainer
 from .training.seed import seed_everything
-from .training.trainer import run_align, run_eval, run_pretrain_mae
+from .training.trainer import run_eval, run_pretrain_mae
 from .utils.logging import get_logger
 
 
 app = typer.Typer(add_completion=False)
 data_app = typer.Typer(add_completion=False)
+align_app = typer.Typer(add_completion=False)
 app.add_typer(data_app, name="data")
+app.add_typer(align_app, name="align")
 _LOG = get_logger(__name__)
 
 
@@ -47,10 +50,12 @@ def pretrain_mae(config: str = "configs/train.mae.yaml"):
     run_pretrain_mae(config)
 
 
-@app.command()
-def align(config: str = "configs/train.align.yaml"):
-    seed_everything(42)
-    run_align(config)
+@align_app.command("train")
+def align_train(cfg: str = typer.Option("configs/phase2/alignment.yaml", "--cfg", "-c")):
+    """Run the Phase-2 alignment trainer."""
+
+    trainer = AlignmentTrainer.from_yaml(cfg)
+    trainer.train()
 
 
 @app.command()
@@ -232,8 +237,20 @@ def _print_cube_summary(cube: Cube) -> None:
         typer.echo(f"Band mask: {good}/{total} bands marked good")
 
     if cube.metadata:
-        meta_json = json.dumps(cube.metadata, sort_keys=True)
+        meta_json = json.dumps(_json_ready(cube.metadata), sort_keys=True)
         typer.echo(f"Metadata: {meta_json}")
+
+
+def _json_ready(value: Any) -> Any:
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, (np.generic,)):
+        return value.item()
+    if isinstance(value, dict):
+        return {k: _json_ready(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_ready(v) for v in value]
+    return value
 
 
 if __name__ == "__main__":

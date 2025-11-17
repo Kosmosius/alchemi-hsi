@@ -1,7 +1,42 @@
-# Configuration for phase 2 alignment experiments.
+trainer:
+  batch_size: 8
+  max_steps: 10
+  log_every: 2
+  eval_every: 5
+  device: cpu
+  dtype: float32
+  seed: 1337
+
+data:
+  sensor: emit
+  lab_grid_nm:
+    start: 380.0
+    stop: 2500.0
+    num: 256
+  lab_fwhm_nm: 5.0
+  lab_noise_std: 0.01
+  synthetic_peaks: 3
+  sensor_noise_rel: 0.01
+
+optimizer:
+  lr: 0.001
+  weight_decay: 0.0
+  betas: [0.9, 0.99]
+
+loss:
+  tau_init: 0.07
+  learnable_tau: true
+  gather_ddp: false
+
+model:
+  embed_dim: 64
+  depth: 2
+  heads: 4
+  cycle_weight: 0.5
+
 cycle:
-  enabled: false
-  hidden_dim: 256
+  enabled: true
+  hidden_dim: 64
   num_layers: 2
   l2_weight: 1.0
   sam_weight: 1.0
@@ -9,9 +44,18 @@ cycle:
   lab_context_dim: 0
   use_brightness_temperature: false
 
-alignment:
-  batch_size: 64
-  loss:
-    tau_init: 0.07
-    learnable_tau: true
-    gather_ddp: true
+banddepth:
+  enabled: true
+  weight: 0.1
+  config: configs/phase2/banddepth.yaml
+  hidden_dim: 64
+  loss: l1
+
+tokenizer:
+  axis_unit: nm
+  value_norm: robust
+  lambda_norm: zscore
+  n_frequencies: 8
+  frequency_base: 1.0
+  default_fwhm_nm: 7.0
+  pooled_kind: mean
