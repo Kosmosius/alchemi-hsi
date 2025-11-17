@@ -1,3 +1,14 @@
+# Configuration for phase 2 alignment experiments.
+cycle:
+  enabled: false
+  hidden_dim: 256
+  num_layers: 2
+  l2_weight: 1.0
+  sam_weight: 1.0
+  sensor_context_dim: 0
+  lab_context_dim: 0
+  use_brightness_temperature: false
+
 alignment:
   batch_size: 64
   loss:
