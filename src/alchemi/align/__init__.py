@@ -1,11 +1,11 @@
 """Alignment utilities and losses for constructing training batches,
-pairing laboratory spectra with sensor measurements (including HyTES),
-and optional cycle-consistency reconstruction heads."""
+pairing laboratory spectra with sensor measurements (including HyTES
+and AVIRIS-NG), and optional cycle-consistency reconstruction heads."""
 
 from .cycle import CycleAlignment, CycleConfig, CycleReconstructionHeads
 from .losses import LossOut, info_nce_symmetric
 from .hytes import HyTESNoiseConfig, build_hytes_pairs
-from .batch import build_emit_pairs, build_enmap_pairs
+from .batch import build_emit_pairs, build_enmap_pairs, build_avirisng_pairs
 from .batch_builders import NoiseConfig, Pair, build_emits_pairs
 from .transforms import RandomSensorProject
 
@@ -20,6 +20,7 @@ __all__ = [
     # General batch builders
     "build_emit_pairs",
     "build_enmap_pairs",
+    "build_avirisng_pairs",
     "NoiseConfig",
     "Pair",
     "build_emits_pairs",
