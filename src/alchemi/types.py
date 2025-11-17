@@ -7,9 +7,9 @@ from typing import Any
 import numpy as np
 
 try:
-    from numpy import trapezoid as _integrate
+    from numpy import trapezoid as _np_integrate
 except ImportError:  # pragma: no cover - NumPy < 2.0 fallback
-    from numpy import trapz as _integrate  # type: ignore[attr-defined]
+    from numpy import trapz as _np_integrate
 
 
 class SpectrumKind(str, Enum):
@@ -75,7 +75,7 @@ class SRFMatrix:
     def row_integrals(self) -> np.ndarray:
         integrals = [
             float(
-                _integrate(
+                _np_integrate(
                     np.asarray(resp, dtype=np.float64),
                     np.asarray(nm, dtype=np.float64),
                 )
@@ -90,7 +90,7 @@ class SRFMatrix:
         for nm, resp in zip(self.bands_nm, self.bands_resp, strict=True):
             nm_arr = np.asarray(nm, dtype=np.float64)
             resp_arr = np.asarray(resp, dtype=np.float64)
-            area = float(_integrate(resp_arr, nm_arr))
+            area = float(_np_integrate(resp_arr, nm_arr))
             if not np.isfinite(area) or area <= 0.0:
                 msg = "SRF bands must integrate to a positive finite area"
                 raise ValueError(msg)

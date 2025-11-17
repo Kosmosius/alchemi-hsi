@@ -29,7 +29,7 @@ _LAZY_ATTRS = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     target = _LAZY_ATTRS.get(name)
     if target is None:
         raise AttributeError(f"module 'alchemi.data' has no attribute {name!r}")

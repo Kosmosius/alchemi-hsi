@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -22,8 +26,8 @@ class TrainCfg(BaseModel):
 class DataCfg(BaseModel):
     sensors: list[str] = ["emit", "enmap", "avirisng", "hytes"]
     srf_root: str = "data/srf"
-    paths: dict = {}
-    wavelengths: dict = {}
+    paths: dict[str, Any] = {}
+    wavelengths: dict[str, Any] = {}
 
 
 class EvalCfg(BaseModel):

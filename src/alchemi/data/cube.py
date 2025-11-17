@@ -6,11 +6,11 @@ import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
-from ..tokens.band_tokenizer import BandTokenizer, Tokens
+from ..tokens.band_tokenizer import AxisUnit, BandTokenizer, Tokens
 from ..tokens.registry import get_default_tokenizer
 
 __all__ = ["Cube", "GeoInfo", "geo_from_attrs"]
@@ -198,7 +198,7 @@ class Cube:
     def band_count(self) -> int:
         """Number of spectral bands represented by the cube."""
 
-        return self.data.shape[-1]
+        return int(self.data.shape[-1])
 
     @property
     def axes(self) -> tuple[str, ...]:
@@ -230,9 +230,10 @@ class Cube:
         """Return spectral axis expressed in nanometres when possible."""
 
         if self.axis_unit == "wavelength_nm":
-            return self.axis
+            return cast(np.ndarray, self.axis)
         if self.axis_unit == "wavenumber_cm1":
-            return (1.0e7 / self.axis).astype(np.float64, copy=False)
+            converted = (1.0e7 / self.axis).astype(np.float64, copy=False)
+            return cast(np.ndarray, converted)
         return None
 
     # ---------- Tokenisation ----------
@@ -260,7 +261,7 @@ class Cube:
             from cube attributes before delegating to tokenizer heuristics.
         """
 
-        axis_unit = "nm" if self.axis_unit == "wavelength_nm" else "cm-1"
+        axis_unit: AxisUnit = "nm" if self.axis_unit == "wavelength_nm" else "cm-1"
         sensor_id = self.srf_id or self.sensor or self.attrs.get("sensor")
         if sensor_id is not None:
             sensor_id = str(sensor_id)

@@ -15,7 +15,7 @@ def validate_dataset(cfg: dict[str, Any]) -> None:
             raise ValueError(f"Missing data.{key} in config")
 
 
-def validate_srf_dir(srf_root: str | os.PathLike) -> None:
+def validate_srf_dir(srf_root: str | os.PathLike[str]) -> None:
     root = Path(srf_root)
     if not root.exists():
         raise FileNotFoundError(f"SRF root not found: {root}")
