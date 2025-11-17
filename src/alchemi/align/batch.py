@@ -3,6 +3,7 @@ from typing import Any
 import numpy as np
 
 from ..srf import SRFRegistry, batch_convolve_lab_to_sensor
+from ..srf.avirisng import avirisng_srf_matrix
 
 __all__ = ["build_avirisng_pairs"]
 
@@ -78,7 +79,8 @@ def build_avirisng_pairs(
         1-D array.
     srf_registry:
         Optional SRF registry used to look up the AVIRIS-NG sensor response function.
-        When omitted, the default registry rooted at ``data/srf`` is used.
+        When omitted, a built-in procedural SRF generator is used so the helper works
+        out of the box without requiring serialized SRF assets.
     noise:
         Optional per-band relative noise level. Scalars apply the same coefficient to
         every band; arrays must match the AVIRIS-NG band count. Noise is sampled from a
@@ -97,8 +99,10 @@ def build_avirisng_pairs(
     nm = _validate_wavelengths(lab_nm)
     values = _validate_lab_values(lab_values, nm.shape[0])
 
-    registry = srf_registry or SRFRegistry()
-    srf = registry.get("avirisng")
+    if srf_registry is None:
+        srf = avirisng_srf_matrix()
+    else:
+        srf = srf_registry.get("avirisng")
     centers = np.asarray(srf.centers_nm, dtype=np.float64)
 
     projected = batch_convolve_lab_to_sensor(nm, values, srf)
