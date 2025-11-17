@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
 import typer
@@ -56,7 +56,6 @@ def align_train(
     max_steps: int | None = typer.Option(None, "--max-steps", "-m"),
 ):
     """Run the Phase-2 alignment trainer."""
-
     trainer = AlignmentTrainer.from_yaml(cfg)
     trainer.train(max_steps=max_steps)
 
