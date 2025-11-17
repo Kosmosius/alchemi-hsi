@@ -8,3 +8,10 @@ cycle:
   sensor_context_dim: 0
   lab_context_dim: 0
   use_brightness_temperature: false
+
+alignment:
+  batch_size: 64
+  loss:
+    tau_init: 0.07
+    learnable_tau: true
+    gather_ddp: true
