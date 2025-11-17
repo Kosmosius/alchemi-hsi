@@ -21,7 +21,7 @@ def batch_convolve_lab_to_sensor(
     M, _ = lab_values.shape
     B = len(srf.centers_nm)
     out = np.zeros((M, B), dtype=np.float64)
-    for b, (nm, resp) in enumerate(zip(srf.bands_nm, srf.bands_resp, strict=False)):
+    for b, (nm, resp) in enumerate(zip(srf.bands_nm, srf.bands_resp, strict=True)):
         interpolated = np.vstack([np.interp(nm, lab_nm, sample) for sample in lab_values])
         out[:, b] = _integrate(interpolated * resp[None, :], nm, axis=1)
     return out

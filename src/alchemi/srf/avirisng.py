@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import json
-from functools import lru_cache
+from collections.abc import Iterable, Sequence
+from functools import cache
 from pathlib import Path
-from typing import Iterable, Sequence
 
 import numpy as np
 
 from alchemi.types import SRFMatrix
 
-__all__ = ["avirisng_srf_matrix", "avirisng_bad_band_mask"]
+__all__ = ["avirisng_bad_band_mask", "avirisng_srf_matrix"]
 
 _SENSOR_ID = "avirisng"
 _SRF_VERSION = "v1"
@@ -51,7 +51,7 @@ def avirisng_bad_band_mask(wavelengths_nm: np.ndarray) -> np.ndarray:
     return mask
 
 
-@lru_cache(maxsize=None)
+@cache
 def _load_matrix(cache_token: str) -> SRFMatrix:
     cache_dir = Path(cache_token) if cache_token else None
     matrix: SRFMatrix | None = None
@@ -88,7 +88,7 @@ def _build_matrix() -> SRFMatrix:
 
 
 def _avirisng_centers() -> np.ndarray:
-    # AVIRIS-NG spans roughly 380–2510 nm across 425 contiguous bands.
+    # AVIRIS-NG spans roughly 380-2510 nm across 425 contiguous bands.
     return np.linspace(380.0, 2510.0, 425, dtype=np.float64)
 
 
@@ -124,7 +124,7 @@ def _compute_hash(
 ) -> str:
     hasher = hashlib.sha1()
     hasher.update(np.asarray(centers, dtype=np.float64).tobytes())
-    for nm, resp in zip(bands_nm, bands_resp):
+    for nm, resp in zip(bands_nm, bands_resp, strict=True):
         hasher.update(np.asarray(nm, dtype=np.float64).tobytes())
         hasher.update(np.asarray(resp, dtype=np.float64).tobytes())
     return hasher.hexdigest()[:12]

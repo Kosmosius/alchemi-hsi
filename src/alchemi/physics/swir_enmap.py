@@ -144,6 +144,6 @@ def radiance_to_reflectance_enmap(
 
 __all__ = [
     "interpolate_irradiance_to_bands",
-    "reflectance_to_radiance_enmap",
     "radiance_to_reflectance_enmap",
+    "reflectance_to_radiance_enmap",
 ]

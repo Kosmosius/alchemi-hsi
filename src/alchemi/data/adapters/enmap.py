@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import xarray as xr
-from alchemi.types import Sample, SampleMeta
+
 from alchemi.data.io import enmap_pixel
+from alchemi.types import Sample, SampleMeta
 
 __all__ = ["load_enmap_pixel"]
 

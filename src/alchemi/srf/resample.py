@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Tuple
+from typing import Literal
 
 import numpy as np
 
@@ -14,8 +14,8 @@ except ImportError:  # pragma: no cover - NumPy < 2.0 fallback
 from alchemi.types import SRFMatrix
 
 __all__ = [
-    "convolve_to_bands",
     "boxcar_resample",
+    "convolve_to_bands",
     "gaussian_resample",
     "project_to_sensor",
 ]
@@ -30,7 +30,7 @@ def _validate_wavelengths(wl_nm: np.ndarray) -> np.ndarray:
     return wl
 
 
-def _as_2d(values: np.ndarray, n_wavelengths: int) -> Tuple[np.ndarray, bool]:
+def _as_2d(values: np.ndarray, n_wavelengths: int) -> tuple[np.ndarray, bool]:
     arr = np.asarray(values, dtype=np.float64)
     if arr.ndim == 1:
         if arr.shape[0] != n_wavelengths:
@@ -56,7 +56,9 @@ def convolve_to_bands(
     n_bands = len(srf_matrix.centers_nm)
     out = np.empty((spectra.shape[0], n_bands), dtype=np.float64)
 
-    for idx, (band_wl, band_resp) in enumerate(zip(srf_matrix.bands_nm, srf_matrix.bands_resp)):
+    for idx, (band_wl, band_resp) in enumerate(
+        zip(srf_matrix.bands_nm, srf_matrix.bands_resp, strict=True)
+    ):
         band_wl = np.asarray(band_wl, dtype=np.float64)
         band_resp = np.asarray(band_resp, dtype=np.float64)
         if band_wl.ndim != 1 or band_resp.ndim != 1:
@@ -95,7 +97,7 @@ def boxcar_resample(
 
     out = np.empty((spectra.shape[0], centers.shape[0]), dtype=np.float64)
 
-    for idx, (center, width) in enumerate(zip(centers, widths)):
+    for idx, (center, width) in enumerate(zip(centers, widths, strict=True)):
         half_width = 0.5 * width
         lower = center - half_width
         upper = center + half_width
@@ -131,7 +133,7 @@ def gaussian_resample(
 
     out = np.empty((spectra.shape[0], centers.shape[0]), dtype=np.float64)
 
-    for idx, (center, sig) in enumerate(zip(centers, sigma)):
+    for idx, (center, sig) in enumerate(zip(centers, sigma, strict=True)):
         weights = np.exp(-0.5 * ((wl - center) / sig) ** 2)
         denom = float(_integrate(weights, wl))
         if not np.isfinite(denom) or denom <= 0.0:

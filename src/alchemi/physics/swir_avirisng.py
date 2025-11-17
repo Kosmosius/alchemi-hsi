@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 
-
 _BAD_BAND_WINDOWS = ((1340.0, 1440.0), (1800.0, 1950.0))
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from alchemi.io import MAKO_BAND_COUNT, mako_pixel_radiance, open_mako_l2s
+
 from .avirisng import avirisng_pixel, load_avirisng_l1b
 from .emit import emit_pixel, load_emit_l1b
 from .enmap import enmap_pixel, load_enmap_l1b
@@ -12,7 +14,6 @@ from .hytes import (
     load_hytes_l1b_bt,
 )
 from .splib import SPLIBCatalog, load_splib
-from alchemi.io import MAKO_BAND_COUNT, mako_pixel_radiance, open_mako_l2s
 
 __all__ = [
     "HYTES_BAND_COUNT",
@@ -23,11 +24,11 @@ __all__ = [
     "emit_pixel",
     "enmap_pixel",
     "hytes_pixel_bt",
-    "mako_pixel_radiance",
     "load_avirisng_l1b",
     "load_emit_l1b",
     "load_enmap_l1b",
     "load_hytes_l1b_bt",
-    "open_mako_l2s",
     "load_splib",
+    "mako_pixel_radiance",
+    "open_mako_l2s",
 ]

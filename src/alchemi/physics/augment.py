@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Union
+from typing import Any
 
 import numpy as np
 
-RNGLike = Union[np.random.Generator, np.random.RandomState]
+RNGLike = np.random.Generator | np.random.RandomState
 
 
 def _gaussian_smoother(weights_nm: np.ndarray, sigma_nm: float) -> np.ndarray:

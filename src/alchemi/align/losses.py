@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -22,8 +21,8 @@ class LossOut:
     """Container for loss scalars and auxiliary outputs."""
 
     loss: torch.Tensor
-    metrics: Dict[str, torch.Tensor] | None = None
-    params: Dict[str, torch.nn.Parameter] | None = None
+    metrics: dict[str, torch.Tensor] | None = None
+    params: dict[str, torch.nn.Parameter] | None = None
 
     def parameters(self) -> list[torch.nn.Parameter]:
         if not self.params:
@@ -31,11 +30,13 @@ class LossOut:
         return list(self.params.values())
 
 
-_TAU_PARAMS: Dict[Tuple[torch.device, torch.dtype], torch.nn.Parameter] = {}
+_TAU_PARAMS: dict[tuple[torch.device, torch.dtype], torch.nn.Parameter] = {}
 
 
 def _ddp_is_initialized() -> bool:
-    return bool(dist and dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1)
+    return bool(
+        dist and dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1
+    )
 
 
 def _gather_embeddings(emb: torch.Tensor) -> torch.Tensor:
@@ -103,7 +104,7 @@ def info_nce_symmetric(
     device = z_lab.device
     dtype = z_lab.dtype
 
-    params: Dict[str, torch.nn.Parameter] | None = None
+    params: dict[str, torch.nn.Parameter] | None = None
     if learnable_tau:
         log_tau = _get_tau_param(tau_init=tau_init, device=device, dtype=dtype)
         params = {"log_tau": log_tau}

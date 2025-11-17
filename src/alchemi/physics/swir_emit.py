@@ -8,10 +8,9 @@ instrument characteristics.
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 import numpy as np
-
 
 _MIN_TAU = 1e-3
 _MIN_COS_SUN = 1e-3
@@ -151,7 +150,7 @@ def _upper_hull_continuum(wavelengths: np.ndarray, spectrum: np.ndarray) -> np.n
     hull_x: list[float] = []
     hull_y: list[float] = []
 
-    for x, y in zip(wavelengths, spectrum):
+    for x, y in zip(wavelengths, spectrum, strict=True):
         hull_x.append(float(x))
         hull_y.append(float(y))
         while len(hull_x) >= 3:

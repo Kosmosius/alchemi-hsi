@@ -117,7 +117,7 @@ def load_hytes_l1b_bt(path: str | Path) -> xr.Dataset:
     units = _normalise_unit_string(bt.attrs.get("units") or data.attrs.get("bt_units"))
     bt_values = _ensure_kelvin(bt_values, units)
 
-    sizes = {dim: size for dim, size in zip(bt.dims, bt.values.shape)}
+    sizes = {dim: size for dim, size in zip(bt.dims, bt.values.shape, strict=True)}
     y_coord = _extract_coordinate(bt, "y", sizes["y"])
     x_coord = _extract_coordinate(bt, "x", sizes["x"])
     band_coord = np.arange(sizes["band"], dtype=np.int32)

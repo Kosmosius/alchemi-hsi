@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import numpy as np
 
@@ -146,4 +146,4 @@ def build_emits_pairs(
     return pairs
 
 
-__all__ = ["Pair", "NoiseConfig", "build_emits_pairs"]
+__all__ = ["NoiseConfig", "Pair", "build_emits_pairs"]

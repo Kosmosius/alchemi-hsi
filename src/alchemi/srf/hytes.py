@@ -7,7 +7,7 @@ that mimics the instrument behaviour: each band is modelled as a Gaussian
 passband centred on the published HyTES wavelength grid.  The Gaussians are
 constructed using the band spacing as the full-width at half-maximum (FWHM).
 This approximation preserves energy under a flat spectrum after normalisation
-but slightly extends beyond the nominal 7.5–12 μm range; that overshoot is
+but slightly extends beyond the nominal 7.5-12 um range; that overshoot is
 intentional so that the trapezoidal normalisation retains unit area.
 
 The helper normalises each SRF with :func:`numpy.trapezoid` and stamps a stable
@@ -17,16 +17,15 @@ cache key so downstream caches can detect updates.
 from __future__ import annotations
 
 import hashlib
-from typing import Dict, Tuple
 
 import numpy as np
 
-from alchemi.types import SRFMatrix
 from alchemi.data.io import HYTES_WAVELENGTHS_NM
+from alchemi.types import SRFMatrix
 
 _SENSOR_NAME = "HyTES"
 _DEFAULT_VERSION = "v1"
-_CACHE: Dict[Tuple[str, str], SRFMatrix] = {}
+_CACHE: dict[tuple[str, str], SRFMatrix] = {}
 
 
 def hytes_srf_matrix(*, version: str = _DEFAULT_VERSION) -> SRFMatrix:
@@ -64,7 +63,9 @@ def hytes_srf_matrix(*, version: str = _DEFAULT_VERSION) -> SRFMatrix:
     return srf
 
 
-def _approximate_gaussian_bands(centers_nm: np.ndarray) -> tuple[list[np.ndarray], list[np.ndarray]]:
+def _approximate_gaussian_bands(
+    centers_nm: np.ndarray,
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
     """Construct Gaussian-like SRFs centred on ``centers_nm``.
 
     The Gaussian width is derived from the median band spacing which provides a
@@ -103,7 +104,7 @@ def _make_cache_key(srf: SRFMatrix) -> str:
     hasher.update(srf.sensor.encode("utf-8"))
     hasher.update(srf.version.encode("utf-8"))
     hasher.update(np.asarray(srf.centers_nm, dtype=np.float64).tobytes())
-    for nm, resp in zip(srf.bands_nm, srf.bands_resp):
+    for nm, resp in zip(srf.bands_nm, srf.bands_resp, strict=True):
         hasher.update(np.asarray(nm, dtype=np.float64).tobytes())
         hasher.update(np.asarray(resp, dtype=np.float64).tobytes())
     digest = hasher.hexdigest()[:12]

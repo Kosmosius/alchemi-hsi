@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-
 import xarray as xr
+
 from alchemi.types import Spectrum, SpectrumKind, WavelengthGrid
 
 __all__ = ["enmap_pixel", "load_enmap_l1b"]

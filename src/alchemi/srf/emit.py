@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable, Sequence
 from importlib import resources
-from typing import Iterable, Sequence
 
 import numpy as np
 
@@ -20,7 +20,12 @@ _VERSION = "v01"
 class _EmitSRFArchive(Sequence[np.ndarray]):
     """Container for EMIT SRF response curves on the native wavelength grid."""
 
-    def __init__(self, native_nm: np.ndarray, centers_nm: np.ndarray, responses: np.ndarray) -> None:
+    def __init__(
+        self,
+        native_nm: np.ndarray,
+        centers_nm: np.ndarray,
+        responses: np.ndarray,
+    ) -> None:
         self.native_nm = np.asarray(native_nm, dtype=np.float64)
         self.centers_nm = np.asarray(centers_nm, dtype=np.float64)
         self.responses = np.asarray(responses, dtype=np.float64)
@@ -72,7 +77,11 @@ def _resample_to_grid(
         resp_band = sampled[mask]
         if nm_band.size < 2:
             # Ensure at least a small baseline if interpolation produced degeneracy.
-            indices = np.clip(np.searchsorted(highres, archive.native_nm[[0, -1]]), 0, highres.size - 1)
+            indices = np.clip(
+                np.searchsorted(highres, archive.native_nm[[0, -1]]),
+                0,
+                highres.size - 1,
+            )
             nm_band = highres[indices]
             resp_band = sampled[indices]
         nm_bands.append(nm_band)
@@ -80,12 +89,14 @@ def _resample_to_grid(
     return nm_bands, resp_bands
 
 
-def _compute_cache_key(centers: np.ndarray, nm: Iterable[np.ndarray], resp: Iterable[np.ndarray]) -> str:
+def _compute_cache_key(
+    centers: np.ndarray, nm: Iterable[np.ndarray], resp: Iterable[np.ndarray]
+) -> str:
     hasher = hashlib.sha1()
     hasher.update(_SENSOR.lower().encode("utf-8"))
     hasher.update(_VERSION.encode("utf-8"))
     hasher.update(np.asarray(centers, dtype=np.float64).tobytes())
-    for band_nm, band_resp in zip(nm, resp):
+    for band_nm, band_resp in zip(nm, resp, strict=True):
         hasher.update(np.asarray(band_nm, dtype=np.float64).tobytes())
         hasher.update(np.asarray(band_resp, dtype=np.float64).tobytes())
     digest = hasher.hexdigest()[:12]
