@@ -1,0 +1,6 @@
+alignment:
+  batch_size: 64
+  loss:
+    tau_init: 0.07
+    learnable_tau: true
+    gather_ddp: true
