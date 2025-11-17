@@ -19,9 +19,7 @@ def avirisng_bad_band_mask(wl_nm: np.ndarray) -> np.ndarray:
     return mask
 
 
-def _resolve_band_mask(
-    wl_nm: np.ndarray, band_mask: np.ndarray | None
-) -> np.ndarray:
+def _resolve_band_mask(wl_nm: np.ndarray, band_mask: np.ndarray | None) -> np.ndarray:
     wavelengths = np.asarray(wl_nm, dtype=float)
     if band_mask is None:
         mask = avirisng_bad_band_mask(wavelengths)
@@ -112,4 +110,3 @@ def radiance_to_reflectance_avirisng(
 
     invalid_fill = np.full_like(reflectance, np.nan)
     return np.where(mask, reflectance, invalid_fill)
-

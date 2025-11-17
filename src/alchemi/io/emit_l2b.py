@@ -1,4 +1,5 @@
 """Utilities for working with EMIT L2B mineral (MIN) products."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -42,8 +43,7 @@ def _ensure_expected_fields(ds: xr.Dataset) -> None:
     """Validate that the dataset looks like an EMIT L2B mineral product."""
     if not {"y", "x"}.issubset(ds.dims):
         raise ValueError(
-            "Expected spatial dimensions ('y', 'x') in EMIT L2B dataset, "
-            f"found {tuple(ds.dims)}"
+            "Expected spatial dimensions ('y', 'x') in EMIT L2B dataset, " f"found {tuple(ds.dims)}"
         )
 
     mineral_vars = [name for name in ds.data_vars if "mineral" in name.lower()]
@@ -66,9 +66,7 @@ def _ensure_expected_fields(ds: xr.Dataset) -> None:
         if any(key in name.lower() for key in ("r2", "score", "quality"))
     ]
     if not quality_vars:
-        raise ValueError(
-            "Dataset does not contain a quality/fit metric (e.g. 'fit_r2')."
-        )
+        raise ValueError("Dataset does not contain a quality/fit metric (e.g. 'fit_r2').")
 
 
 def load_emit_l2b(path: str | Path, *, drop_empty: bool = True) -> xr.Dataset:

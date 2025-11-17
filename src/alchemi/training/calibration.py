@@ -26,6 +26,7 @@ class TemperatureScaler:
                 arr = np.asarray(arr, dtype=np.float64)
                 probs = 1.0 / (1.0 + np.exp(-arr))
                 return np.maximum(probs, 1.0 - probs).astype(float)
+
         else:
             predictions = logits.argmax(axis=1)
 

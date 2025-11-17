@@ -117,9 +117,7 @@ class BandDepthHead(nn.Module):
             left_ref = reflectance[..., left_idx]
             right_ref = reflectance[..., right_idx]
             slope = (right_ref - left_ref) / (spec.right_nm - spec.left_nm + 1e-12)
-            cont_center = torch.clamp(
-                left_ref + slope * (spec.center_nm - spec.left_nm), min=1e-6
-            )
+            cont_center = torch.clamp(left_ref + slope * (spec.center_nm - spec.left_nm), min=1e-6)
             center_ref = reflectance[..., center_idx]
             removed_center = torch.clamp(center_ref / cont_center, max=5.0)
             depths.append(1.0 - removed_center)

@@ -170,4 +170,3 @@ __all__ = [
     "default_band_widths",
     "load_sensor_srf",
 ]
-

@@ -169,4 +169,3 @@ def _upper_hull_continuum(wavelengths: np.ndarray, spectrum: np.ndarray) -> np.n
 
     continuum = np.interp(wavelengths, hull_x_arr, hull_y_arr)
     return continuum
-

@@ -410,9 +410,7 @@ class AlignmentTrainer:
         lab_tokens_tensor = torch.as_tensor(
             np.stack(lab_tokens), device=self.device, dtype=self.dtype
         )
-        lab_mask_tensor = torch.as_tensor(
-            np.stack(lab_masks), device=self.device, dtype=torch.bool
-        )
+        lab_mask_tensor = torch.as_tensor(np.stack(lab_masks), device=self.device, dtype=torch.bool)
         sensor_tokens_tensor = torch.as_tensor(
             np.stack(sensor_tokens), device=self.device, dtype=self.dtype
         )

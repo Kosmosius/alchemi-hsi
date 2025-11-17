@@ -44,8 +44,8 @@ def test_srf_cache_roundtrip_enmap(tmp_path):
     cached = registry.get("enmap")
 
     np.testing.assert_allclose(cached.centers_nm, srf.centers_nm)
-    for (nm_a, nm_b) in zip(cached.bands_nm, srf.bands_nm, strict=True):
+    for nm_a, nm_b in zip(cached.bands_nm, srf.bands_nm, strict=True):
         np.testing.assert_allclose(nm_a, nm_b)
-    for (resp_a, resp_b) in zip(cached.bands_resp, srf.bands_resp, strict=True):
+    for resp_a, resp_b in zip(cached.bands_resp, srf.bands_resp, strict=True):
         np.testing.assert_allclose(resp_a, resp_b)
     assert cached.cache_key == srf.cache_key

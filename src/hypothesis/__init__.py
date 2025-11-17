@@ -58,5 +58,3 @@ def given(*strategies: Strategy) -> Callable[[Callable[..., Any]], Callable[...,
         return wrapper
 
     return decorator
-
-

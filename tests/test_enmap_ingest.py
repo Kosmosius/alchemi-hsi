@@ -57,10 +57,12 @@ def test_units_conversion_nm_enmap(tmp_path):
     ds = load_enmap_l1b(vnir_path, swir_path)
 
     pixel = ds["radiance"].sel(y=0, x=0).values
-    expected = np.concatenate([
-        np.full(2, 2.0e-6, dtype=np.float64),
-        np.full(2, 5.0, dtype=np.float64),
-    ])
+    expected = np.concatenate(
+        [
+            np.full(2, 2.0e-6, dtype=np.float64),
+            np.full(2, 5.0, dtype=np.float64),
+        ]
+    )
     np.testing.assert_allclose(pixel, expected)
     assert ds.attrs["units"] == "W·m^-2·sr^-1·nm^-1"
 

@@ -22,9 +22,7 @@ class SpectrumDataset(Dataset):
         v = torch.from_numpy(s.spectrum.values.astype("float32"))
         m = torch.from_numpy(
             (
-                s.spectrum.mask
-                if s.spectrum.mask is not None
-                else np.ones_like(s.spectrum.values)
+                s.spectrum.mask if s.spectrum.mask is not None else np.ones_like(s.spectrum.values)
             ).astype("bool")
         )
         return {

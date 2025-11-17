@@ -341,4 +341,3 @@ def _ensure_orientation(radiance: np.ndarray, band_count: int) -> np.ndarray:
     spectral_axis = axes[0]
     arr = np.moveaxis(arr, spectral_axis, -1)
     return arr.astype(np.float64)
-

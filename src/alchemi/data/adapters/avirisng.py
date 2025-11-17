@@ -22,4 +22,3 @@ def load_avirisng_pixel(ds: xr.Dataset, position: tuple[int, int]) -> Sample:
         datetime=ds.attrs.get("datetime"),
     )
     return Sample(spectrum=spectrum, meta=meta)
-
