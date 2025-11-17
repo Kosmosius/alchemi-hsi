@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
 import typer
@@ -51,11 +51,13 @@ def pretrain_mae(config: str = "configs/train.mae.yaml"):
 
 
 @align_app.command("train")
-def align_train(cfg: str = typer.Option("configs/phase2/alignment.yaml", "--cfg", "-c")):
+def align_train(
+    cfg: str = typer.Option("configs/phase2/alignment.yaml", "--cfg", "-c"),
+    max_steps: int | None = typer.Option(None, "--max-steps", "-m"),
+):
     """Run the Phase-2 alignment trainer."""
-
     trainer = AlignmentTrainer.from_yaml(cfg)
-    trainer.train()
+    trainer.train(max_steps=max_steps)
 
 
 @app.command()
