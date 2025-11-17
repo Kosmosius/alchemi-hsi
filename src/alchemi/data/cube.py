@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 import numpy as np
+
+from ..tokens.band_tokenizer import BandTokConfig, BandTokenizer, Tokens
+from ..tokens.registry import get_default as _get_default_tokenizer
 
 __all__ = ["Cube", "GeoInfo", "geo_from_attrs"]
 
@@ -81,6 +84,61 @@ class Cube:
         """Number of spectral bands represented by the cube."""
 
         return self.data.shape[-1]
+
+    def to_tokens(
+        self,
+        tokenizer: BandTokenizer | None = None,
+        *,
+        config: BandTokConfig | None = None,
+        reducer: Callable[[np.ndarray], np.ndarray] | None = None,
+        fwhm: np.ndarray | None = None,
+    ) -> Tokens:
+        """Tokenise the cube's spectral axis using the provided tokenizer.
+
+        Parameters
+        ----------
+        tokenizer:
+            :class:`BandTokenizer` instance. When ``None`` a default preset is
+            selected based on :attr:`axis_unit`.
+        config:
+            Optional configuration override forwarded to the tokenizer.
+        reducer:
+            Callable used to collapse the spatial dimensions into a single
+            spectrum. Defaults to a ``nanmean`` across all pixels.
+        fwhm:
+            Optional full-width-at-half-maximum information aligned with the
+            spectral axis. When omitted the method attempts to source the data
+            from cube attributes before delegating to tokenizer heuristics.
+        """
+
+        axis_unit = "nm" if self.axis_unit == "wavelength_nm" else "cm-1"
+        if tokenizer is None:
+            tokenizer = _get_default_tokenizer(axis_unit)
+
+        if reducer is None:
+            flattened = self.data.reshape(-1, self.data.shape[-1])
+            values = np.nanmean(flattened, axis=0)
+        else:
+            values = reducer(self.data)
+
+        values = np.asarray(values, dtype=np.float64)
+        if values.shape != (self.band_count,):
+            msg = "Reducer must yield a one-dimensional spectrum aligned with the cube axis"
+            raise ValueError(msg)
+
+        if fwhm is None and self.attrs:
+            for key in ("band_fwhm", "band_fwhm_nm", "band_fwhm_cm1", "fwhm"):
+                if key in self.attrs:
+                    fwhm = self.attrs[key]
+                    break
+
+        return tokenizer(
+            values,
+            self.axis,
+            axis_unit=axis_unit,
+            fwhm=fwhm,
+            config=config,
+        )
 
 
 def geo_from_attrs(attrs: Mapping[str, Any]) -> GeoInfo | None:

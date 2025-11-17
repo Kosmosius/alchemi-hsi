@@ -9,6 +9,7 @@ import numpy as np
 
 from ..types import SRFMatrix
 from ..utils.logging import get_logger
+from .emit import emit_srf_matrix
 from .mako import build_mako_srf_from_header, mako_lwir_grid_nm
 
 _LOG = get_logger(__name__)
@@ -16,6 +17,7 @@ _LOG = get_logger(__name__)
 _DEFAULT_MAKO_WAVELENGTHS_NM = np.linspace(7600.0, 13200.0, 128, dtype=np.float64)
 _DEFAULT_MAKO_VERSION = "comex-l2s-gaussian-v1"
 _DEFAULT_MAKO_FWHM = 44.0
+_DEFAULT_EMIT_GRID = np.linspace(380.0, 2500.0, 2000, dtype=np.float64)
 
 
 class SRFRegistry:
@@ -71,8 +73,28 @@ def _mako_builder(
     return srf, grid
 
 
+def _emit_builder(
+    *,
+    version: str | None,
+    wavelengths_nm: np.ndarray | None,
+    fwhm_nm: float | None,
+) -> tuple[SRFMatrix, np.ndarray]:
+    if fwhm_nm is not None:
+        _LOG.warning("Ignoring FWHM override for EMIT SRFs")
+    grid = (
+        _DEFAULT_EMIT_GRID
+        if wavelengths_nm is None
+        else np.asarray(wavelengths_nm, dtype=np.float64)
+    )
+    srf = emit_srf_matrix(grid)
+    if version is not None:
+        srf.version = version
+    return srf, grid
+
+
 _BUILTIN_BUILDERS: dict[str, Callable[..., tuple[SRFMatrix, np.ndarray]]] = {
     "mako": _mako_builder,
+    "emit": _emit_builder,
 }
 
 

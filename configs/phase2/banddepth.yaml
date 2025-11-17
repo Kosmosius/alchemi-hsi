@@ -1,0 +1,18 @@
+# Band-depth features for solid-phase absorptions (nm).
+bands:
+  - name: olivine_1
+    center: 1020.0
+    left: 980.0
+    right: 1060.0
+  - name: pyroxene_1
+    center: 1200.0
+    left: 1160.0
+    right: 1240.0
+  - name: spinel_2
+    center: 1500.0
+    left: 1450.0
+    right: 1550.0
+  - name: cpx_3
+    center: 2000.0
+    left: 1940.0
+    right: 2060.0
