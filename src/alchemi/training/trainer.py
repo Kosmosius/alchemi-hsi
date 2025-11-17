@@ -6,6 +6,7 @@ import torch
 import yaml
 from torch.utils.data import DataLoader, TensorDataset
 
+from ..heads import BandDepthHead, load_banddepth_config
 from ..losses import InfoNCELoss, ReconstructionLoss, SpectralSmoothnessLoss
 from ..models import (
     DomainDiscriminator,
@@ -94,13 +95,24 @@ def run_align(config_path: str):
     enc = MAEEncoder(embed_dim=cfg.embed_dim, depth=cfg.depth, n_heads=cfg.n_heads)
     nce = InfoNCELoss()
     domain = DomainDiscriminator(embed_dim=cfg.embed_dim, n_domains=4)
-    opt = torch.optim.AdamW(
+
+    params = (
         list(basis.parameters())
         + list(setenc.parameters())
         + list(enc.parameters())
-        + list(domain.parameters()),
-        lr=cfg.lr,
+        + list(domain.parameters())
     )
+    band_head: BandDepthHead | None = None
+    if cfg.banddepth_cfg and cfg.banddepth_weight > 0.0:
+        bands = load_banddepth_config(cfg.banddepth_cfg)
+        band_head = BandDepthHead(
+            embed_dim=cfg.embed_dim,
+            bands=bands,
+            hidden_dim=cfg.banddepth_hidden,
+            loss=cfg.banddepth_loss,
+        )
+        params += list(band_head.parameters())
+    opt = torch.optim.AdamW(params, lr=cfg.lr)
 
     Xf = torch.randn(512, 64)
     Xl = torch.randn(512, 64)
@@ -111,6 +123,20 @@ def run_align(config_path: str):
             zf = enc(f.unsqueeze(1)).squeeze(1)
             zl = enc(lab.unsqueeze(1)).squeeze(1)
             loss = nce(zf, zl)
+            if band_head is not None:
+                band_head = band_head.to(zf.device)
+                pooled = zf.mean(dim=1)
+                preds = band_head(pooled)
+                wavelengths = torch.linspace(
+                    900.0,
+                    2500.0,
+                    f.shape[1],
+                    device=f.device,
+                    dtype=f.dtype,
+                )
+                targets = band_head.compute_targets(wavelengths, f.detach())
+                band_loss = band_head.loss(preds, targets)
+                loss = loss + cfg.banddepth_weight * band_loss
         opt.zero_grad(set_to_none=True)
         loss.backward()
         opt.step()
