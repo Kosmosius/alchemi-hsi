@@ -13,6 +13,7 @@ from .resample import (
     gaussian_resample,
     project_to_sensor,
 )
+from .synthetic import rand_srf_grid
 
 __all__ = [
     "SRFRegistry",
@@ -32,6 +33,7 @@ __all__ = [
     "build_mako_srf_from_header",
     "get_srf",
     "mako_lwir_grid_nm",
+    "rand_srf_grid",
     "project_to_sensor",
     "validate_srf_matrix",
 ]
