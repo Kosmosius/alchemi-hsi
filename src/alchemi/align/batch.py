@@ -175,9 +175,7 @@ def _validate_lab_values(lab_values: np.ndarray, expected: int) -> np.ndarray:
     return values
 
 
-def _resolve_noise(
-    noise: float | np.ndarray | None, band_count: int
-) -> np.ndarray | None:
+def _resolve_noise(noise: float | np.ndarray | None, band_count: int) -> np.ndarray | None:
     if noise is None:
         return None
     coeff = np.asarray(noise, dtype=np.float64)

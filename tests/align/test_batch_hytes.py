@@ -29,9 +29,7 @@ def test_build_hytes_pairs_projection_matches_srf(lab_batch: dict[str, np.ndarra
     result = build_hytes_pairs(lab_batch, noise_cfg=HyTESNoiseConfig(enabled=False))
 
     srf = hytes_srf_matrix()
-    expected = batch_convolve_lab_to_sensor(
-        lab_batch["wavelengths_nm"], lab_batch["radiance"], srf
-    )
+    expected = batch_convolve_lab_to_sensor(lab_batch["wavelengths_nm"], lab_batch["radiance"], srf)
 
     np.testing.assert_allclose(result["wavelengths_nm"], HYTES_WAVELENGTHS_NM)
     np.testing.assert_allclose(result["radiance"], expected, rtol=1e-6, atol=1e-12)

@@ -189,16 +189,12 @@ def _build_catalog(entries: Sequence[_RawEntry]) -> SPLIBCatalog:
         aliases.add(entry.canonical)
         alias_lookup.setdefault(_normalize_key(entry.canonical), entry.canonical)
 
-    aliases_final: dict[str, list[str]] = {
-        k: sorted(v) for k, v in aliases_by_canonical.items()
-    }
+    aliases_final: dict[str, list[str]] = {k: sorted(v) for k, v in aliases_by_canonical.items()}
 
     catalog = SPLIBCatalog(alias_map=alias_lookup, aliases=aliases_final)
     for entry in entries:
         spectrum = Spectrum(
-            wavelengths=WavelengthGrid(
-                np.asarray(entry.wavelengths_nm, dtype=np.float64)
-            ),
+            wavelengths=WavelengthGrid(np.asarray(entry.wavelengths_nm, dtype=np.float64)),
             values=np.asarray(entry.reflectance, dtype=np.float64),
             kind=SpectrumKind.REFLECTANCE,
             units="unitless",

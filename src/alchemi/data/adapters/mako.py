@@ -33,4 +33,3 @@ def _build_meta(ds: xr.Dataset, position: tuple[int, int]) -> SampleMeta:
         col=int(position[1]),
         datetime=ds.attrs.get("datetime"),
     )
-

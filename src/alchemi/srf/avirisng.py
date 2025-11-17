@@ -214,4 +214,3 @@ def _clone_matrix(matrix: SRFMatrix) -> SRFMatrix:
     if hasattr(matrix, "bad_band_windows_nm"):
         clone.bad_band_windows_nm = tuple(matrix.bad_band_windows_nm)
     return clone
-

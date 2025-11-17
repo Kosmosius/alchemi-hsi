@@ -122,9 +122,8 @@ def build_matrix_from_centers(
 def validate_srf_matrix(matrix: SRFMatrix) -> None:
     """Validate that SRF rows are normalized and sufficiently supported."""
 
-    if (
-        len(matrix.bands_nm) != len(matrix.centers_nm)
-        or len(matrix.bands_resp) != len(matrix.centers_nm)
+    if len(matrix.bands_nm) != len(matrix.centers_nm) or len(matrix.bands_resp) != len(
+        matrix.centers_nm
     ):
         raise ValueError("SRFMatrix bands must align with centers")
 

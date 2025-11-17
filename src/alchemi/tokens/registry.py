@@ -23,6 +23,7 @@ class _BandTokOverrides(TypedDict, total=False):
     sensor_id: str | None
     epsilon: float
 
+
 _SENSOR_PRESETS: dict[str, _BandTokOverrides] = {
     "emit": {"token_dim": 96, "include_srf_embed": True, "sensor_id": "emit"},
     "enmap": {"token_dim": 96, "include_srf_embed": True, "sensor_id": "enmap"},
@@ -60,4 +61,3 @@ def get_default_tokenizer(sensor_id: str | None, axis_unit: AxisUnit) -> BandTok
 
 
 __all__ = ["get_default_tokenizer"]
-

@@ -230,9 +230,7 @@ def _print_cube_summary(cube: Cube) -> None:
     typer.echo(f"Sensor: {sensor}")
     typer.echo(f"Quantity: {cube.quantity} [{units}]")
 
-    axis_parts = [
-        f"{name}={size}" for name, size in zip(cube.axes, cube.shape, strict=True)
-    ]
+    axis_parts = [f"{name}={size}" for name, size in zip(cube.axes, cube.shape, strict=True)]
     typer.echo("Shape: " + ", ".join(axis_parts))
 
     axis_nm = cube.wavelength_nm

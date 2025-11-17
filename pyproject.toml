@@ -54,6 +54,12 @@ packages = ["src/alchemi"]
 line-length = 100
 target-version = ["py310"]
 
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["alchemi"]
+src_paths = ["src", "tests"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

@@ -89,4 +89,3 @@ def test_mako_l2s_sample_smoketest(synthetic_mako_cube: tuple[Path, np.ndarray, 
 def _format_envi_list(values: np.ndarray) -> str:
     values_list = ",\n ".join(str(v) for v in values)
     return "{" + values_list + "}"
-

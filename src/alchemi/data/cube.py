@@ -423,9 +423,7 @@ class Cube:
 
         axes = tuple(data_arr.dims)
         axis_coords = {
-            name: np.asarray(dataset.coords[name].values)
-            for name in axes
-            if name in dataset.coords
+            name: np.asarray(dataset.coords[name].values) for name in axes if name in dataset.coords
         }
         spectral = axis_coords.get("band")
         axis = spectral if spectral is not None else np.arange(data.shape[-1], dtype=np.float64)

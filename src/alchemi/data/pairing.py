@@ -19,9 +19,7 @@ class LabSensorCache:
         srf = srf_reg.get(sensor)
 
         @self.mem.cache
-        def _conv(
-            lab_nm_hash: str, lab_values: np.ndarray, sensor_key: str, srf_data_hash: str
-        ):
+        def _conv(lab_nm_hash: str, lab_values: np.ndarray, sensor_key: str, srf_data_hash: str):
             return batch_convolve_lab_to_sensor(lab_nm, lab_values, srf)
 
         key_nm = str(hash(lab_nm.tobytes()))

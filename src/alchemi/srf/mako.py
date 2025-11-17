@@ -93,4 +93,3 @@ def build_mako_srf_from_header(
     srf = srf.normalize_trapz()
     srf.cache_key = _compute_cache_key(centers_nm, grid_nm, float(fwhm_nm), srf.version)
     return srf
-
