@@ -1,23 +1,16 @@
-"""Alignment utilities and losses for constructing training batches,
-pairing laboratory spectra with sensor measurements (including HyTES
-and AVIRIS-NG), and optional cycle-consistency reconstruction heads."""
+"""Alignment utilities and losses with lazy attribute loading."""
 
-from .cycle import CycleAlignment, CycleConfig, CycleReconstructionHeads
-from .losses import LossOut, info_nce_symmetric
-from .hytes import HyTESNoiseConfig, build_hytes_pairs
-from .batch import build_emit_pairs, build_enmap_pairs, build_avirisng_pairs
-from .batch_builders import NoiseConfig, Pair, build_emits_pairs
-from .transforms import RandomSensorProject
+from __future__ import annotations
+
+import importlib
+from typing import Any
 
 __all__ = [
-    # Cycle alignment / reconstruction
     "CycleAlignment",
     "CycleConfig",
     "CycleReconstructionHeads",
-    # HyTES-specific pairing utilities
     "HyTESNoiseConfig",
     "build_hytes_pairs",
-    # General batch builders
     "build_emit_pairs",
     "build_enmap_pairs",
     "build_avirisng_pairs",
@@ -25,7 +18,34 @@ __all__ = [
     "Pair",
     "build_emits_pairs",
     "RandomSensorProject",
-    # Losses
     "LossOut",
     "info_nce_symmetric",
 ]
+
+_EXPORTS = {
+    "CycleAlignment": ("alchemi.align.cycle", "CycleAlignment"),
+    "CycleConfig": ("alchemi.align.cycle", "CycleConfig"),
+    "CycleReconstructionHeads": ("alchemi.align.cycle", "CycleReconstructionHeads"),
+    "HyTESNoiseConfig": ("alchemi.align.hytes", "HyTESNoiseConfig"),
+    "build_hytes_pairs": ("alchemi.align.hytes", "build_hytes_pairs"),
+    "build_emit_pairs": ("alchemi.align.batch", "build_emit_pairs"),
+    "build_enmap_pairs": ("alchemi.align.batch", "build_enmap_pairs"),
+    "build_avirisng_pairs": ("alchemi.align.batch", "build_avirisng_pairs"),
+    "NoiseConfig": ("alchemi.align.batch_builders", "NoiseConfig"),
+    "Pair": ("alchemi.align.batch_builders", "Pair"),
+    "build_emits_pairs": ("alchemi.align.batch_builders", "build_emits_pairs"),
+    "RandomSensorProject": ("alchemi.align.transforms", "RandomSensorProject"),
+    "LossOut": ("alchemi.align.losses", "LossOut"),
+    "info_nce_symmetric": ("alchemi.align.losses", "info_nce_symmetric"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    try:
+        module_name, attr = _EXPORTS[name]
+    except KeyError as exc:  # pragma: no cover - defensive guard
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+    module = importlib.import_module(module_name)
+    value = getattr(module, attr)
+    globals()[name] = value
+    return value
