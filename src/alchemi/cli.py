@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import typer
@@ -15,13 +16,16 @@ from .data.io import load_avirisng_l1b, load_emit_l1b, load_enmap_l1b, load_hyte
 from .data.validators import validate_dataset, validate_srf_dir
 from .io.mako import open_mako_ace, open_mako_btemp, open_mako_l2s
 from .srf import SRFRegistry
+from .train.alignment_trainer import AlignmentTrainer
 from .training.seed import seed_everything
-from .training.trainer import run_align, run_eval, run_pretrain_mae
+from .training.trainer import run_eval, run_pretrain_mae
 from .utils.logging import get_logger
 
 app = typer.Typer(add_completion=False)
 data_app = typer.Typer(add_completion=False)
+align_app = typer.Typer(add_completion=False)
 app.add_typer(data_app, name="data")
+app.add_typer(align_app, name="align")
 _LOG = get_logger(__name__)
 
 
@@ -46,10 +50,14 @@ def pretrain_mae(config: str = "configs/train.mae.yaml"):
     run_pretrain_mae(config)
 
 
-@app.command()
-def align(config: str = "configs/train.align.yaml"):
-    seed_everything(42)
-    run_align(config)
+@align_app.command("train")
+def align_train(
+    cfg: str = typer.Option("configs/phase2/alignment.yaml", "--cfg", "-c"),
+    max_steps: int | None = typer.Option(None, "--max-steps", "-m"),
+):
+    """Run the Phase-2 alignment trainer."""
+    trainer = AlignmentTrainer.from_yaml(cfg)
+    trainer.train(max_steps=max_steps)
 
 
 @app.command()
@@ -215,10 +223,13 @@ def _find_partner(path: Path) -> Path | None:
 
 
 def _print_cube_summary(cube: Cube) -> None:
+    # Prefer explicit attributes, fall back to metadata if missing
     sensor = cube.sensor or cube.metadata.get("sensor", "unknown")
     units = cube.units or cube.metadata.get("units", "unknown")
+
     typer.echo(f"Sensor: {sensor}")
     typer.echo(f"Quantity: {cube.quantity} [{units}]")
+
     axis_parts = [
         f"{name}={size}" for name, size in zip(cube.axes, cube.shape, strict=True)
     ]
@@ -235,12 +246,25 @@ def _print_cube_summary(cube: Cube) -> None:
         good = int(np.count_nonzero(cube.band_mask))
         typer.echo(f"Band mask: {good}/{total} bands marked good")
 
-    metadata = dict(cube.metadata)
+    # Print metadata, excluding things already surfaced above
+    metadata = dict(cube.metadata) if cube.metadata else {}
     metadata.pop("sensor", None)
     metadata.pop("units", None)
     if metadata:
-        meta_json = json.dumps(metadata, sort_keys=True, default=str)
+        meta_json = json.dumps(_json_ready(metadata), sort_keys=True, default=str)
         typer.echo(f"Metadata: {meta_json}")
+
+
+def _json_ready(value: Any) -> Any:
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, (np.generic,)):
+        return value.item()
+    if isinstance(value, dict):
+        return {k: _json_ready(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_ready(v) for v in value]
+    return value
 
 
 if __name__ == "__main__":

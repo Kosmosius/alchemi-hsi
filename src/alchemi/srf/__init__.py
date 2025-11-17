@@ -1,24 +1,9 @@
-from .avirisng import avirisng_bad_band_mask, avirisng_srf_matrix
-from .batch_convolve import batch_convolve_lab_to_sensor
-from .convolve import convolve_lab_to_sensor
-from .emit import emit_srf_matrix
-from .enmap import enmap_srf_matrix
-from .fallback import build_matrix_from_centers, gaussian_srf, validate_srf_matrix
-from .hytes import hytes_srf_matrix
-from .mako import MAKO_BAND_COUNT, build_mako_srf_from_header, mako_lwir_grid_nm
-from .registry import SRFRegistry, get_srf
-from .resample import (
-    boxcar_resample,
-    convolve_to_bands,
-    gaussian_resample,
-    project_to_sensor,
-)
-from .synthetic import (
-    ProjectedSpectrum,
-    SyntheticSensorConfig,
-    project_lab_to_synthetic,
-    rand_srf_grid,
-)
+"""Spectral response function utilities with lazy attribute loading."""
+
+from __future__ import annotations
+
+import importlib
+from typing import Any
 
 __all__ = [
     "MAKO_BAND_COUNT",
@@ -45,3 +30,51 @@ __all__ = [
     "rand_srf_grid",
     "validate_srf_matrix",
 ]
+
+_EXPORTS: dict[str, tuple[str, str]] = {
+    "SRFRegistry": ("alchemi.srf.registry", "SRFRegistry"),
+    "get_srf": ("alchemi.srf.registry", "get_srf"),
+    "avirisng_bad_band_mask": ("alchemi.srf.avirisng", "avirisng_bad_band_mask"),
+    "avirisng_srf_matrix": ("alchemi.srf.avirisng", "avirisng_srf_matrix"),
+    "batch_convolve_lab_to_sensor": (
+        "alchemi.srf.batch_convolve",
+        "batch_convolve_lab_to_sensor",
+    ),
+    "boxcar_resample": ("alchemi.srf.resample", "boxcar_resample"),
+    "convolve_lab_to_sensor": ("alchemi.srf.convolve", "convolve_lab_to_sensor"),
+    "convolve_to_bands": ("alchemi.srf.resample", "convolve_to_bands"),
+    "emit_srf_matrix": ("alchemi.srf.emit", "emit_srf_matrix"),
+    "enmap_srf_matrix": ("alchemi.srf.enmap", "enmap_srf_matrix"),
+    "gaussian_resample": ("alchemi.srf.resample", "gaussian_resample"),
+    "gaussian_srf": ("alchemi.srf.fallback", "gaussian_srf"),
+    "hytes_srf_matrix": ("alchemi.srf.hytes", "hytes_srf_matrix"),
+    "MAKO_BAND_COUNT": ("alchemi.srf.mako", "MAKO_BAND_COUNT"),
+    "build_mako_srf_from_header": ("alchemi.srf.mako", "build_mako_srf_from_header"),
+    "mako_lwir_grid_nm": ("alchemi.srf.mako", "mako_lwir_grid_nm"),
+    "build_matrix_from_centers": ("alchemi.srf.fallback", "build_matrix_from_centers"),
+    "validate_srf_matrix": ("alchemi.srf.fallback", "validate_srf_matrix"),
+    "project_to_sensor": ("alchemi.srf.resample", "project_to_sensor"),
+    "rand_srf_grid": ("alchemi.srf.synthetic", "rand_srf_grid"),
+    "ProjectedSpectrum": ("alchemi.srf.synthetic", "ProjectedSpectrum"),
+    "SyntheticSensorConfig": ("alchemi.srf.synthetic", "SyntheticSensorConfig"),
+    "project_lab_to_synthetic": (
+        "alchemi.srf.synthetic",
+        "project_lab_to_synthetic",
+    ),
+}
+
+
+def __getattr__(name: str) -> Any:
+    try:
+        module_name, attr = _EXPORTS[name]
+    except KeyError as exc:  # pragma: no cover - defensive guard
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+    module = importlib.import_module(module_name)
+    value = getattr(module, attr)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    # So dir(alchemi.srf) shows the lazily exported names
+    return sorted(list(globals().keys()) + list(__all__))
