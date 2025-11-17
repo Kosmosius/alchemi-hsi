@@ -1,11 +1,7 @@
 import numpy as np
 
-try:
-    from numpy import trapezoid as _integrate
-except ImportError:  # pragma: no cover - NumPy < 2.0 fallback
-    from numpy import trapz as _integrate  # type: ignore[attr-defined]
-
 from ..types import SRFMatrix
+from ..utils.integrate import np_integrate as _np_integrate
 
 
 def batch_convolve_lab_to_sensor(
@@ -23,5 +19,5 @@ def batch_convolve_lab_to_sensor(
     out = np.zeros((M, B), dtype=np.float64)
     for b, (nm, resp) in enumerate(zip(srf.bands_nm, srf.bands_resp, strict=True)):
         interpolated = np.vstack([np.interp(nm, lab_nm, sample) for sample in lab_values])
-        out[:, b] = _integrate(interpolated * resp[None, :], nm, axis=1)
+        out[:, b] = _np_integrate(interpolated * resp[None, :], nm, axis=1)
     return out

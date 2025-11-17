@@ -6,10 +6,7 @@ from typing import Literal
 
 import numpy as np
 
-try:
-    from numpy import trapezoid as _integrate
-except ImportError:  # pragma: no cover - NumPy < 2.0 fallback
-    from numpy import trapz as _integrate  # type: ignore[attr-defined]
+from alchemi.utils.integrate import np_integrate as _np_integrate
 
 from alchemi.types import SRFMatrix
 
@@ -68,10 +65,10 @@ def convolve_to_bands(
 
         interp_vals = np.vstack([np.interp(band_wl, wl, row) for row in spectra])
         weighted = interp_vals * band_resp[None, :]
-        band_area = float(_integrate(band_resp, band_wl))
+        band_area = float(_np_integrate(band_resp, band_wl))
         if not np.isfinite(band_area) or band_area <= 0.0:
             raise ValueError("SRF band must integrate to a positive finite area")
-        out[:, idx] = _integrate(weighted, band_wl, axis=1) / band_area
+        out[:, idx] = _np_integrate(weighted, band_wl, axis=1) / band_area
 
     return out[0] if squeezed else out
 
@@ -105,7 +102,7 @@ def boxcar_resample(
         interior = wl[(wl > lower) & (wl < upper)]
         window_wl = np.concatenate(([lower], interior, [upper]))
         interp_vals = np.vstack([np.interp(window_wl, wl, row) for row in spectra])
-        out[:, idx] = _integrate(interp_vals, window_wl, axis=1) / width
+        out[:, idx] = _np_integrate(interp_vals, window_wl, axis=1) / width
 
     return out[0] if squeezed else out
 
@@ -135,11 +132,11 @@ def gaussian_resample(
 
     for idx, (center, sig) in enumerate(zip(centers, sigma, strict=True)):
         weights = np.exp(-0.5 * ((wl - center) / sig) ** 2)
-        denom = float(_integrate(weights, wl))
+        denom = float(_np_integrate(weights, wl))
         if not np.isfinite(denom) or denom <= 0.0:
             raise ValueError("Gaussian kernel must integrate to a positive finite area")
         weighted = spectra * weights[None, :]
-        out[:, idx] = _integrate(weighted, wl, axis=1) / denom
+        out[:, idx] = _np_integrate(weighted, wl, axis=1) / denom
 
     return out[0] if squeezed else out
 

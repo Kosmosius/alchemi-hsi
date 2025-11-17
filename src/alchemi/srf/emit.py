@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections.abc import Iterable, Sequence
 from importlib import resources
+from typing import overload
 
 import numpy as np
 
@@ -41,7 +42,16 @@ class _EmitSRFArchive(Sequence[np.ndarray]):
     def __len__(self) -> int:
         return self.responses.shape[0]
 
-    def __getitem__(self, idx: int) -> np.ndarray:
+    @overload
+    def __getitem__(self, idx: int) -> np.ndarray: ...
+
+    @overload
+    def __getitem__(self, idx: slice) -> Sequence[np.ndarray]: ...
+
+    def __getitem__(self, idx: int | slice) -> np.ndarray | Sequence[np.ndarray]:
+        if isinstance(idx, slice):
+            start, stop, step = idx.indices(self.__len__())
+            return [self.responses[i] for i in range(start, stop, step)]
         return self.responses[idx]
 
 

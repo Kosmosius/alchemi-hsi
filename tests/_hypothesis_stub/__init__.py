@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar, overload, cast
 
 import numpy as _np
 
@@ -13,6 +13,9 @@ from . import strategies
 from .strategies import Strategy
 
 __all__ = ["HealthCheck", "given", "settings", "strategies"]
+
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 @dataclass(frozen=True)
@@ -41,21 +44,39 @@ def settings(
 _GLOBAL_RNG = _np.random.default_rng(0)
 
 
-def given(*strategies: Strategy) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+@overload
+def given(fn: F, /) -> F: ...
+
+
+@overload
+def given(*strategies: Strategy) -> Callable[[F], F]: ...
+
+
+def given(*args: Any) -> Callable[[F], F] | F:
     """Execute the wrapped test with randomly sampled arguments."""
 
-    def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
-        if not strategies:
-            raise TypeError("given() requires at least one strategy")
+    if args and callable(args[0]):
+        fn = cast(F, args[0])
+        return _wrap_with_strategies(fn, ())
 
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            cfg = getattr(fn, "__hypothesis_settings__", {})
-            max_examples = int(cfg.get("max_examples", 10))
-            for _ in range(max_examples):
-                samples = [strategy.example(_GLOBAL_RNG) for strategy in strategies]
-                fn(*args, *samples, **kwargs)
+    strategies = tuple(cast(tuple[Strategy, ...], args))
 
-        wrapper.__name__ = getattr(fn, "__name__", wrapper.__name__)
-        return wrapper
+    def decorator(fn: F) -> F:
+        return _wrap_with_strategies(fn, strategies)
 
     return decorator
+
+
+def _wrap_with_strategies(fn: F, strategies: tuple[Strategy, ...]) -> F:
+    if not strategies:
+        return fn
+
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        cfg = getattr(fn, "__hypothesis_settings__", {})
+        max_examples = int(cfg.get("max_examples", 10))
+        for _ in range(max_examples):
+            samples = [strategy.example(_GLOBAL_RNG) for strategy in strategies]
+            fn(*args, *samples, **kwargs)
+
+    wrapper.__name__ = getattr(fn, "__name__", getattr(wrapper, "__name__", "wrapper"))
+    return cast(F, wrapper)

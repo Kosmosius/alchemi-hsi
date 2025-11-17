@@ -6,10 +6,7 @@ from typing import Any
 
 import numpy as np
 
-try:
-    from numpy import trapezoid as _np_integrate
-except ImportError:  # pragma: no cover - NumPy < 2.0 fallback
-    from numpy import trapz as _np_integrate
+from alchemi.utils.integrate import np_integrate as _np_integrate
 
 
 class SpectrumKind(str, Enum):
