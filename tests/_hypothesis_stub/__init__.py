@@ -7,6 +7,7 @@ from typing import Any, Callable, Iterable
 
 import numpy as _np
 
+from . import strategies
 from .strategies import Strategy
 
 __all__ = ["given", "settings", "HealthCheck", "strategies"]
@@ -51,6 +52,3 @@ def given(*strategies: Strategy) -> Callable[[Callable[..., Any]], Callable[...,
         return wrapper
 
     return decorator
-
-
-from . import strategies  # noqa: E402  (re-exported module)
