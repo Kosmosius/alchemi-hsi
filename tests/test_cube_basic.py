@@ -25,34 +25,63 @@ def _make_dataset(var_name: str, *, units: str, sensor: str) -> xr.Dataset:
     }
 
     ds = xr.Dataset()
-    ds[var_name] = xr.DataArray(values, dims=("y", "x", "band"), coords=coords, attrs={"units": units})
+    ds[var_name] = xr.DataArray(
+        values,
+        dims=("y", "x", "band"),
+        coords=coords,
+        attrs={"units": units},
+    )
     ds = ds.assign_coords(wavelength_nm=("band", np.linspace(400.0, 800.0, band)))
-    ds.attrs.update(sensor=sensor, crs="EPSG:4326", transform=(0.0, 30.0, 15.0, 45.0, 0.0, -30.0))
+    ds.attrs.update(
+        sensor=sensor,
+        crs="EPSG:4326",
+        transform=(0.0, 30.0, 15.0, 45.0, 0.0, -30.0),
+    )
     return ds
 
 
 def test_cube_validation_shape() -> None:
     data = np.zeros((4, 5), dtype=np.float32)
     with pytest.raises(ValueError):
-        Cube(data=data, axis=np.linspace(0.0, 1.0, 5), axis_unit="wavelength_nm", value_kind="radiance")
+        Cube(
+            data=data,
+            axis=np.linspace(0.0, 1.0, 5),
+            axis_unit="wavelength_nm",
+            value_kind="radiance",
+        )
 
 
 def test_cube_validation_axis_length() -> None:
     data = np.zeros((4, 5, 6), dtype=np.float32)
     with pytest.raises(ValueError):
-        Cube(data=data, axis=np.linspace(0.0, 1.0, 5), axis_unit="wavelength_nm", value_kind="radiance")
+        Cube(
+            data=data,
+            axis=np.linspace(0.0, 1.0, 5),
+            axis_unit="wavelength_nm",
+            value_kind="radiance",
+        )
 
 
 def test_cube_validation_axis_unit() -> None:
     data = np.zeros((2, 2, 3), dtype=np.float32)
     with pytest.raises(ValueError):
-        Cube(data=data, axis=np.linspace(0.0, 1.0, 3), axis_unit="frequency", value_kind="radiance")
+        Cube(
+            data=data,
+            axis=np.linspace(0.0, 1.0, 3),
+            axis_unit="frequency",
+            value_kind="radiance",
+        )
 
 
 def test_cube_validation_value_kind() -> None:
     data = np.zeros((2, 2, 3), dtype=np.float32)
     with pytest.raises(ValueError):
-        Cube(data=data, axis=np.linspace(0.0, 1.0, 3), axis_unit="wavelength_nm", value_kind="invalid")
+        Cube(
+            data=data,
+            axis=np.linspace(0.0, 1.0, 3),
+            axis_unit="wavelength_nm",
+            value_kind="invalid",
+        )
 
 
 def test_cube_accepts_geo_and_attrs() -> None:
@@ -81,7 +110,9 @@ def test_cube_accepts_geo_and_attrs() -> None:
         (from_mako_l3, "bt", "K", "brightness_temp", "mako"),
     ],
 )
-def test_adapter_round_trip(adapter, var_name: str, units: str, value_kind: str, sensor: str) -> None:
+def test_adapter_round_trip(
+    adapter, var_name: str, units: str, value_kind: str, sensor: str
+) -> None:
     ds = _make_dataset(var_name, units=units, sensor=sensor)
     cube = adapter(ds)
 

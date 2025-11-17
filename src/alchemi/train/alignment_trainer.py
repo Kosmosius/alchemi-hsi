@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 import numpy as np
 import torch
-from torch import nn
 import yaml
+from torch import nn
 
 from ..align.batch_builders import NoiseConfig, build_emits_pairs
 from ..align.cycle import CycleConfig, CycleReconstructionHeads
@@ -104,7 +105,7 @@ class AlignmentExperimentConfig:
     banddepth: BandDepthConfig = field(default_factory=BandDepthConfig)
 
     @classmethod
-    def from_mapping(cls, data: Mapping[str, Any]) -> "AlignmentExperimentConfig":
+    def from_mapping(cls, data: Mapping[str, Any]) -> AlignmentExperimentConfig:
         def _build_trainer() -> TrainerConfig:
             cfg = data.get("trainer", {})
             return TrainerConfig(
@@ -129,7 +130,11 @@ class AlignmentExperimentConfig:
             values = np.asarray(tuple(raw), dtype=np.float64)
             if values.size < 2:
                 raise ValueError("lab_grid_nm iterable must contain at least two samples")
-            return LabGridConfig(start=float(values.min()), stop=float(values.max()), num=int(values.size))
+            return LabGridConfig(
+                start=float(values.min()),
+                stop=float(values.max()),
+                num=int(values.size),
+            )
 
         def _build_data() -> DataConfig:
             cfg = data.get("data", {})
@@ -147,7 +152,18 @@ class AlignmentExperimentConfig:
         def _build_tokenizer() -> TokenizerConfig:
             cfg = data.get("tokenizer", {})
             axis = cfg.get("axis_unit", "nm")
-            params = {k: v for k, v in cfg.items() if k != "axis_unit"}
+            aliases = {
+                "lambda_norm": "axis_norm",
+                "n_frequencies": "n_fourier_frequencies",
+            }
+            valid = set(BandTokConfig.__dataclass_fields__)
+            params: dict[str, Any] = {}
+            for key, value in cfg.items():
+                if key == "axis_unit":
+                    continue
+                mapped = aliases.get(key, key)
+                if mapped in valid:
+                    params[mapped] = value
             return TokenizerConfig(axis_unit=axis, params=BandTokConfig(**params))
 
         def _build_model() -> ModelConfig:
@@ -259,15 +275,27 @@ class AlignmentTrainer:
 
         self.model = nn.ModuleDict(
             {
-                "lab": _TokenTower(self.token_dim, self.cfg.model.embed_dim, self.cfg.model.depth, self.cfg.model.heads),
-                "sensor": _TokenTower(self.token_dim, self.cfg.model.embed_dim, self.cfg.model.depth, self.cfg.model.heads),
+                "lab": _TokenTower(
+                    self.token_dim,
+                    self.cfg.model.embed_dim,
+                    self.cfg.model.depth,
+                    self.cfg.model.heads,
+                ),
+                "sensor": _TokenTower(
+                    self.token_dim,
+                    self.cfg.model.embed_dim,
+                    self.cfg.model.depth,
+                    self.cfg.model.heads,
+                ),
             }
         ).to(self.device)
 
         self._tau_params: list[torch.nn.Parameter] = []
         if self.cfg.loss.learnable_tau:
             with torch.no_grad():
-                dummy = torch.zeros(1, self.cfg.model.embed_dim, device=self.device, dtype=self.dtype)
+                dummy = torch.zeros(
+                    1, self.cfg.model.embed_dim, device=self.device, dtype=self.dtype
+                )
                 loss_out = info_nce_symmetric(
                     dummy,
                     dummy,
@@ -277,7 +305,10 @@ class AlignmentTrainer:
                 )
             self._tau_params = loss_out.parameters()
 
-        probe_pair = build_emits_pairs([(self.lab_wavelengths, np.ones_like(self.lab_wavelengths))], srf=self.cfg.data.sensor)[0]
+        probe_pair = build_emits_pairs(
+            [(self.lab_wavelengths, np.ones_like(self.lab_wavelengths))],
+            srf=self.cfg.data.sensor,
+        )[0]
         self.sensor_wavelengths = torch.as_tensor(
             probe_pair.sensor_wavelengths_nm, device=self.device, dtype=self.dtype
         )
@@ -303,7 +334,10 @@ class AlignmentTrainer:
                 loss=self.cfg.banddepth.loss,
             ).to(device=self.device, dtype=self.dtype)
 
-        self.noise_cfg = NoiseConfig(noise_level_rel=self.cfg.data.sensor_noise_rel, rng=self._rng_sensor)
+        self.noise_cfg = NoiseConfig(
+            noise_level_rel=self.cfg.data.sensor_noise_rel,
+            rng=self._rng_sensor,
+        )
         params: list[torch.nn.Parameter] = list(self.model.parameters())
         if self.cycle_heads is not None:
             params += list(self.cycle_heads.parameters())
@@ -319,7 +353,7 @@ class AlignmentTrainer:
         )
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "AlignmentTrainer":
+    def from_yaml(cls, path: str | Path) -> AlignmentTrainer:
         return cls(load_alignment_config(path))
 
     def train(self, *, max_steps: int | None = None) -> list[dict[str, float]]:
@@ -361,7 +395,7 @@ class AlignmentTrainer:
                 pair.lab_values,
                 pair.lab_wavelengths_nm,
                 axis_unit=self.axis_unit,
-                fwhm=self.lab_fwhm,
+                width=self.lab_fwhm,
             )
             sensor_tok = self.tokenizer(
                 pair.sensor_values,
@@ -373,12 +407,24 @@ class AlignmentTrainer:
             lab_masks.append(~lab_tok.meta.invalid_mask)
             sensor_masks.append(~sensor_tok.meta.invalid_mask)
 
-        lab_tokens_tensor = torch.as_tensor(np.stack(lab_tokens), device=self.device, dtype=self.dtype)
-        lab_mask_tensor = torch.as_tensor(np.stack(lab_masks), device=self.device, dtype=torch.bool)
-        sensor_tokens_tensor = torch.as_tensor(np.stack(sensor_tokens), device=self.device, dtype=self.dtype)
-        sensor_mask_tensor = torch.as_tensor(np.stack(sensor_masks), device=self.device, dtype=torch.bool)
-        lab_values_tensor = torch.as_tensor(np.stack(lab_values), device=self.device, dtype=self.dtype)
-        sensor_values_tensor = torch.as_tensor(np.stack(sensor_values), device=self.device, dtype=self.dtype)
+        lab_tokens_tensor = torch.as_tensor(
+            np.stack(lab_tokens), device=self.device, dtype=self.dtype
+        )
+        lab_mask_tensor = torch.as_tensor(
+            np.stack(lab_masks), device=self.device, dtype=torch.bool
+        )
+        sensor_tokens_tensor = torch.as_tensor(
+            np.stack(sensor_tokens), device=self.device, dtype=self.dtype
+        )
+        sensor_mask_tensor = torch.as_tensor(
+            np.stack(sensor_masks), device=self.device, dtype=torch.bool
+        )
+        lab_values_tensor = torch.as_tensor(
+            np.stack(lab_values), device=self.device, dtype=self.dtype
+        )
+        sensor_values_tensor = torch.as_tensor(
+            np.stack(sensor_values), device=self.device, dtype=self.dtype
+        )
         sensor_wavelengths = torch.as_tensor(
             pairs[0].sensor_wavelengths_nm, device=self.device, dtype=self.dtype
         )
@@ -392,7 +438,9 @@ class AlignmentTrainer:
             sensor_wavelengths=sensor_wavelengths,
         )
 
-    def _encode_tokens(self, tokens: torch.Tensor, mask: torch.Tensor, tower: _TokenTower) -> torch.Tensor:
+    def _encode_tokens(
+        self, tokens: torch.Tensor, mask: torch.Tensor, tower: _TokenTower
+    ) -> torch.Tensor:
         embeddings: list[torch.Tensor] = []
         for idx in range(tokens.shape[0]):
             embeddings.append(tower(tokens[idx], mask[idx]))
@@ -428,7 +476,10 @@ class AlignmentTrainer:
 
         if self.banddepth_head is not None:
             preds = self.banddepth_head(z_sensor)
-            targets = self.banddepth_head.compute_targets(batch.sensor_wavelengths, batch.sensor_values)
+            targets = self.banddepth_head.compute_targets(
+                batch.sensor_wavelengths,
+                batch.sensor_values,
+            )
             band_loss = self.banddepth_head.loss(preds, targets)
             total_loss = total_loss + self.cfg.banddepth.weight * band_loss
             metrics["banddepth_loss"] = float(band_loss.detach().cpu())
@@ -440,8 +491,16 @@ class AlignmentTrainer:
 
     def _evaluate(self, batch: _TensorBatch) -> dict[str, float]:
         with torch.no_grad():
-            z_lab = self._encode_tokens(batch.lab_tokens, batch.lab_mask, self.model["lab"])
-            z_sensor = self._encode_tokens(batch.sensor_tokens, batch.sensor_mask, self.model["sensor"])
+            z_lab = self._encode_tokens(
+                batch.lab_tokens,
+                batch.lab_mask,
+                self.model["lab"],
+            )
+            z_sensor = self._encode_tokens(
+                batch.sensor_tokens,
+                batch.sensor_mask,
+                self.model["sensor"],
+            )
         z_lab_np = z_lab.detach().cpu().numpy()
         z_sensor_np = z_sensor.detach().cpu().numpy()
         gt = np.arange(z_lab_np.shape[0])
@@ -467,7 +526,7 @@ class AlignmentTrainer:
             np.ones_like(self.lab_wavelengths),
             self.lab_wavelengths,
             axis_unit=self.axis_unit,
-            fwhm=self.lab_fwhm,
+            width=self.lab_fwhm,
         )
         return int(dummy.bands.shape[-1])
 

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import numpy as np
 
-from alchemi.types import SpectrumKind
 from alchemi.data.io import load_splib
+from alchemi.types import SpectrumKind
 
 
 def _write(tmp_path: Path, relative: str, content: str) -> Path:

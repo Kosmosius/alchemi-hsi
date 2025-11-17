@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -10,11 +10,16 @@ from alchemi.data.cube import Cube, GeoInfo, geo_from_attrs
 
 if TYPE_CHECKING:  # pragma: no cover - imported for typing only
     import xarray as xr
+else:  # pragma: no cover - optional dependency for runtime type hints
+    try:
+        import xarray as xr
+    except ImportError:  # pragma: no cover - xarray is optional at runtime
+        xr = Any  # type: ignore[assignment]
 
 __all__ = ["from_emit_l1b"]
 
 
-def _extract_geo(dataset: "xr.Dataset") -> GeoInfo | None:
+def _extract_geo(dataset: xr.Dataset) -> GeoInfo | None:
     geo = geo_from_attrs(getattr(dataset, "attrs", {}))
     if geo is not None:
         return geo
@@ -36,7 +41,7 @@ def _extract_geo(dataset: "xr.Dataset") -> GeoInfo | None:
     return geo_from_attrs({"crs": crs, "transform": transform})
 
 
-def from_emit_l1b(dataset: "xr.Dataset", *, srf_id: str | None = None) -> Cube:
+def from_emit_l1b(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
     """Convert an EMIT L1B :class:`xarray.Dataset` into a :class:`Cube`."""
 
     if "radiance" not in dataset:

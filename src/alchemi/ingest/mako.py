@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -10,11 +10,18 @@ from alchemi.data.cube import Cube, geo_from_attrs
 
 if TYPE_CHECKING:  # pragma: no cover
     import xarray as xr
+else:  # pragma: no cover - optional dependency for runtime type hints
+    try:
+        import xarray as xr
+    except ImportError:  # pragma: no cover - xarray is optional at runtime
+        xr = Any  # type: ignore[assignment]
 
 __all__ = ["from_mako_l2s", "from_mako_l3"]
 
 
-def _prepare(dataset: "xr.Dataset", variable: str) -> tuple[np.ndarray, np.ndarray, dict[str, object]]:
+def _prepare(
+    dataset: xr.Dataset, variable: str
+) -> tuple[np.ndarray, np.ndarray, dict[str, object]]:
     if variable not in dataset:
         raise KeyError(f"Dataset must contain '{variable}'")
     if "wavelength_nm" not in dataset.coords:
@@ -31,7 +38,7 @@ def _prepare(dataset: "xr.Dataset", variable: str) -> tuple[np.ndarray, np.ndarr
     return data, axis, attrs
 
 
-def from_mako_l2s(dataset: "xr.Dataset", *, srf_id: str | None = None) -> Cube:
+def from_mako_l2s(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
     """Convert a Mako L2S radiance dataset into a :class:`Cube`."""
 
     data, axis, attrs = _prepare(dataset, "radiance")
@@ -47,7 +54,7 @@ def from_mako_l2s(dataset: "xr.Dataset", *, srf_id: str | None = None) -> Cube:
     )
 
 
-def from_mako_l3(dataset: "xr.Dataset", *, srf_id: str | None = None) -> Cube:
+def from_mako_l3(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
     """Convert a Mako Level-3 BTEMP dataset into a :class:`Cube`."""
 
     data, axis, attrs = _prepare(dataset, "bt")

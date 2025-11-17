@@ -8,12 +8,11 @@ import sys
 try:  # pragma: no branch - executed in environments with real Hypothesis
     importlib.import_module("hypothesis")
 except ModuleNotFoundError:  # pragma: no cover - exercised only in CI without dependency
-    from tests._hypothesis_stub import strategies as _strategies
-    from tests._hypothesis_stub import (  # noqa: F401 - re-exported via sys.modules
-        HealthCheck,
-        given,
-        settings,
-    )
+    stub_module = importlib.import_module("tests._hypothesis_stub")
+    HealthCheck = stub_module.HealthCheck
+    given = stub_module.given
+    settings = stub_module.settings
+    _strategies = stub_module.strategies
 
     # Expose the stub under the public hypothesis namespace so existing imports
     # like ``from hypothesis import given`` continue to work transparently.

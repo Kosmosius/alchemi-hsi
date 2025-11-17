@@ -1,11 +1,10 @@
 import numpy as np
 import pytest
 
-pytest.importorskip("rasterio")
-import rasterio
-
-from alchemi.types import SpectrumKind
 from alchemi.data.io import emit_pixel, load_emit_l1b
+from alchemi.types import SpectrumKind
+
+rasterio = pytest.importorskip("rasterio")
 
 
 @pytest.fixture()

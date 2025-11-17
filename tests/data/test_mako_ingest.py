@@ -7,12 +7,12 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from alchemi.types import SpectrumKind
+
 from alchemi.data.adapters.mako import load_mako_pixel
 from alchemi.io import MAKO_BAND_COUNT, mako_pixel_radiance, open_mako_l2s
+from alchemi.types import SpectrumKind
 
-pytest.importorskip("rasterio")
-import rasterio
+rasterio = pytest.importorskip("rasterio")
 
 
 @pytest.fixture()

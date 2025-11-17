@@ -14,7 +14,7 @@ def test_srf_flat_response_hytes():
     flat_value = 3.0
     outputs = [
         np.trapezoid(np.full_like(resp, flat_value) * resp, nm)
-        for nm, resp in zip(srf.bands_nm, srf.bands_resp)
+        for nm, resp in zip(srf.bands_nm, srf.bands_resp, strict=True)
     ]
     outputs = np.asarray(outputs)
     assert np.allclose(outputs, flat_value, atol=1e-6)

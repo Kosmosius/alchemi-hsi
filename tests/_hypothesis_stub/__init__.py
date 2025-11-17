@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable
+from typing import Any
 
 import numpy as _np
 
 from . import strategies
 from .strategies import Strategy
 
-__all__ = ["given", "settings", "HealthCheck", "strategies"]
+__all__ = ["HealthCheck", "given", "settings", "strategies"]
 
 
 @dataclass(frozen=True)
@@ -21,7 +22,12 @@ class _HealthCheck:
 HealthCheck = _HealthCheck()
 
 
-def settings(*, max_examples: int = 10, deadline: float | None = None, suppress_health_check: Iterable[str] | None = None):
+def settings(
+    *,
+    max_examples: int = 10,
+    deadline: float | None = None,
+    suppress_health_check: Iterable[str] | None = None,
+):
     """Store lightweight settings metadata on the wrapped function."""
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:

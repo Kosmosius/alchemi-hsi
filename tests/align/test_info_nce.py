@@ -13,7 +13,11 @@ def test_info_nce_symmetric_decreases_on_aligned_pairs():
     optim = torch.optim.SGD([z_lab, z_sensor], lr=0.3)
 
     with torch.no_grad():
-        initial_loss = info_nce_symmetric(z_lab.detach(), z_sensor.detach(), gather_ddp=False).loss.item()
+        initial_loss = info_nce_symmetric(
+            z_lab.detach(),
+            z_sensor.detach(),
+            gather_ddp=False,
+        ).loss.item()
 
     for _ in range(80):
         optim.zero_grad(set_to_none=True)
@@ -71,7 +75,14 @@ def test_info_nce_symmetric_calls_gather(monkeypatch):
 
     monkeypatch.setattr("alchemi.align.losses._ddp_is_initialized", lambda: True)
     monkeypatch.setattr("alchemi.align.losses._gather_embeddings", _fake_gather)
-    monkeypatch.setattr("alchemi.align.losses.dist", type("_DummyDist", (), {"get_world_size": staticmethod(lambda: 1), "get_rank": staticmethod(lambda: 0)}))
+    monkeypatch.setattr(
+        "alchemi.align.losses.dist",
+        type(
+            "_DummyDist",
+            (),
+            {"get_world_size": staticmethod(lambda: 1), "get_rank": staticmethod(lambda: 0)},
+        ),
+    )
 
     z_lab = torch.randn(2, 3)
     z_sensor = torch.randn(2, 3)

@@ -1,8 +1,8 @@
 """Utilities for working with EMIT L2B mineral (MIN) products."""
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import numpy as np
 import xarray as xr
@@ -15,7 +15,7 @@ __all__ = [
 ]
 
 # Mapping between EMIT mineral groups and candidate USGS SPLIB entries.  The list
-# is intentionally small – it can be extended as crosswalks between the two
+# is intentionally small - it can be extended as crosswalks between the two
 # catalogs become available.
 EMIT_TO_USGS: dict[str, list[str]] = {
     "ILLITE_MUSCOVITE_GROUP": ["Illite GDS82", "Muscovite HS315.3B"],
@@ -162,7 +162,7 @@ def iter_high_confident_pixels(
     ------
     tuple[int, int, str, float]
         ``(y_idx, x_idx, mineral_group, r2)`` for pixels that satisfy the
-        ``r2_min`` constraint.  These are *weak labels* – they indicate likely
+        ``r2_min`` constraint.  These are *weak labels* - they indicate likely
         mineral dominance but are not guaranteed to be pure endmembers.
     """
     if mineral_var not in ds_l2b:

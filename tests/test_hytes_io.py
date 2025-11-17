@@ -2,14 +2,14 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from alchemi.physics import bt_K_to_radiance, radiance_to_bt_K
-from alchemi.types import SpectrumKind
 from alchemi.data.io import (
     HYTES_BAND_COUNT,
     HYTES_WAVELENGTHS_NM,
     hytes_pixel_bt,
     load_hytes_l1b_bt,
 )
+from alchemi.physics import bt_K_to_radiance, radiance_to_bt_K
+from alchemi.types import SpectrumKind
 
 
 def test_hytes_wavelengths_ok():
