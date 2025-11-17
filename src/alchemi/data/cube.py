@@ -411,7 +411,7 @@ class Cube:
     # ---------- Construction from xarray ----------
 
     @classmethod
-    def from_xarray(cls, dataset: Any) -> "Cube":
+    def from_xarray(cls, dataset: Any) -> Cube:
         """Create a Cube from an xarray Dataset.
 
         Preserves axis names / coords in metadata, and chooses an axis_unit

@@ -23,7 +23,9 @@ def _synthetic_lab() -> tuple[np.ndarray, np.ndarray]:
 
 def test_enmap_pairing_shapes_and_sampling(tmp_path):
     lab_nm, lab_reflectance = _synthetic_lab()
-    wl, lab_conv, sensor, mask = build_enmap_pairs(lab_nm, lab_reflectance, cache_dir=tmp_path, rng=0)
+    wl, lab_conv, sensor, mask = build_enmap_pairs(
+        lab_nm, lab_reflectance, cache_dir=tmp_path, rng=0
+    )
 
     assert wl.shape == (226,)
     assert np.all(np.diff(wl) > 0)
@@ -42,8 +44,13 @@ def test_enmap_pairing_shapes_and_sampling(tmp_path):
 
 def test_enmap_convolution_matches_reference(tmp_path):
     lab_nm, lab_reflectance = _synthetic_lab()
-    wl, lab_conv, sensor, _ = build_enmap_pairs(
-        lab_nm, lab_reflectance, cache_dir=tmp_path, rng=0, noise_level_rel_vnir=0.0, noise_level_rel_swir=0.0
+    _wl, lab_conv, sensor, _ = build_enmap_pairs(
+        lab_nm,
+        lab_reflectance,
+        cache_dir=tmp_path,
+        rng=0,
+        noise_level_rel_vnir=0.0,
+        noise_level_rel_swir=0.0,
     )
     srf = enmap_srf_matrix(cache_dir=tmp_path)
     expected = batch_convolve_lab_to_sensor(lab_nm, lab_reflectance, srf)

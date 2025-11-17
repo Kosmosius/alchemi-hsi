@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Tuple
-
 import numpy as np
 
 __all__ = [
-    "H",
-    "C",
     "K_B",
-    "radiance_to_bt_K",
+    "C",
+    "H",
     "bt_K_to_radiance",
-    "radiance_to_bt",
     "bt_to_radiance",
+    "radiance_to_bt",
+    "radiance_to_bt_K",
 ]
 
 # ---------------------------------------------------------------------------
@@ -39,7 +37,7 @@ _MAX_RATIO: float = 1e300
 _MIN_LOG_OFFSET: float = 1e-12
 
 
-def _as_float64_arrays(*arrays: np.ndarray) -> Tuple[np.ndarray, ...]:
+def _as_float64_arrays(*arrays: np.ndarray) -> tuple[np.ndarray, ...]:
     """Cast inputs to ``np.float64`` ndarrays without unnecessary copies."""
 
     return tuple(np.asarray(arr, dtype=np.float64) for arr in arrays)

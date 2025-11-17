@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
 
 import torch
-from torch import nn
 import yaml
+from torch import nn
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,7 +128,8 @@ class BandDepthHead(nn.Module):
 
 def _clamped_index(wavelengths_nm: torch.Tensor, value: float) -> int:
     idx = torch.searchsorted(
-        wavelengths_nm, torch.tensor(value, device=wavelengths_nm.device, dtype=wavelengths_nm.dtype)
+        wavelengths_nm,
+        torch.tensor(value, device=wavelengths_nm.device, dtype=wavelengths_nm.dtype),
     )
     i = int(idx.clamp(0, wavelengths_nm.numel() - 1).item())
     return i

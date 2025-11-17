@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
 from ..srf import SRFRegistry, batch_convolve_lab_to_sensor
 from ..srf.avirisng import avirisng_srf_matrix
 
-__all__ = ["build_emit_pairs", "build_enmap_pairs", "build_avirisng_pairs"]
+__all__ = ["build_avirisng_pairs", "build_emit_pairs", "build_enmap_pairs"]
 
 
 def _as_2d(values: np.ndarray | Sequence[float]) -> np.ndarray:
@@ -119,7 +119,7 @@ def build_enmap_pairs(
         Directory used for caching the synthesized EnMAP SRF JSON resource.
         Provide ``None`` to use the default location.
     noise_level_rel_vnir, noise_level_rel_swir:
-        Relative noise levels (1σ) applied to the projected spectra for the
+        Relative noise levels (1-sigma) applied to the projected spectra for the
         VNIR (≤999 nm) and SWIR (>999 nm) spectrometers, respectively.
     rng:
         Optional ``numpy.random.Generator`` or seed controlling the noise
@@ -206,7 +206,7 @@ def build_avirisng_pairs(
 ) -> dict[str, Any]:
     """Project lab spectra onto the AVIRIS-NG band grid and add optional noise.
 
-    AVIRIS-NG provides 380–2510 nm coverage across hundreds of ≈5 nm full-width
+    AVIRIS-NG provides 380-2510 nm coverage across hundreds of ≈5 nm full-width
     half-maximum bands (`JPL`_). The sensor response functions (SRFs) encode the
     precise bandpass for each channel; this helper projects laboratory spectra onto
     that grid so they can be compared with airborne observations.

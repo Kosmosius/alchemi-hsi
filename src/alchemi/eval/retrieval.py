@@ -17,7 +17,12 @@ def retrieval_at_k(q: np.ndarray, keys: np.ndarray, gt: np.ndarray, k: int = 1) 
     return float(hits)
 
 
-def retrieval_summary(q: np.ndarray, keys: np.ndarray, gt: np.ndarray, ks: tuple[int, ...] = (1, 5)) -> dict[str, float]:
+def retrieval_summary(
+    q: np.ndarray,
+    keys: np.ndarray,
+    gt: np.ndarray,
+    ks: tuple[int, ...] = (1, 5),
+) -> dict[str, float]:
     """Return a dictionary of recall@k metrics for the provided ``ks``."""
 
     metrics: dict[str, float] = {}

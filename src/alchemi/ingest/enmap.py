@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -10,11 +10,16 @@ from alchemi.data.cube import Cube, geo_from_attrs
 
 if TYPE_CHECKING:  # pragma: no cover - typing helper
     import xarray as xr
+else:  # pragma: no cover - optional dependency for runtime type hints
+    try:
+        import xarray as xr
+    except ImportError:  # pragma: no cover - xarray is optional at runtime
+        xr = Any  # type: ignore[assignment]
 
 __all__ = ["from_enmap_l1b"]
 
 
-def from_enmap_l1b(dataset: "xr.Dataset", *, srf_id: str | None = None) -> Cube:
+def from_enmap_l1b(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
     """Convert an EnMAP L1B radiance dataset into a :class:`Cube`."""
 
     if "radiance" not in dataset:

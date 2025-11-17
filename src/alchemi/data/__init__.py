@@ -8,17 +8,17 @@ from .transforms import RandomBandDropout, SpectralNoise
 from .validators import validate_dataset, validate_srf_dir
 
 __all__ = [
+    "Cube",
+    "GeoInfo",
     "LabSensorCache",
     "PairBuilder",
     "PairingDataset",
     "RandomBandDropout",
     "SpectralNoise",
     "SpectrumDataset",
-    "Cube",
-    "GeoInfo",
+    "geo_from_attrs",
     "inject_synthetic_plume",
     "io",
-    "geo_from_attrs",
     "validate_dataset",
     "validate_srf_dir",
 ]

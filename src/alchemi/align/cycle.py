@@ -72,7 +72,9 @@ class CycleReconstructionHeads(nn.Module):
         self._sensor_to_lab_in_features: int | None = None
 
     def reconstruct_sensor_from_lab(
-        self, z_lab: torch.Tensor, sensor_tokens: torch.Tensor | Mapping[str, torch.Tensor] | None = None
+        self,
+        z_lab: torch.Tensor,
+        sensor_tokens: torch.Tensor | Mapping[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         """Predict sensor-space values from lab embeddings."""
 
@@ -85,7 +87,10 @@ class CycleReconstructionHeads(nn.Module):
         )
         if self.lab_to_sensor is None:
             if sensor_tokens is None:
-                msg = "sensor_tokens are required on the first call to initialize the reconstruction head"
+                msg = (
+                    "sensor_tokens are required on the first call to initialize the "
+                    "reconstruction head"
+                )
                 raise ValueError(msg)
             sensor_targets = self._resolve_sensor_targets(sensor_tokens)
             self.lab_to_sensor = _build_mlp(
@@ -104,7 +109,9 @@ class CycleReconstructionHeads(nn.Module):
         return self.lab_to_sensor(inputs)
 
     def reconstruct_lab_from_sensor(
-        self, z_sensor: torch.Tensor, lab_tokens: torch.Tensor | Mapping[str, torch.Tensor] | None = None
+        self,
+        z_sensor: torch.Tensor,
+        lab_tokens: torch.Tensor | Mapping[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         """Predict lab-space spectra from sensor embeddings."""
 
@@ -117,7 +124,10 @@ class CycleReconstructionHeads(nn.Module):
         )
         if self.sensor_to_lab is None:
             if lab_tokens is None:
-                msg = "lab_tokens are required on the first call to initialize the reconstruction head"
+                msg = (
+                    "lab_tokens are required on the first call to initialize the "
+                    "reconstruction head"
+                )
                 raise ValueError(msg)
             lab_targets = lab_tokens
             self.sensor_to_lab = _build_mlp(
@@ -172,7 +182,9 @@ class CycleReconstructionHeads(nn.Module):
         sensor_sam = self.sam_loss(pred_sensor, sensor_targets)
         lab_sam = self.sam_loss(pred_lab, lab_targets)
 
-        total = self.config.l2_weight * (sensor_l2 + lab_l2) + self.config.sam_weight * (sensor_sam + lab_sam)
+        total = self.config.l2_weight * (sensor_l2 + lab_l2) + self.config.sam_weight * (
+            sensor_sam + lab_sam
+        )
         breakdown = {
             "sensor_l2": sensor_l2.detach(),
             "lab_l2": lab_l2.detach(),
@@ -214,7 +226,9 @@ class CycleReconstructionHeads(nn.Module):
         if context is None:
             cached_dim = getattr(self, cache_attr)
             if cached_dim not in (0, None):
-                msg = "Context features are required once a positive context dimension is configured."
+                msg = (
+                    "Context features are required once a positive context dimension is configured."
+                )
                 raise ValueError(msg)
             return base
 
@@ -278,18 +292,27 @@ class CycleAlignment(nn.Module):
         losses["infonce"] = self.info_nce(z_lab, z_sensor)
 
         if self.cycle.enabled and lab_tokens is not None and sensor_tokens is not None:
-            cycle_loss, breakdown = self.cycle.cycle_loss(z_lab, z_sensor, lab_tokens, sensor_tokens)
+            cycle_loss, breakdown = self.cycle.cycle_loss(
+                z_lab,
+                z_sensor,
+                lab_tokens,
+                sensor_tokens,
+            )
             losses["cycle"] = cycle_loss
             for key, value in breakdown.items():
                 losses[f"cycle_{key}"] = value
         return losses
 
     def reconstruct_sensor_from_lab(
-        self, z_lab: torch.Tensor, sensor_tokens: torch.Tensor | Mapping[str, torch.Tensor] | None = None
+        self,
+        z_lab: torch.Tensor,
+        sensor_tokens: torch.Tensor | Mapping[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         return self.cycle.reconstruct_sensor_from_lab(z_lab, sensor_tokens)
 
     def reconstruct_lab_from_sensor(
-        self, z_sensor: torch.Tensor, lab_tokens: torch.Tensor | Mapping[str, torch.Tensor] | None = None
+        self,
+        z_sensor: torch.Tensor,
+        lab_tokens: torch.Tensor | Mapping[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         return self.cycle.reconstruct_lab_from_sensor(z_sensor, lab_tokens)

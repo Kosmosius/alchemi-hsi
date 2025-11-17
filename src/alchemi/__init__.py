@@ -26,7 +26,19 @@ __all__ = [
     "utils",
 ]
 
-_SUBMODULES = {name for name in __all__ if name not in {"SRFMatrix", "Sample", "SampleMeta", "Spectrum", "SpectrumKind", "WavelengthGrid"}}
+_SUBMODULES = {
+    name
+    for name in __all__
+    if name
+    not in {
+        "SRFMatrix",
+        "Sample",
+        "SampleMeta",
+        "Spectrum",
+        "SpectrumKind",
+        "WavelengthGrid",
+    }
+}
 
 
 def __getattr__(name: str) -> Any:

@@ -6,7 +6,13 @@ import pytest
 from alchemi.physics import augment_radiance, random_swirlike_atmosphere
 
 
-def _emit_like_radiance(R: np.ndarray, E0: np.ndarray, cos_sun: float, tau: np.ndarray, L_path: float) -> np.ndarray:
+def _emit_like_radiance(
+    R: np.ndarray,
+    E0: np.ndarray,
+    cos_sun: float,
+    tau: np.ndarray,
+    L_path: float,
+) -> np.ndarray:
     return tau * (E0 * cos_sun / np.pi) * R + L_path
 
 
@@ -43,7 +49,7 @@ def test_augment_radiance_shapes(shape):
     wl_nm = np.linspace(1000.0, 2500.0, 50)
     rng = np.random.default_rng(0)
 
-    L = rng.uniform(0.0, 100.0, size=shape + (wl_nm.size,))
+    L = rng.uniform(0.0, 100.0, size=(*shape, wl_nm.size))
     L_aug = augment_radiance(L, wl_nm, rng)
 
     assert L_aug.shape == L.shape

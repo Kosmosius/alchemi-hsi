@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
-
 import xarray as xr
+
 from alchemi.data.io import enmap_pixel, load_enmap_l1b
 
 

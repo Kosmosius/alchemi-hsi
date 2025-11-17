@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import numpy as np
@@ -13,8 +12,7 @@ from alchemi.data.adapters.mako import load_mako_pixel_bt
 from alchemi.io import ACE_GAS_NAMES, MAKO_BAND_COUNT, mako_pixel_bt, open_mako_ace, open_mako_btemp
 from alchemi.types import SpectrumKind
 
-pytest.importorskip("rasterio")
-import rasterio
+rasterio = pytest.importorskip("rasterio")
 
 
 @pytest.fixture()

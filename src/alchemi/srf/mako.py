@@ -33,7 +33,7 @@ def mako_lwir_grid_nm() -> np.ndarray:
     """Return the canonical LWIR wavelength grid used for Mako SRFs (nm)."""
 
     span = _GRID_STOP_NM - _GRID_START_NM
-    count = int(round(span / _GRID_STEP_NM)) + 1
+    count = round(span / _GRID_STEP_NM) + 1
     grid = np.linspace(_GRID_START_NM, _GRID_STOP_NM, count, dtype=np.float64)
     if grid.ndim != 1 or grid.size < 2:
         raise ValueError("LWIR grid must be a strictly increasing 1-D array")

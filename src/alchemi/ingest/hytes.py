@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -10,11 +10,16 @@ from alchemi.data.cube import Cube, geo_from_attrs
 
 if TYPE_CHECKING:  # pragma: no cover
     import xarray as xr
+else:  # pragma: no cover - optional dependency for runtime type hints
+    try:
+        import xarray as xr
+    except ImportError:  # pragma: no cover - xarray is optional at runtime
+        xr = Any  # type: ignore[assignment]
 
 __all__ = ["from_hytes_bt"]
 
 
-def from_hytes_bt(dataset: "xr.Dataset", *, srf_id: str | None = None) -> Cube:
+def from_hytes_bt(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
     """Convert a HyTES L1B brightness temperature dataset into a :class:`Cube`."""
 
     if "brightness_temp" not in dataset:

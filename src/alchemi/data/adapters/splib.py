@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from alchemi.types import Spectrum
 from alchemi.data.io import SPLIBCatalog, load_splib
+from alchemi.types import Spectrum
 
 __all__ = ["load_splib_spectrum"]
 

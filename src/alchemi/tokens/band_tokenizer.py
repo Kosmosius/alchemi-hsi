@@ -202,7 +202,9 @@ class BandTokenizer:
         freq_indices: FloatArray = np.arange(n_freq, dtype=np.float64)
         scales = np.pi * (2.0**freq_indices)
         angles = np.outer(axis_norm, scales)
-        return np.concatenate([np.sin(angles), np.cos(angles)], axis=1).astype(np.float64, copy=False)
+        return np.concatenate([np.sin(angles), np.cos(angles)], axis=1).astype(
+            np.float64, copy=False
+        )
 
     def _resolve_width(
         self,
