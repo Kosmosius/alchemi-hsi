@@ -13,6 +13,10 @@ class TrainCfg(BaseModel):
     n_heads: int = 8
     depth: int = 6
     basis_K: int = 128
+    banddepth_cfg: str | None = None
+    banddepth_weight: float = 0.0
+    banddepth_loss: str = "l1"
+    banddepth_hidden: int | None = None
 
 
 class DataCfg(BaseModel):
