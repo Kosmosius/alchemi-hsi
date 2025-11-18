@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 
 import numpy as np
+from numpy.typing import NDArray
 
 from alchemi.types import SRFMatrix
 from alchemi.utils.integrate import np_integrate as _np_integrate
@@ -25,7 +26,7 @@ _GRID_STOP_NM = 13600.0
 _GRID_STEP_NM = 10.0
 
 
-def mako_lwir_grid_nm() -> np.ndarray:
+def mako_lwir_grid_nm() -> NDArray[np.float64]:
     """Return the canonical LWIR wavelength grid used for Mako SRFs (nm)."""
 
     span = _GRID_STOP_NM - _GRID_START_NM
@@ -33,10 +34,10 @@ def mako_lwir_grid_nm() -> np.ndarray:
     grid = np.linspace(_GRID_START_NM, _GRID_STOP_NM, count, dtype=np.float64)
     if grid.ndim != 1 or grid.size < 2:
         raise ValueError("LWIR grid must be a strictly increasing 1-D array")
-    return grid
+    return np.asarray(grid, dtype=np.float64)
 
 
-def _validate_header_wavelengths(wavelengths_nm: np.ndarray) -> np.ndarray:
+def _validate_header_wavelengths(wavelengths_nm: np.ndarray) -> NDArray[np.float64]:
     centers = np.asarray(wavelengths_nm, dtype=np.float64)
     if centers.ndim != 1:
         raise ValueError("Header wavelengths must be a 1-D array")
@@ -44,13 +45,13 @@ def _validate_header_wavelengths(wavelengths_nm: np.ndarray) -> np.ndarray:
         raise ValueError("Header wavelengths must contain at least one value")
     if np.any(np.diff(centers) <= 0.0):
         raise ValueError("Header wavelengths must be strictly increasing")
-    return centers
+    return np.asarray(centers, dtype=np.float64)
 
 
 def _compute_sigma(fwhm_nm: float) -> float:
     if not np.isfinite(fwhm_nm) or fwhm_nm <= 0.0:
         raise ValueError("FWHM must be a positive finite value")
-    return fwhm_nm / (2.0 * np.sqrt(2.0 * np.log(2.0)))
+    return float(fwhm_nm / (2.0 * np.sqrt(2.0 * np.log(2.0))))
 
 
 def _compute_cache_key(

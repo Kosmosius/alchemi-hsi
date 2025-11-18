@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from alchemi.utils.integrate import np_integrate as _np_integrate
 
@@ -17,31 +19,31 @@ class SpectrumKind(str, Enum):
 
 @dataclass
 class WavelengthGrid:
-    nm: np.ndarray  # [B]
+    nm: NDArray[np.float64]  # [B]
 
-    def __post_init__(self):
-        a = np.asarray(self.nm)
+    def __post_init__(self) -> None:
+        a = np.asarray(self.nm, dtype=np.float64)
         if a.ndim != 1 or np.any(np.diff(a) <= 0):
             raise ValueError("Wavelength grid must be strictly increasing 1-D array (nm)")
-        self.nm = a.astype(np.float64)
+        self.nm = a
 
 
 @dataclass
 class Spectrum:
     wavelengths: WavelengthGrid
-    values: np.ndarray  # [B]
+    values: NDArray[np.float64]  # [B]
     kind: SpectrumKind
     units: str
-    mask: np.ndarray | None = None  # [B] boolean
+    mask: NDArray[np.bool_] | None = None  # [B] boolean
     meta: dict[str, Any] = field(default_factory=dict)
 
-    def __post_init__(self):
-        v = np.asarray(self.values)
+    def __post_init__(self) -> None:
+        v = np.asarray(self.values, dtype=np.float64)
         if v.ndim != 1 or v.shape[0] != self.wavelengths.nm.shape[0]:
             raise ValueError("values length must match wavelengths")
-        self.values = v.astype(np.float64)
+        self.values = v
         if self.mask is not None:
-            m = np.asarray(self.mask).astype(bool)
+            m = np.asarray(self.mask, dtype=bool)
             if m.shape != v.shape:
                 raise ValueError("mask shape mismatch")
             self.mask = m
@@ -63,13 +65,15 @@ class Spectrum:
 @dataclass
 class SRFMatrix:
     sensor: str
-    centers_nm: np.ndarray  # [B]
-    bands_nm: list[np.ndarray]  # len B
-    bands_resp: list[np.ndarray]  # len B
+    centers_nm: NDArray[np.float64]  # [B]
+    bands_nm: list[NDArray[np.float64]]  # len B
+    bands_resp: list[NDArray[np.float64]]  # len B
     version: str = "v1"
     cache_key: str | None = None
+    bad_band_mask: NDArray[np.bool_] | None = None
+    bad_band_windows_nm: Sequence[tuple[float, float]] | None = None
 
-    def row_integrals(self) -> np.ndarray:
+    def row_integrals(self) -> NDArray[np.float64]:
         integrals = [
             float(
                 _np_integrate(
@@ -101,6 +105,8 @@ class SRFMatrix:
             bands_resp,
             version=self.version,
             cache_key=self.cache_key,
+            bad_band_mask=None if self.bad_band_mask is None else self.bad_band_mask.copy(),
+            bad_band_windows_nm=self.bad_band_windows_nm,
         )
 
 

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
+from numpy.typing import NDArray
 
 __all__ = [
     "EMIT_TO_USGS",
@@ -115,7 +116,7 @@ def map_emit_group_to_splib(group_name: str) -> list[str]:
     return EMIT_TO_USGS.get(group_name, []).copy()
 
 
-def _as_numpy(data: xr.DataArray) -> np.ndarray:
+def _as_numpy(data: xr.DataArray) -> NDArray[np.generic]:
     """Convert an xarray ``DataArray`` to a plain :class:`numpy.ndarray`."""
     values = data.load().to_numpy()
     if isinstance(values, np.ma.MaskedArray):

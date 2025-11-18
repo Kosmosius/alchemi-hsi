@@ -9,6 +9,7 @@ from functools import cache
 from pathlib import Path
 
 import numpy as np
+from numpy.typing import NDArray
 
 from alchemi.types import SRFMatrix
 
@@ -42,7 +43,7 @@ def avirisng_srf_matrix(cache_dir: str | Path | None = None) -> SRFMatrix:
     return _clone_matrix(matrix)
 
 
-def avirisng_bad_band_mask(wavelengths_nm: np.ndarray) -> np.ndarray:
+def avirisng_bad_band_mask(wavelengths_nm: np.ndarray) -> NDArray[np.bool_]:
     """Mask bands that fall inside water-vapor and known bad-band windows."""
 
     mask = np.ones_like(wavelengths_nm, dtype=bool)
@@ -69,14 +70,14 @@ def _load_matrix(cache_token: str) -> SRFMatrix:
 
 def _build_matrix() -> SRFMatrix:
     centers = _avirisng_centers()
-    bands_nm: list[np.ndarray] = []
-    bands_resp: list[np.ndarray] = []
+    bands_nm: list[NDArray[np.float64]] = []
+    bands_resp: list[NDArray[np.float64]] = []
 
     for center in centers:
         nm_raw, resp_raw = _raw_band(center)
         nm_interp, resp_interp = _interpolate_band(nm_raw, resp_raw)
-        bands_nm.append(nm_interp)
-        bands_resp.append(resp_interp)
+        bands_nm.append(np.asarray(nm_interp, dtype=np.float64))
+        bands_resp.append(np.asarray(resp_interp, dtype=np.float64))
 
     matrix = SRFMatrix(_SENSOR_ID, centers, bands_nm, bands_resp, version=_SRF_VERSION)
     matrix = matrix.normalize_trapz()
@@ -87,19 +88,19 @@ def _build_matrix() -> SRFMatrix:
     return matrix
 
 
-def _avirisng_centers() -> np.ndarray:
+def _avirisng_centers() -> NDArray[np.float64]:
     # AVIRIS-NG spans roughly 380-2510 nm across 425 contiguous bands.
     return np.linspace(380.0, 2510.0, 425, dtype=np.float64)
 
 
-def _raw_band(center_nm: float) -> tuple[np.ndarray, np.ndarray]:
+def _raw_band(center_nm: float) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     # Construct a coarse Gaussian approximation for the native SRF samples.
     fwhm = _band_fwhm(center_nm)
     sigma = fwhm / (2.0 * np.sqrt(2.0 * np.log(2.0)))
     offsets = np.array([-7.5, -5.0, -2.5, 0.0, 2.5, 5.0, 7.5], dtype=np.float64)
     nm = center_nm + offsets
     resp = np.exp(-0.5 * (offsets / sigma) ** 2)
-    return nm, resp
+    return np.asarray(nm, dtype=np.float64), np.asarray(resp, dtype=np.float64)
 
 
 def _band_fwhm(center_nm: float) -> float:
@@ -110,13 +111,15 @@ def _band_fwhm(center_nm: float) -> float:
     return 9.0
 
 
-def _interpolate_band(nm: np.ndarray, resp: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _interpolate_band(
+    nm: NDArray[np.float64], resp: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     span = nm[-1] - nm[0]
     step = 0.5
     count = int(max(span / step, 1)) + 1
     grid = np.linspace(nm[0], nm[-1], count, dtype=np.float64)
     interp = np.interp(grid, nm, resp)
-    return grid, interp
+    return np.asarray(grid, dtype=np.float64), np.asarray(interp, dtype=np.float64)
 
 
 def _compute_hash(

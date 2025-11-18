@@ -8,7 +8,7 @@ import torch.nn.functional as F
 try:  # pragma: no cover - distributed may be unavailable in test envs
     import torch.distributed as dist
 except Exception:  # pragma: no cover - defensive
-    dist = None  # type: ignore[assignment]
+    dist = None
 
 try:  # pragma: no cover - PyTorch < 1.10 fallback
     from torch.distributed.nn.functional import all_gather as _dist_all_gather

@@ -1,7 +1,10 @@
 import numpy as np
+from numpy.typing import NDArray
 
 
-def retrieval_at_k(q: np.ndarray, keys: np.ndarray, gt: np.ndarray, k: int = 1) -> float:
+def retrieval_at_k(
+    q: NDArray[np.float64], keys: NDArray[np.float64], gt: NDArray[np.int64], k: int = 1
+) -> float:
     """Compute recall@k for L2-normalised embeddings."""
 
     if q.ndim != 2 or keys.ndim != 2:
@@ -18,9 +21,9 @@ def retrieval_at_k(q: np.ndarray, keys: np.ndarray, gt: np.ndarray, k: int = 1) 
 
 
 def retrieval_summary(
-    q: np.ndarray,
-    keys: np.ndarray,
-    gt: np.ndarray,
+    q: NDArray[np.float64],
+    keys: NDArray[np.float64],
+    gt: NDArray[np.int64],
     ks: tuple[int, ...] = (1, 5),
 ) -> dict[str, float]:
     """Return a dictionary of recall@k metrics for the provided ``ks``."""
@@ -31,7 +34,9 @@ def retrieval_summary(
     return metrics
 
 
-def spectral_angle_deltas(z_lab: np.ndarray, z_sensor: np.ndarray) -> dict[str, float]:
+def spectral_angle_deltas(
+    z_lab: NDArray[np.float64], z_sensor: NDArray[np.float64]
+) -> dict[str, float]:
     """Return mean spectral angle for matched vs mismatched pairs."""
 
     matched = _spectral_angle(z_lab, z_sensor)
@@ -49,14 +54,14 @@ def spectral_angle_deltas(z_lab: np.ndarray, z_sensor: np.ndarray) -> dict[str, 
     }
 
 
-def _normalize(arr: np.ndarray) -> np.ndarray:
+def _normalize(arr: NDArray[np.float64]) -> NDArray[np.float64]:
     denom = np.linalg.norm(arr, axis=1, keepdims=True) + 1e-12
-    return arr / denom
+    return np.asarray(arr / denom, dtype=np.float64)
 
 
-def _spectral_angle(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+def _spectral_angle(a: NDArray[np.float64], b: NDArray[np.float64]) -> NDArray[np.float64]:
     if a.shape != b.shape:
         raise ValueError("Spectral angle inputs must share shape")
     dot = np.sum(_normalize(a) * _normalize(b), axis=1)
     dot = np.clip(dot, -1.0, 1.0)
-    return np.arccos(dot)
+    return np.asarray(np.arccos(dot), dtype=np.float64)

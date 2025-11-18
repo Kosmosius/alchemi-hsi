@@ -1,11 +1,16 @@
+from __future__ import annotations
+
+from typing import Any
+
 import numpy as np
+from numpy.typing import NDArray
 
 
 # Minimal placeholder ASTM-like E0 spectrum sampler.
 # Replace with tabulated ASTM G-173 or mission-provided E0 as needed.
-def get_E0_nm(wavelength_nm: np.ndarray) -> np.ndarray:
+def get_E0_nm(wavelength_nm: NDArray[np.floating[Any]]) -> NDArray[np.float64]:
     # crude smooth curve peaking in visible, decaying in SWIR
-    nm = wavelength_nm.astype(np.float64)
+    nm: NDArray[np.float64] = np.asarray(wavelength_nm, dtype=np.float64)
     peak = 550.0
     width = 300.0
     base = np.exp(-0.5 * ((nm - peak) / width) ** 2) * 1.9
