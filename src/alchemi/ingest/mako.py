@@ -43,12 +43,15 @@ def from_mako_l2s(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
 
     data, axis, attrs = _prepare(dataset, "radiance")
 
+    sensor = srf_id or attrs.get("sensor")
+    sensor_id = str(sensor) if sensor is not None else None
+
     return Cube(
         data=data,
         axis=axis,
         axis_unit="wavelength_nm",
         value_kind="radiance",
-        srf_id=srf_id or attrs.get("sensor"),
+        srf_id=sensor_id,
         geo=geo_from_attrs(dataset.attrs),
         attrs=attrs,
     )
@@ -59,12 +62,15 @@ def from_mako_l3(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
 
     data, axis, attrs = _prepare(dataset, "bt")
 
+    sensor = srf_id or attrs.get("sensor")
+    sensor_id = str(sensor) if sensor is not None else None
+
     return Cube(
         data=data,
         axis=axis,
         axis_unit="wavelength_nm",
         value_kind="brightness_temp",
-        srf_id=srf_id or attrs.get("sensor"),
+        srf_id=sensor_id,
         geo=geo_from_attrs(dataset.attrs),
         attrs=attrs,
     )

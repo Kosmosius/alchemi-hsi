@@ -1,7 +1,11 @@
+from __future__ import annotations
+
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
-class TrainCfg(BaseModel):
+class TrainCfg(BaseModel):  # type: ignore[misc]
     mode: str = Field("mae", description="mae|align|joint")
     batch_size: int = 64
     lr: float = 3e-4
@@ -19,13 +23,13 @@ class TrainCfg(BaseModel):
     banddepth_hidden: int | None = None
 
 
-class DataCfg(BaseModel):
+class DataCfg(BaseModel):  # type: ignore[misc]
     sensors: list[str] = ["emit", "enmap", "avirisng", "hytes"]
     srf_root: str = "data/srf"
-    paths: dict = {}
-    wavelengths: dict = {}
+    paths: dict[str, Any] = {}
+    wavelengths: dict[str, Any] = {}
 
 
-class EvalCfg(BaseModel):
+class EvalCfg(BaseModel):  # type: ignore[misc]
     sam_threshold: float = 0.1
     gas_fpr: float = 0.001

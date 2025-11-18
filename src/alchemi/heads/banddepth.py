@@ -5,10 +5,19 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Callable, TypeVar, cast
 
 import torch
 import yaml
-from torch import nn
+from torch import Tensor, nn
+
+TFunc = TypeVar("TFunc", bound=Callable[..., Tensor])
+
+
+def _no_grad(func: TFunc) -> TFunc:
+    """Typed alias of torch.no_grad for use as a decorator."""
+
+    return cast(TFunc, torch.no_grad()(func))
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,7 +29,7 @@ class BandDefinition:
     right_nm: float
     name: str | None = None
 
-    def __post_init__(self) -> None:  # type: ignore[override]
+    def __post_init__(self) -> None:
         if self.right_nm <= self.left_nm:
             msg = "right_nm must be greater than left_nm"
             raise ValueError(msg)
@@ -33,7 +42,11 @@ def load_banddepth_config(path: str | Path) -> list[BandDefinition]:
     """Load band definitions from a YAML configuration file."""
 
     data = yaml.safe_load(Path(path).read_text())
-    bands: Iterable[dict] = data.get("bands", []) if isinstance(data, dict) else []
+    bands_raw: Iterable[dict[str, Any]] = []
+    if isinstance(data, dict):
+        raw = data.get("bands", [])
+        if isinstance(raw, Iterable):
+            bands_raw = cast(Iterable[dict[str, Any]], raw)
     definitions = [
         BandDefinition(
             center_nm=float(spec["center"]),
@@ -41,7 +54,7 @@ def load_banddepth_config(path: str | Path) -> list[BandDefinition]:
             right_nm=float(spec.get("right", spec["center"] + spec.get("width", 10.0))),
             name=spec.get("name"),
         )
-        for spec in bands
+        for spec in bands_raw
     ]
     if not definitions:
         msg = "banddepth config must define at least one band"
@@ -82,22 +95,22 @@ class BandDepthHead(nn.Module):
             msg = "loss must be one of {'l1', 'l2', 'mse'}"
             raise ValueError(msg)
 
-    def forward(self, pooled: torch.Tensor) -> torch.Tensor:
+    def forward(self, pooled: Tensor) -> Tensor:
         """Predict band depths from pooled embeddings."""
 
         return self.net(pooled)
 
-    def loss(self, preds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    def loss(self, preds: Tensor, targets: Tensor) -> Tensor:
         """Compute the configured regression loss."""
 
         return self._loss(preds, targets)
 
-    @torch.no_grad()
+    @_no_grad
     def compute_targets(
         self,
-        wavelengths_nm: torch.Tensor,
-        reflectance: torch.Tensor,
-    ) -> torch.Tensor:
+        wavelengths_nm: Tensor,
+        reflectance: Tensor,
+    ) -> Tensor:
         """Compute continuum-removed band depths for a batch of spectra."""
 
         if reflectance.dim() == 1:
@@ -108,7 +121,7 @@ class BandDepthHead(nn.Module):
             msg = "wavelength grid length must match reflectance dimension"
             raise ValueError(msg)
 
-        depths: list[torch.Tensor] = []
+        depths: list[Tensor] = []
         for spec in self.bands:
             left_idx = _clamped_index(wavelengths_nm, spec.left_nm)
             right_idx = _clamped_index(wavelengths_nm, spec.right_nm)
@@ -124,7 +137,7 @@ class BandDepthHead(nn.Module):
         return torch.stack(depths, dim=-1)
 
 
-def _clamped_index(wavelengths_nm: torch.Tensor, value: float) -> int:
+def _clamped_index(wavelengths_nm: Tensor, value: float) -> int:
     idx = torch.searchsorted(
         wavelengths_nm,
         torch.tensor(value, device=wavelengths_nm.device, dtype=wavelengths_nm.dtype),

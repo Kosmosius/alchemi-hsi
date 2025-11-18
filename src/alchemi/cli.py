@@ -29,43 +29,43 @@ app.add_typer(align_app, name="align")
 _LOG = get_logger(__name__)
 
 
-@app.command()
-def validate_srf(root: str = "data/srf", sensor: str = "emit"):
+@app.command()  # type: ignore[misc]
+def validate_srf(root: str = "data/srf", sensor: str = "emit") -> None:
     reg = SRFRegistry(root)
     srf = reg.get(sensor)
     ints = srf.row_integrals()
     _LOG.info("SRF integrals (first 5): %s", ints[:5])
 
 
-@app.command()
-def validate_data(config: str = "configs/data.yaml"):
+@app.command()  # type: ignore[misc]
+def validate_data(config: str = "configs/data.yaml") -> None:
     cfg = yaml.safe_load(Path(config).read_text())
     validate_dataset(cfg)
     validate_srf_dir(cfg.get("data", {}).get("srf_root", "data/srf"))
 
 
-@app.command()
-def pretrain_mae(config: str = "configs/train.mae.yaml"):
+@app.command()  # type: ignore[misc]
+def pretrain_mae(config: str = "configs/train.mae.yaml") -> None:
     seed_everything(42)
     run_pretrain_mae(config)
 
 
-@align_app.command("train")
+@align_app.command("train")  # type: ignore[misc]
 def align_train(
     cfg: str = typer.Option("configs/phase2/alignment.yaml", "--cfg", "-c"),
     max_steps: int | None = typer.Option(None, "--max-steps", "-m"),
-):
+) -> None:
     """Run the Phase-2 alignment trainer."""
     trainer = AlignmentTrainer.from_yaml(cfg)
     trainer.train(max_steps=max_steps)
 
 
-@app.command()
-def evaluate(config: str = "configs/eval.yaml"):
+@app.command()  # type: ignore[misc]
+def evaluate(config: str = "configs/eval.yaml") -> None:
     run_eval(config)
 
 
-@data_app.command("info")
+@data_app.command("info")  # type: ignore[misc]
 def data_info(path: Path) -> None:
     """Inspect a hyperspectral cube and print a short summary."""
 
@@ -73,7 +73,7 @@ def data_info(path: Path) -> None:
     _print_cube_summary(cube)
 
 
-@data_app.command("to-canonical")
+@data_app.command("to-canonical")  # type: ignore[misc]
 def data_to_canonical(path: Path, out: str = typer.Option("npz", "--out")) -> None:
     """Write the canonical representation of a hyperspectral cube."""
 

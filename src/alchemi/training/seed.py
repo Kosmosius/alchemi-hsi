@@ -7,7 +7,7 @@ import torch
 _NP_GENERATOR: np.random.Generator | None = None
 
 
-def seed_everything(seed: int = 42):
+def seed_everything(seed: int = 42) -> None:
     global _NP_GENERATOR
     random.seed(seed)
     np.random.seed(seed)  # noqa: NPY002 - ensure legacy NumPy RNGs remain deterministic
