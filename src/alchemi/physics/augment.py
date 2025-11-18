@@ -3,25 +3,29 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 RNGLike = np.random.Generator | np.random.RandomState
 
 
-def _gaussian_smoother(weights_nm: np.ndarray, sigma_nm: float) -> np.ndarray:
+def _gaussian_smoother(
+    weights_nm: NDArray[np.floating[Any]], sigma_nm: float
+) -> NDArray[np.float64]:
     """Create a Gaussian smoothing kernel for the provided wavelength grid."""
 
     if sigma_nm <= 0.0:
-        return np.eye(weights_nm.size, dtype=float)
+        size = int(np.asarray(weights_nm).size)
+        return np.eye(size, dtype=np.float64)
 
-    wl = weights_nm.astype(float)
+    wl = np.asarray(weights_nm, dtype=np.float64)
     distances = wl[None, :] - wl[:, None]
     kernel = np.exp(-0.5 * (distances / float(sigma_nm)) ** 2)
     kernel /= np.sum(kernel, axis=1, keepdims=True)
-    return kernel
+    return kernel.astype(np.float64, copy=False)
 
 
 def random_swirlike_atmosphere(
-    wl_nm: np.ndarray,
+    wl_nm: NDArray[np.floating[Any]],
     rng: RNGLike,
     *,
     base_tau_range: tuple[float, float] = (0.85, 1.0),
@@ -30,10 +34,10 @@ def random_swirlike_atmosphere(
     L_path_range: tuple[float, float] = (0.0, 5.0),
     smooth_sigma_nm: float = 40.0,
     disable_water_bands: bool = False,
-) -> tuple[np.ndarray, float]:
+) -> tuple[NDArray[np.float64], float]:
     """Sample a SWIR-like atmospheric state for a given wavelength grid."""
 
-    wl_arr = np.asarray(wl_nm, dtype=float)
+    wl_arr = np.asarray(wl_nm, dtype=np.float64)
     if wl_arr.ndim != 1:
         raise ValueError("wl_nm must be a 1-D array of wavelengths")
 
@@ -66,17 +70,17 @@ def random_swirlike_atmosphere(
     tau_vec = np.clip(tau_vec, 0.05, 1.0)
 
     L_path = float(rng.uniform(*L_path_range))
-    return tau_vec.astype(float), L_path
+    return tau_vec.astype(np.float64, copy=False), L_path
 
 
 def augment_radiance(
-    L: np.ndarray,
-    wl_nm: np.ndarray,
+    L: NDArray[np.floating[Any]],
+    wl_nm: NDArray[np.floating[Any]],
     rng: RNGLike,
     *,
     strength: float = 1.0,
     **atmo_kwargs: Any,
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     """Apply a random SWIR-like atmospheric perturbation to at-sensor radiances."""
 
     if strength <= 0.0:
@@ -84,10 +88,10 @@ def augment_radiance(
 
     tau_vec, L_path = random_swirlike_atmosphere(wl_nm, rng, **atmo_kwargs)
 
-    L = np.asarray(L, dtype=float)
-    tau_broadcast = tau_vec.reshape((1,) * (L.ndim - 1) + tau_vec.shape)
-    L_atmo = tau_broadcast * L + L_path
-    L_aug = strength * L_atmo + (1.0 - strength) * L
+    L_arr = np.asarray(L, dtype=np.float64)
+    tau_broadcast = tau_vec.reshape((1,) * (L_arr.ndim - 1) + tau_vec.shape)
+    L_atmo = tau_broadcast * L_arr + L_path
+    L_aug = strength * L_atmo + (1.0 - strength) * L_arr
     return np.maximum(L_aug, 0.0)
 
 

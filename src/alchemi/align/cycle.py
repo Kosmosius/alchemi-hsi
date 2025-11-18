@@ -129,6 +129,9 @@ class CycleReconstructionHeads(nn.Module):
                     "reconstruction head"
                 )
                 raise ValueError(msg)
+            if not isinstance(lab_tokens, torch.Tensor):
+                msg = "lab_tokens must be a tensor"
+                raise TypeError(msg)
             lab_targets = lab_tokens
             self.sensor_to_lab = _build_mlp(
                 inputs.shape[-1],
@@ -159,6 +162,9 @@ class CycleReconstructionHeads(nn.Module):
             return zero, {}
 
         sensor_targets = self._resolve_sensor_targets(sensor_tokens)
+        if not isinstance(lab_tokens, torch.Tensor):
+            msg = "lab_tokens must be a tensor"
+            raise TypeError(msg)
         lab_targets = lab_tokens
 
         if sensor_targets.dim() != 2 or sensor_targets.shape[-1] != self.sensor_dim:
