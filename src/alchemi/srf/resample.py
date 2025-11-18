@@ -6,9 +6,8 @@ from typing import Literal
 
 import numpy as np
 
-from alchemi.utils.integrate import np_integrate as _np_integrate
-
 from alchemi.types import SRFMatrix
+from alchemi.utils.integrate import np_integrate as _np_integrate
 
 __all__ = [
     "boxcar_resample",

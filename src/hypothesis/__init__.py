@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any, TypeVar, overload, cast
+from typing import Any, TypeVar, cast, overload
 
 import numpy as _np
 
