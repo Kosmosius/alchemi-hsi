@@ -18,9 +18,7 @@ class TemperatureScaler:
     def __init__(self) -> None:
         self.T: float = 1.0
 
-    def fit(
-        self, logits: NDArray[np.floating[Any]], labels: NDArray[np.integer[Any]]
-    ) -> None:
+    def fit(self, logits: NDArray[np.floating[Any]], labels: NDArray[np.integer[Any]]) -> None:
         logits = np.asarray(logits, dtype=np.float64)
         labels = np.asarray(labels, dtype=np.int64)
 
@@ -58,9 +56,7 @@ class TemperatureScaler:
         return arr / max(self.T, 1e-6)
 
 
-def _nll(
-    logits: NDArray[np.floating[Any]], labels: NDArray[np.integer[Any]]
-) -> float:
+def _nll(logits: NDArray[np.floating[Any]], labels: NDArray[np.integer[Any]]) -> float:
     logits = np.asarray(logits, dtype=np.float64)
     labels = np.asarray(labels, dtype=np.int64)
 

@@ -12,9 +12,7 @@ from ..srf.avirisng import avirisng_srf_matrix
 __all__ = ["build_avirisng_pairs", "build_emit_pairs", "build_enmap_pairs"]
 
 
-def _as_2d(
-    values: np.ndarray | Sequence[float] | Sequence[Sequence[float]]
-) -> np.ndarray:
+def _as_2d(values: np.ndarray | Sequence[float] | Sequence[Sequence[float]]) -> np.ndarray:
     arr = np.asarray(values, dtype=np.float64)
     if arr.ndim == 1:
         return arr[None, :]
