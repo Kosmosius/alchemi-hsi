@@ -8,13 +8,9 @@ from pathlib import Path
 import numpy as np
 
 from ..types import SRFMatrix
+from ..utils.integrate import np_integrate as _np_integrate
 from .registry import SRFRegistry, get_srf
 from .synthetic import estimate_fwhm
-
-try:  # NumPy 2.0 renamed trapz -> trapezoid
-    from numpy import trapezoid as _integrate
-except ImportError:  # pragma: no cover - fallback for older versions
-    from numpy import trapz as _integrate  # type: ignore[attr-defined]
 
 _KNOWN_SENSORS = {"emit", "enmap", "avirisng", "hytes"}
 _DEFAULT_SRF_DIR = Path("data") / "srf"
@@ -118,17 +114,17 @@ def build_srf_band_embeddings(
     for nm, resp in zip(srf.bands_nm, srf.bands_resp, strict=True):
         wl = np.asarray(nm, dtype=np.float64)
         weights = np.asarray(resp, dtype=np.float64)
-        area = float(_integrate(weights, wl))
+        area = float(_np_integrate(weights, wl))
         if area <= 0 or not np.isfinite(area):
             weights = np.ones_like(wl) / wl.size
             area = 1.0
         pdf = weights / area
-        mean = float(_integrate(wl * pdf, wl))
+        mean = float(_np_integrate(wl * pdf, wl))
         centered = wl - mean
-        variance = float(_integrate((centered**2) * pdf, wl))
+        variance = float(_np_integrate((centered**2) * pdf, wl))
         std = float(np.sqrt(max(variance, 1e-12)))
-        skew = float(_integrate((centered**3) * pdf, wl) / (std**3 + 1e-12))
-        kurt = float(_integrate((centered**4) * pdf, wl) / (std**4 + 1e-12))
+        skew = float(_np_integrate((centered**3) * pdf, wl) / (std**3 + 1e-12))
+        kurt = float(_np_integrate((centered**4) * pdf, wl) / (std**4 + 1e-12))
         peak = float(np.max(pdf))
         row: list[float] = []
         for key in stats:

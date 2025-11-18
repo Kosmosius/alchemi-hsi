@@ -7,11 +7,7 @@ import hashlib
 import numpy as np
 
 from alchemi.types import SRFMatrix
-
-try:
-    from numpy import trapezoid as _integrate
-except ImportError:  # pragma: no cover - NumPy < 2.0 fallback
-    from numpy import trapz as _integrate  # type: ignore[attr-defined]
+from alchemi.utils.integrate import np_integrate as _np_integrate
 
 __all__ = [
     "MAKO_BAND_COUNT",
@@ -83,7 +79,7 @@ def build_mako_srf_from_header(
 
     for center in centers_nm:
         response = np.exp(-0.5 * ((grid_nm - center) / sigma) ** 2)
-        area = float(_integrate(response, grid_nm))
+        area = float(_np_integrate(response, grid_nm))
         if not np.isfinite(area) or area <= 0.0:
             raise ValueError("SRF band must integrate to a positive finite area")
         bands_nm.append(grid_nm.copy())

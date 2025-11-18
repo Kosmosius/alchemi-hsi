@@ -1,15 +1,16 @@
-import torch
-import torch.nn as nn
+from __future__ import annotations
+
+from torch import Tensor, nn
 import torch.nn.functional as F
 
 
 class LinearUnmixHead(nn.Module):
-    def __init__(self, embed_dim: int, k: int = 3):
+    def __init__(self, embed_dim: int, k: int = 3) -> None:
         super().__init__()
         self.k = k
         self.fc = nn.Linear(embed_dim, k)
 
-    def forward(self, z: torch.Tensor, basis_emb: torch.Tensor):
+    def forward(self, z: Tensor, basis_emb: Tensor) -> dict[str, Tensor]:
         logits = self.fc(z)
         frac = F.softmax(logits, dim=-1)
         recon = (frac.unsqueeze(-1) * basis_emb).sum(dim=0)

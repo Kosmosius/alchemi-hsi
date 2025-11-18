@@ -83,11 +83,11 @@ class BandTokenizer:
 
     def __call__(
         self,
-        values: Sequence[float],
-        axis: Sequence[float],
+        values: npt.ArrayLike,
+        axis: npt.ArrayLike,
         *,
         axis_unit: AxisUnit,
-        width: Sequence[float] | float | None = None,
+        width: npt.ArrayLike | float | None = None,
         srf_row: np.ndarray | None = None,
     ) -> Tokens:
         cfg = self._config

@@ -9,12 +9,8 @@ from typing import Literal
 import numpy as np
 
 from ..types import SRFMatrix
+from ..utils.integrate import np_integrate as _np_integrate
 from .resample import project_to_sensor
-
-try:  # NumPy >= 2.0
-    from numpy import trapezoid as _integrate
-except ImportError:  # pragma: no cover - fallback for NumPy < 2.0
-    from numpy import trapz as _integrate  # type: ignore[attr-defined]
 
 ShapeKind = Literal["gaussian", "box", "hamming"]
 
@@ -220,7 +216,7 @@ def _band_response(
         else:  # pragma: no cover - defensive
             raise ValueError(f"Unsupported shape '{shape}'")
 
-    area = float(_integrate(weights, wl))
+    area = float(_np_integrate(weights, wl))
     if not np.isfinite(area) or area <= 0:
         raise ValueError("SRF band must integrate to a positive finite area")
     return weights / area

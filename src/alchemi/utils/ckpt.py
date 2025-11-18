@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 
@@ -10,4 +10,4 @@ def save_checkpoint(path: str | Path, state: dict[str, Any]) -> None:
 
 
 def load_checkpoint(path: str | Path) -> dict[str, Any]:
-    return torch.load(path, map_location="cpu")
+    return cast(dict[str, Any], torch.load(path, map_location="cpu"))

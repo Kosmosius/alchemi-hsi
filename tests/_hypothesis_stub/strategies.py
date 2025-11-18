@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """Minimal subset of Hypothesis strategies used in tests."""
 
 from __future__ import annotations

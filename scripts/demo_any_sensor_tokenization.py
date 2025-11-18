@@ -46,7 +46,7 @@ def main() -> None:
         shape="box",
         seed=1337,
     )
-    synthetic = project_lab_to_synthetic(lab_values, highres, synth_cfg)
+    synthetic = project_lab_to_synthetic(lab_values.tolist(), highres.tolist(), synth_cfg)
     synth_cube = Cube(
         data=synthetic.values.reshape(1, 1, -1),
         axis=synthetic.centers_nm,
