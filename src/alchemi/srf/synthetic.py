@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 from ..types import SRFMatrix
 from ..utils.integrate import np_integrate as _np_integrate
@@ -19,14 +20,14 @@ ShapeKind = Literal["gaussian", "box", "hamming"]
 class SyntheticSensorConfig:
     """Configuration describing the randomised synthetic sensor."""
 
-    highres_axis_nm: np.ndarray
+    highres_axis_nm: NDArray[np.float64]
     n_bands: int
     center_jitter_nm: float = 0.0
     fwhm_range_nm: tuple[float, float] = (5.0, 15.0)
     shape: ShapeKind = "gaussian"
     seed: int | None = None
 
-    def axis(self) -> np.ndarray:
+    def axis(self) -> NDArray[np.float64]:
         return _validate_grid(self.highres_axis_nm)
 
 
@@ -34,29 +35,29 @@ class SyntheticSensorConfig:
 class ProjectedSpectrum:
     """Container for spectra projected onto a synthetic sensor."""
 
-    values: np.ndarray
-    centers_nm: np.ndarray
-    fwhm_nm: np.ndarray
-    srf_matrix: np.ndarray
-    srf_axis_nm: np.ndarray
+    values: NDArray[np.float64]
+    centers_nm: NDArray[np.float64]
+    fwhm_nm: NDArray[np.float64]
+    srf_matrix: NDArray[np.float64]
+    srf_axis_nm: NDArray[np.float64]
 
 
 @dataclass(frozen=True)
 class _RandomSpec:
-    centers_nm: np.ndarray
-    fwhm_nm: np.ndarray
-    dense_resp: np.ndarray
+    centers_nm: NDArray[np.float64]
+    fwhm_nm: NDArray[np.float64]
+    dense_resp: NDArray[np.float64]
 
 
 def rand_srf_grid(
-    highres_axis: Sequence[float],
+    highres_axis: ArrayLike,
     *,
     n_bands: int,
     center_jitter_nm: float,
     fwhm_range_nm: Iterable[float] | float,
     shape: ShapeKind,
     seed: int | np.random.Generator | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Sample a dense SRF matrix expressed on ``highres_axis`` (nm)."""
 
     wl = _validate_grid(highres_axis)
@@ -113,9 +114,9 @@ def project_lab_to_synthetic(
 
 
 def _dense_to_matrix(
-    highres_axis: np.ndarray,
-    centers: np.ndarray,
-    dense: np.ndarray,
+    highres_axis: NDArray[np.float64],
+    centers: NDArray[np.float64],
+    dense: NDArray[np.float64],
     shape: ShapeKind,
 ) -> SRFMatrix:
     bands_nm = [highres_axis.copy() for _ in range(dense.shape[0])]
@@ -130,7 +131,7 @@ def _dense_to_matrix(
     return matrix.normalize_trapz()
 
 
-def _validate_grid(grid_nm: Sequence[float]) -> np.ndarray:
+def _validate_grid(grid_nm: ArrayLike) -> NDArray[np.float64]:
     wl = np.asarray(grid_nm, dtype=np.float64)
     if wl.ndim != 1:
         raise ValueError("Wavelength grid must be 1-D")
@@ -138,14 +139,14 @@ def _validate_grid(grid_nm: Sequence[float]) -> np.ndarray:
         raise ValueError("Wavelength grid must contain at least two samples")
     if np.any(np.diff(wl) <= 0):
         raise ValueError("Wavelength grid must be strictly increasing")
-    return wl
+    return np.asarray(wl, dtype=np.float64)
 
 
 def _validate_fwhm_range(
     fwhm_range_nm: Iterable[float] | float, n_bands: int
-) -> tuple[np.ndarray, bool]:
-    if np.isscalar(fwhm_range_nm):
-        width = float(fwhm_range_nm)
+) -> tuple[NDArray[np.float64], bool]:
+    if isinstance(fwhm_range_nm, (int, float)):
+        width = float(np.asarray(fwhm_range_nm, dtype=np.float64))
         if not np.isfinite(width) or width <= 0:
             raise ValueError("FWHM must be positive")
         return np.full(n_bands, width, dtype=np.float64), True
@@ -162,11 +163,11 @@ def _validate_fwhm_range(
 
 
 def _draw_centers(
-    wl: np.ndarray,
+    wl: NDArray[np.float64],
     n_bands: int,
     center_jitter_nm: float,
     rng: np.random.Generator,
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     if center_jitter_nm < 0:
         raise ValueError("center_jitter_nm must be non-negative")
 
@@ -181,11 +182,11 @@ def _draw_centers(
 
 
 def _band_response(
-    wl: np.ndarray,
+    wl: NDArray[np.float64],
     center: float,
     fwhm_nm: float,
     shape: ShapeKind,
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     if fwhm_nm <= 0 or not np.isfinite(fwhm_nm):
         raise ValueError("FWHM must be positive and finite")
 
@@ -219,7 +220,7 @@ def _band_response(
     area = float(_np_integrate(weights, wl))
     if not np.isfinite(area) or area <= 0:
         raise ValueError("SRF band must integrate to a positive finite area")
-    return weights / area
+    return np.asarray(weights / area, dtype=np.float64)
 
 
 def _generate_random_spec(

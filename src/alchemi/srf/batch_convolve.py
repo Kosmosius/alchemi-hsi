@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.typing import NDArray
 
 from ..types import SRFMatrix
 from ..utils.integrate import np_integrate as _np_integrate
@@ -6,7 +7,7 @@ from ..utils.integrate import np_integrate as _np_integrate
 
 def batch_convolve_lab_to_sensor(
     lab_nm: np.ndarray, lab_values: np.ndarray, srf: SRFMatrix
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     """
     lab_nm: [N] grid (same for batch)
     lab_values: [M, N] batch of lab reflectance
@@ -20,4 +21,4 @@ def batch_convolve_lab_to_sensor(
     for b, (nm, resp) in enumerate(zip(srf.bands_nm, srf.bands_resp, strict=True)):
         interpolated = np.vstack([np.interp(nm, lab_nm, sample) for sample in lab_values])
         out[:, b] = _np_integrate(interpolated * resp[None, :], nm, axis=1)
-    return out
+    return np.asarray(out, dtype=np.float64)

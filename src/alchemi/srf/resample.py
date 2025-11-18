@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal
 
 import numpy as np
+from numpy.typing import NDArray
 
 from alchemi.types import SRFMatrix
 from alchemi.utils.integrate import np_integrate as _np_integrate
@@ -17,7 +18,7 @@ __all__ = [
 ]
 
 
-def _validate_wavelengths(wl_nm: np.ndarray) -> np.ndarray:
+def _validate_wavelengths(wl_nm: np.ndarray) -> NDArray[np.float64]:
     wl = np.asarray(wl_nm, dtype=np.float64)
     if wl.ndim != 1:
         raise ValueError("Wavelength grid must be 1-D")
@@ -26,7 +27,7 @@ def _validate_wavelengths(wl_nm: np.ndarray) -> np.ndarray:
     return wl
 
 
-def _as_2d(values: np.ndarray, n_wavelengths: int) -> tuple[np.ndarray, bool]:
+def _as_2d(values: np.ndarray, n_wavelengths: int) -> tuple[NDArray[np.float64], bool]:
     arr = np.asarray(values, dtype=np.float64)
     if arr.ndim == 1:
         if arr.shape[0] != n_wavelengths:
@@ -43,7 +44,7 @@ def convolve_to_bands(
     highres_wl_nm: np.ndarray,
     highres_vals: np.ndarray,
     srf_matrix: SRFMatrix,
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     """Convolve a high-resolution spectrum with tabulated SRFs."""
 
     wl = _validate_wavelengths(np.asarray(highres_wl_nm, dtype=np.float64))
@@ -69,7 +70,8 @@ def convolve_to_bands(
             raise ValueError("SRF band must integrate to a positive finite area")
         out[:, idx] = _np_integrate(weighted, band_wl, axis=1) / band_area
 
-    return out[0] if squeezed else out
+    result = out[0] if squeezed else out
+    return np.asarray(result, dtype=np.float64)
 
 
 def boxcar_resample(
@@ -77,7 +79,7 @@ def boxcar_resample(
     vals: np.ndarray,
     target_centers_nm: np.ndarray,
     width_nm: np.ndarray | float,
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     """Resample spectra using normalized boxcar kernels centered at target wavelengths."""
 
     wl = _validate_wavelengths(wl_nm)
@@ -103,7 +105,8 @@ def boxcar_resample(
         interp_vals = np.vstack([np.interp(window_wl, wl, row) for row in spectra])
         out[:, idx] = _np_integrate(interp_vals, window_wl, axis=1) / width
 
-    return out[0] if squeezed else out
+    result = out[0] if squeezed else out
+    return np.asarray(result, dtype=np.float64)
 
 
 def gaussian_resample(
@@ -111,7 +114,7 @@ def gaussian_resample(
     vals: np.ndarray,
     target_centers_nm: np.ndarray,
     fwhm_nm: np.ndarray | float,
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     """Resample spectra using normalized Gaussian kernels centered at target wavelengths."""
 
     wl = _validate_wavelengths(wl_nm)
@@ -137,7 +140,8 @@ def gaussian_resample(
         weighted = spectra * weights[None, :]
         out[:, idx] = _np_integrate(weighted, wl, axis=1) / denom
 
-    return out[0] if squeezed else out
+    result = out[0] if squeezed else out
+    return np.asarray(result, dtype=np.float64)
 
 
 def project_to_sensor(
@@ -149,7 +153,7 @@ def project_to_sensor(
     fwhm_nm: np.ndarray | float | None = None,
     width_nm: np.ndarray | float | None = None,
     fallback: Literal["gaussian", "box"] = "gaussian",
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     """Project spectra onto sensor bands using SRFs or analytic fallbacks."""
 
     centers = np.asarray(target_centers_nm, dtype=np.float64)
