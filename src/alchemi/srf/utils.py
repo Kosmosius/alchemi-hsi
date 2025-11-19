@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..types import SRFMatrix
 from ..utils.integrate import np_integrate as _np_integrate
@@ -60,7 +61,7 @@ def default_band_widths(
     *,
     registry: SRFRegistry | None = None,
     srf: SRFMatrix | None = None,
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     """Return estimated FWHM values aligned with ``axis_nm``."""
 
     wavelengths = np.asarray(axis_nm, dtype=np.float64)
@@ -82,7 +83,7 @@ def default_band_widths(
         if np.any(np.isfinite(widths)):
             fallback = float(np.nanmean(widths[np.isfinite(widths)]))
             widths = np.where(np.isfinite(widths), widths, fallback)
-            return widths
+            return np.asarray(widths, dtype=np.float64)
 
     if sensor == "emit":
         widths = np.full(wavelengths.shape, 7.25, dtype=np.float64)
@@ -98,14 +99,14 @@ def default_band_widths(
         widths = _band_spacing(wavelengths)
 
     widths[widths <= 0] = float(np.mean(widths[widths > 0])) if np.any(widths > 0) else 1.0
-    return widths
+    return np.asarray(widths, dtype=np.float64)
 
 
 def build_srf_band_embeddings(
     srf: SRFMatrix,
     *,
     summary_stats: Iterable[str] | None = None,
-) -> np.ndarray:
+) -> NDArray[np.float32]:
     """Compress SRF rows into a compact embedding vector."""
 
     stats = tuple(summary_stats or ("mean", "std", "skew", "kurt", "peak", "area"))
@@ -148,7 +149,7 @@ def build_srf_band_embeddings(
     return np.asarray(features, dtype=np.float32)
 
 
-def _band_spacing(axis_nm: np.ndarray) -> np.ndarray:
+def _band_spacing(axis_nm: np.ndarray) -> NDArray[np.float64]:
     if axis_nm.size == 0:
         return np.empty(0, dtype=np.float64)
     diffs = np.diff(axis_nm)
@@ -158,7 +159,7 @@ def _band_spacing(axis_nm: np.ndarray) -> np.ndarray:
     widths[0] = abs(diffs[0])
     widths[-1] = abs(diffs[-1])
     widths[1:-1] = 0.5 * (np.abs(diffs[:-1]) + np.abs(diffs[1:]))
-    return widths
+    return np.asarray(widths, dtype=np.float64)
 
 
 __all__ = [

@@ -6,18 +6,19 @@ import warnings
 from collections.abc import Iterable, Sequence
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 from alchemi.types import SRFMatrix
 
 
-def _as_float_array(values: Sequence[float], *, name: str) -> np.ndarray:
+def _as_float_array(values: ArrayLike, *, name: str) -> NDArray[np.float64]:
     arr = np.asarray(values, dtype=np.float64)
     if arr.ndim != 1:
         raise ValueError(f"{name} must be a 1-D sequence")
     return arr
 
 
-def _grid_spacing(wavelengths: np.ndarray) -> float:
+def _grid_spacing(wavelengths: NDArray[np.float64]) -> float:
     if wavelengths.size < 2:
         raise ValueError("high-resolution wavelength grid must contain at least two samples")
     diffs = np.diff(wavelengths)
@@ -35,7 +36,9 @@ def _gaussian_stats(center_nm: float, fwhm_nm: float) -> tuple[float, float]:
     return float(center_nm), sigma
 
 
-def gaussian_srf(center_nm: float, fwhm_nm: float, highres_wl_nm: np.ndarray) -> np.ndarray:
+def gaussian_srf(
+    center_nm: float, fwhm_nm: float, highres_wl_nm: np.ndarray
+) -> NDArray[np.float64]:
     """Generate a normalized Gaussian SRF on ``highres_wl_nm``.
 
     Parameters
@@ -77,7 +80,7 @@ def gaussian_srf(center_nm: float, fwhm_nm: float, highres_wl_nm: np.ndarray) ->
     if area <= 0:
         raise ValueError("Gaussian SRF integrates to a non-positive area")
     response /= area
-    return response
+    return np.asarray(response, dtype=np.float64)
 
 
 def build_matrix_from_centers(
@@ -101,8 +104,8 @@ def build_matrix_from_centers(
         if fwhms.shape != centers.shape:
             raise ValueError("fwhm_nm array must match centers_nm shape")
 
-    bands_nm = []
-    bands_resp = []
+    bands_nm: list[NDArray[np.float64]] = []
+    bands_resp: list[NDArray[np.float64]] = []
     for center, width in zip(centers, fwhms, strict=True):
         resp = gaussian_srf(float(center), float(width), wl)
         bands_nm.append(wl.copy())

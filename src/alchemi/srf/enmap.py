@@ -4,8 +4,10 @@ import hashlib
 import json
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from alchemi.types import SRFMatrix
 
@@ -13,7 +15,7 @@ _ENMAP_SENSOR = "enmap"
 _ENMAP_VERSION = "v1"
 
 
-def _band_centers_nm() -> np.ndarray:
+def _band_centers_nm() -> NDArray[np.float64]:
     """Approximate EnMAP band centers (nm).
 
     The VNIR module spans roughly 420-999 nm with 95 samples while the SWIR
@@ -23,22 +25,22 @@ def _band_centers_nm() -> np.ndarray:
 
     vnir = np.linspace(420.0, 999.0, 95, dtype=np.float64)
     swir = np.linspace(1001.0, 2450.0, 131, dtype=np.float64)
-    return np.concatenate([vnir, swir])
+    return np.asarray(np.concatenate([vnir, swir]), dtype=np.float64)
 
 
-def _band_grid(center: float, *, points: int, width: float) -> np.ndarray:
+def _band_grid(center: float, *, points: int, width: float) -> NDArray[np.float64]:
     half = width / 2.0
     return np.linspace(center - half, center + half, points, dtype=np.float64)
 
 
-def _band_response(nm: np.ndarray, center: float, sigma: float) -> np.ndarray:
-    return np.exp(-0.5 * ((nm - center) / sigma) ** 2)
+def _band_response(nm: NDArray[np.float64], center: float, sigma: float) -> NDArray[np.float64]:
+    return np.asarray(np.exp(-0.5 * ((nm - center) / sigma) ** 2), dtype=np.float64)
 
 
 def _synthesize_srf() -> SRFMatrix:
     centers = _band_centers_nm()
-    bands_nm: list[np.ndarray] = []
-    bands_resp: list[np.ndarray] = []
+    bands_nm: list[NDArray[np.float64]] = []
+    bands_resp: list[NDArray[np.float64]] = []
     for c in centers:
         if c <= 999.0:  # VNIR
             grid = _band_grid(c, points=9, width=6.0)
@@ -65,7 +67,7 @@ def _compute_cache_key(srf: SRFMatrix) -> str:
     return f"{srf.sensor}:{srf.version}:{h.hexdigest()[:12]}"
 
 
-def _serialize_srf(srf: SRFMatrix) -> dict:
+def _serialize_srf(srf: SRFMatrix) -> dict[str, Any]:
     return {
         "sensor": srf.sensor,
         "version": srf.version,

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import torch
 import yaml
+from torch import Tensor
 from torch.utils.data import DataLoader, TensorDataset
 
 from ..heads import BandDepthHead, load_banddepth_config
@@ -24,7 +25,9 @@ from .loss_mixer import Weights
 _LOG = get_logger(__name__)
 
 
-def _mask_spectral(values, mask, spectral_mask_ratio: float):
+def _mask_spectral(
+    values: Tensor, mask: Tensor, spectral_mask_ratio: float
+) -> tuple[Tensor, Tensor]:
     B = values.shape[0]
     k = max(1, int(B * spectral_mask_ratio))
     idx = torch.randperm(B)[:k]
@@ -33,19 +36,25 @@ def _mask_spectral(values, mask, spectral_mask_ratio: float):
     return m, idx
 
 
-def _build_embedder(cfg: TrainCfg):
+def _build_embedder(cfg: TrainCfg) -> tuple[SpectralBasisProjector, SetEncoder]:
     basis = SpectralBasisProjector(K=cfg.basis_K)
     setenc = SetEncoder(dim=cfg.embed_dim, depth=2, heads=cfg.n_heads)
     return basis, setenc
 
 
-def _encode_pixel(basis, setenc, wavelengths, values, mask):
+def _encode_pixel(
+    basis: SpectralBasisProjector,
+    setenc: SetEncoder,
+    wavelengths: Tensor,
+    values: Tensor,
+    mask: Tensor,
+) -> Tensor:
     phi = basis(wavelengths, values, mask)
     tokens = phi.unsqueeze(0)
     return tokens.squeeze(0)
 
 
-def run_pretrain_mae(config_path: str):
+def run_pretrain_mae(config_path: str) -> None:
     cfg = TrainCfg(**yaml.safe_load(Path(config_path).read_text())["train"])
     basis, setenc = _build_embedder(cfg)
     enc = MAEEncoder(embed_dim=cfg.embed_dim, depth=cfg.depth, n_heads=cfg.n_heads)
@@ -63,7 +72,9 @@ def run_pretrain_mae(config_path: str):
     )
     weights = Weights(recon=1.0, nce=0.0, sam=0.0, smooth=1e-4)
 
-    loader = DataLoader(TensorDataset(torch.randn(128, 32)), batch_size=cfg.batch_size)
+    loader: DataLoader[Tensor] = DataLoader(
+        TensorDataset(torch.randn(128, 32)), batch_size=cfg.batch_size
+    )
 
     step = 0
     for _batch in loader:
@@ -89,7 +100,7 @@ def run_pretrain_mae(config_path: str):
     )
 
 
-def run_align(config_path: str):
+def run_align(config_path: str) -> None:
     cfg = TrainCfg(**yaml.safe_load(Path(config_path).read_text())["train"])
     basis, setenc = _build_embedder(cfg)
     enc = MAEEncoder(embed_dim=cfg.embed_dim, depth=cfg.depth, n_heads=cfg.n_heads)
@@ -116,7 +127,9 @@ def run_align(config_path: str):
 
     Xf = torch.randn(512, 64)
     Xl = torch.randn(512, 64)
-    loader = DataLoader(list(zip(Xf, Xl, strict=False)), batch_size=cfg.batch_size, shuffle=True)
+    loader: DataLoader[tuple[Tensor, Tensor]] = DataLoader(
+        list(zip(Xf, Xl, strict=False)), batch_size=cfg.batch_size, shuffle=True
+    )
 
     for step, (f, lab) in enumerate(loader, start=1):
         with autocast(enabled=False):
@@ -147,7 +160,7 @@ def run_align(config_path: str):
     save_checkpoint("checkpoints/align.pt", {"basis": basis.state_dict(), "enc": enc.state_dict()})
 
 
-def run_eval(config_path: str):
+def run_eval(config_path: str) -> None:
     import numpy as np
 
     from ..eval.metrics_solids import macro_f1

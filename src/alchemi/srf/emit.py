@@ -9,6 +9,7 @@ from importlib import resources
 from typing import overload
 
 import numpy as np
+from numpy.typing import NDArray
 
 from alchemi.types import SRFMatrix
 
@@ -18,7 +19,7 @@ _SENSOR = "EMIT"
 _VERSION = "v01"
 
 
-class _EmitSRFArchive(Sequence[np.ndarray]):
+class _EmitSRFArchive(Sequence[NDArray[np.float64]]):
     """Container for EMIT SRF response curves on the native wavelength grid."""
 
     def __init__(
@@ -48,11 +49,13 @@ class _EmitSRFArchive(Sequence[np.ndarray]):
     @overload
     def __getitem__(self, idx: slice) -> Sequence[np.ndarray]: ...
 
-    def __getitem__(self, idx: int | slice) -> np.ndarray | Sequence[np.ndarray]:
+    def __getitem__(self, idx: int | slice) -> NDArray[np.float64] | Sequence[NDArray[np.float64]]:
         if isinstance(idx, slice):
             start, stop, step = idx.indices(self.__len__())
-            return [self.responses[i] for i in range(start, stop, step)]
-        return self.responses[idx]
+            return [
+                np.asarray(self.responses[i], dtype=np.float64) for i in range(start, stop, step)
+            ]
+        return np.asarray(self.responses[idx], dtype=np.float64)
 
 
 def _load_emit_archive() -> _EmitSRFArchive:
@@ -68,15 +71,15 @@ def _load_emit_archive() -> _EmitSRFArchive:
 
 def _resample_to_grid(
     archive: _EmitSRFArchive, highres_wl_nm: np.ndarray
-) -> tuple[list[np.ndarray], list[np.ndarray]]:
+) -> tuple[list[NDArray[np.float64]], list[NDArray[np.float64]]]:
     """Resample EMIT SRF responses to the provided high-resolution wavelength grid."""
 
     highres = np.asarray(highres_wl_nm, dtype=np.float64)
     if highres.ndim != 1 or not np.all(np.diff(highres) > 0):
         raise ValueError("High-resolution wavelength grid must be strictly increasing")
 
-    nm_bands: list[np.ndarray] = []
-    resp_bands: list[np.ndarray] = []
+    nm_bands: list[NDArray[np.float64]] = []
+    resp_bands: list[NDArray[np.float64]] = []
     for resp in archive:
         sampled = np.interp(highres, archive.native_nm, resp, left=0.0, right=0.0)
         mask = sampled > 1e-8
@@ -94,8 +97,8 @@ def _resample_to_grid(
             )
             nm_band = highres[indices]
             resp_band = sampled[indices]
-        nm_bands.append(nm_band)
-        resp_bands.append(resp_band)
+        nm_bands.append(np.asarray(nm_band, dtype=np.float64))
+        resp_bands.append(np.asarray(resp_band, dtype=np.float64))
     return nm_bands, resp_bands
 
 

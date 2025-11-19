@@ -136,6 +136,7 @@ class CycleReconstructionHeads(nn.Module):
                     "reconstruction head"
                 )
                 raise ValueError(msg)
+            # New behavior: support mappings and axes via _resolve_lab_targets
             lab_targets, _ = self._resolve_lab_targets(lab_tokens)
             self.sensor_to_lab = _build_mlp(
                 inputs.shape[-1],
@@ -165,6 +166,7 @@ class CycleReconstructionHeads(nn.Module):
             zero = torch.zeros((), device=z_lab.device, dtype=z_lab.dtype)
             return zero, {}
 
+        # New behavior: axis-aware resolution from mappings OR tensors
         sensor_targets, sensor_axis = self._resolve_sensor_targets(sensor_tokens)
         lab_targets, lab_axis = self._resolve_lab_targets(lab_tokens)
 
@@ -427,7 +429,7 @@ class CycleAlignment(nn.Module):
         self,
         z_lab: torch.Tensor,
         z_sensor: torch.Tensor,
-        lab_tokens: torch.Tensor | None = None,
+        lab_tokens: torch.Tensor | Mapping[str, torch.Tensor] | None = None,
         sensor_tokens: torch.Tensor | Mapping[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         losses: dict[str, torch.Tensor] = {}

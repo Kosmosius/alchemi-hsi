@@ -14,5 +14,5 @@ class MLP(nn.Module):
         super().__init__()
         self.net = nn.Sequential(nn.Linear(d_in, d_hidden), act(), nn.Linear(d_hidden, d_out))
 
-    def forward(self, x: Tensor) -> Tensor:  # noqa: D401 - simple forward description
+    def forward(self, x: Tensor) -> Tensor:
         return self.net(x)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+
 import numpy as np
 
 IntegrateFn = Callable[..., Any]
@@ -14,7 +15,7 @@ def np_integrate(*args: Any, **kwargs: Any) -> Any:
 
     trapezoid = getattr(np, "trapezoid", None)
     if trapezoid is None:  # pragma: no cover - NumPy < 2.0 fallback
-        trapezoid = np.trapz
+        trapezoid = np.__dict__["trapz"]
     return trapezoid(*args, **kwargs)
 
 

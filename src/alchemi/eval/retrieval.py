@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import NDArray
 
 
 @dataclass(slots=True)
@@ -11,7 +12,9 @@ class RetrievalMetrics:
 
 
 def compute_retrieval_at_k(
-    q: np.ndarray, keys: np.ndarray, k: int = 1
+    q: NDArray[np.float64],
+    keys: NDArray[np.float64],
+    k: int = 1,
 ) -> RetrievalMetrics:
     """Return recall@k and precision@k assuming 1:1 lab↔sensor ordering."""
 
@@ -19,22 +22,32 @@ def compute_retrieval_at_k(
         raise ValueError("Embeddings must be 2-D matrices")
     if q.shape[0] != keys.shape[0]:
         raise ValueError("Query and database sizes must match for paired retrieval")
+
     k = max(1, int(k))
     indices = _topk_indices(q, keys, k)
-    gt = np.arange(q.shape[0])
+
+    # Ground truth: index i should retrieve key i
+    gt = np.arange(q.shape[0], dtype=np.int64)
     hits = (indices == gt[:, None]).any(axis=1)
+
     recall = float(hits.mean())
     precision = float(hits.sum() / (k * max(1, q.shape[0])))
     return RetrievalMetrics(recall=recall, precision=precision)
 
 
-def retrieval_at_k(q: np.ndarray, keys: np.ndarray, gt: np.ndarray, k: int = 1) -> float:
+def retrieval_at_k(
+    q: NDArray[np.float64],
+    keys: NDArray[np.float64],
+    gt: NDArray[np.int64],
+    k: int = 1,
+) -> float:
     """Compute recall@k for L2-normalised embeddings."""
 
     if q.ndim != 2 or keys.ndim != 2:
         raise ValueError("Embeddings must be 2-D matrices")
     if q.shape[0] != gt.shape[0]:
         raise ValueError("Ground-truth indices must align with queries")
+
     k = max(1, int(k))
     indices = _topk_indices(q, keys, k)
     hits = (indices == gt[:, None]).any(axis=1).mean()
@@ -42,9 +55,9 @@ def retrieval_at_k(q: np.ndarray, keys: np.ndarray, gt: np.ndarray, k: int = 1) 
 
 
 def retrieval_summary(
-    q: np.ndarray,
-    keys: np.ndarray,
-    gt: np.ndarray,
+    q: NDArray[np.float64],
+    keys: NDArray[np.float64],
+    gt: NDArray[np.int64],
     ks: tuple[int, ...] = (1, 5),
 ) -> dict[str, float]:
     """Return a dictionary of recall@k metrics for the provided ``ks``."""
@@ -55,7 +68,10 @@ def retrieval_summary(
     return metrics
 
 
-def spectral_angle_deltas(z_lab: np.ndarray, z_sensor: np.ndarray) -> dict[str, float]:
+def spectral_angle_deltas(
+    z_lab: NDArray[np.float64],
+    z_sensor: NDArray[np.float64],
+) -> dict[str, float]:
     """Return mean spectral angle for matched vs mismatched pairs."""
 
     matched = _spectral_angle(z_lab, z_sensor)
@@ -64,6 +80,7 @@ def spectral_angle_deltas(z_lab: np.ndarray, z_sensor: np.ndarray) -> dict[str, 
         mismatched = _spectral_angle(z_lab, rolled)
     else:
         mismatched = matched
+
     mean_matched = float(np.mean(matched))
     mean_mismatched = float(np.mean(mismatched))
     return {
@@ -73,24 +90,34 @@ def spectral_angle_deltas(z_lab: np.ndarray, z_sensor: np.ndarray) -> dict[str, 
     }
 
 
-def _normalize(arr: np.ndarray) -> np.ndarray:
+def _normalize(arr: NDArray[np.float64]) -> NDArray[np.float64]:
     denom = np.linalg.norm(arr, axis=1, keepdims=True) + 1e-12
-    return arr / denom
+    return np.asarray(arr / denom, dtype=np.float64)
 
 
-def _spectral_angle(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+def _spectral_angle(
+    a: NDArray[np.float64],
+    b: NDArray[np.float64],
+) -> NDArray[np.float64]:
     if a.shape != b.shape:
         raise ValueError("Spectral angle inputs must share shape")
     dot = np.sum(_normalize(a) * _normalize(b), axis=1)
     dot = np.clip(dot, -1.0, 1.0)
-    return np.arccos(dot)
+    # Keep the dev-branch dtype-stable behavior
+    return np.asarray(np.arccos(dot), dtype=np.float64)
 
 
-def _topk_indices(q: np.ndarray, keys: np.ndarray, k: int) -> np.ndarray:
+def _topk_indices(
+    q: NDArray[np.float64],
+    keys: NDArray[np.float64],
+    k: int,
+) -> NDArray[np.int64]:
+    """Return top-k indices for cosine similarity between q and keys."""
     qn = _normalize(q)
     kn = _normalize(keys)
     sims = qn @ kn.T
-    return np.argsort(-sims, axis=1)[:, :k]
+    # argsort descending by similarity
+    return np.argsort(-sims, axis=1)[:, :k].astype(np.int64, copy=False)
 
 
 def random_retrieval_at_k(num_queries: int, num_db: int, k: int = 1) -> float:
@@ -99,4 +126,5 @@ def random_retrieval_at_k(num_queries: int, num_db: int, k: int = 1) -> float:
     if num_db <= 0:
         raise ValueError("num_db must be positive")
     k = max(1, int(k))
+    # Expected recall@k is min(k, num_db) / num_db, independent of num_queries.
     return float(min(k, num_db) / num_db)

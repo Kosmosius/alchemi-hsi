@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import torch
-from torch import Tensor
 import torch.nn.functional as F
+from torch import Tensor
 
 
 def cosine_topk(query: Tensor, keys: Tensor, k: int = 5) -> tuple[Tensor, Tensor]:
