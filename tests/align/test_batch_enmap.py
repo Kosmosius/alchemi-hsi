@@ -1,9 +1,8 @@
-from __future__ import annotations
-
 import numpy as np
 
-from alchemi.align import build_enmap_pairs
-from alchemi.srf import batch_convolve_lab_to_sensor, enmap_srf_matrix
+from alchemi.align.batch_builders import NoiseConfig, PairBatch, build_enmap_pairs
+from alchemi.srf.batch_convolve import batch_convolve_lab_to_sensor
+from alchemi.srf.enmap import enmap_srf_matrix
 
 
 def _synthetic_lab() -> tuple[np.ndarray, np.ndarray]:
@@ -21,61 +20,75 @@ def _synthetic_lab() -> tuple[np.ndarray, np.ndarray]:
     return nm, spectra
 
 
-def test_enmap_pairing_shapes_and_sampling(tmp_path):
-    lab_nm, lab_reflectance = _synthetic_lab()
-    wl, lab_conv, sensor, mask = build_enmap_pairs(
-        lab_nm, lab_reflectance, cache_dir=tmp_path, rng=0
-    )
-
-    assert wl.shape == (226,)
-    assert np.all(np.diff(wl) > 0)
-    assert lab_conv.shape == (lab_reflectance.shape[0], wl.size)
-    assert sensor.shape == lab_conv.shape
-    assert mask.shape == (wl.size,)
-    assert mask.dtype == bool and mask.all()
-
-    vnir_centers = wl[:95]
-    swir_centers = wl[95:]
-    assert vnir_centers.size == 95
-    assert swir_centers.size == 131
-    assert np.isclose(np.mean(np.diff(vnir_centers)), 6.16, atol=0.15)
-    assert np.isclose(np.mean(np.diff(swir_centers)), 11.15, atol=0.2)
+def _lab_batch() -> list[tuple[np.ndarray, np.ndarray]]:
+    nm, spectra = _synthetic_lab()
+    return [(nm, spectra[idx]) for idx in range(spectra.shape[0])]
 
 
-def test_enmap_convolution_matches_reference(tmp_path):
-    lab_nm, lab_reflectance = _synthetic_lab()
-    _wl, lab_conv, sensor, _ = build_enmap_pairs(
-        lab_nm,
-        lab_reflectance,
+def test_enmap_pairing_shapes_and_sampling(tmp_path) -> None:
+    pairs = build_enmap_pairs(_lab_batch(), cache_dir=tmp_path)
+
+    assert all(isinstance(pair, PairBatch) for pair in pairs)
+    assert len(pairs) == 3
+
+    band_grid = pairs[0].sensor_wavelengths_nm
+    assert band_grid.shape == (226,)
+    assert np.all(np.diff(band_grid) > 0)
+    assert pairs[0].sensor_id == "enmap"
+
+    vnir = band_grid[:95]
+    swir = band_grid[95:]
+    assert vnir.size == 95
+    assert swir.size == 131
+    assert np.isclose(np.mean(np.diff(vnir)), 6.16, atol=0.15)
+    assert np.isclose(np.mean(np.diff(swir)), 11.15, atol=0.2)
+
+
+def test_enmap_convolution_matches_reference(tmp_path) -> None:
+    batch = _lab_batch()
+    pairs = build_enmap_pairs(
+        batch,
         cache_dir=tmp_path,
-        rng=0,
         noise_level_rel_vnir=0.0,
         noise_level_rel_swir=0.0,
     )
+
     srf = enmap_srf_matrix(cache_dir=tmp_path)
-    expected = batch_convolve_lab_to_sensor(lab_nm, lab_reflectance, srf)
-    assert np.allclose(lab_conv, expected, atol=5e-6)
-    assert np.allclose(sensor, lab_conv)
+    expected = batch_convolve_lab_to_sensor(batch[0][0], np.stack([b[1] for b in batch]), srf)
+
+    stacked = np.stack([pair.sensor_values for pair in pairs], axis=0)
+    np.testing.assert_allclose(stacked, expected, atol=5e-6)
 
 
-def test_enmap_noise_levels_split(tmp_path):
-    lab_nm, lab_reflectance = _synthetic_lab()
-    wl, lab_conv, sensor, _ = build_enmap_pairs(
-        lab_nm,
-        lab_reflectance,
+def test_enmap_noise_levels_split(tmp_path) -> None:
+    batch = _lab_batch()
+    base_pairs = build_enmap_pairs(
+        batch,
+        cache_dir=tmp_path,
+        noise_level_rel_vnir=0.0,
+        noise_level_rel_swir=0.0,
+    )
+    noisy_pairs = build_enmap_pairs(
+        batch,
         cache_dir=tmp_path,
         noise_level_rel_vnir=0.03,
         noise_level_rel_swir=0.06,
-        rng=123,
+        noise_cfg=NoiseConfig(seed=123),
     )
 
-    generator = np.random.default_rng(123)
-    rel_levels = np.where(wl <= 999.0, 0.03, 0.06)
-    sigma = rel_levels[None, :] * np.maximum(np.abs(lab_conv), 1e-8)
-    expected_noise = generator.normal(loc=0.0, scale=sigma, size=lab_conv.shape)
-    assert np.allclose(sensor, lab_conv + expected_noise)
+    srf = enmap_srf_matrix(cache_dir=tmp_path)
+    expected = batch_convolve_lab_to_sensor(batch[0][0], np.stack([b[1] for b in batch]), srf)
+    rel_levels = np.where(srf.centers_nm <= 999.0, 0.03, 0.06)
+    sigma = np.abs(expected) * rel_levels.reshape(1, -1)
 
-    diff = sensor - lab_conv
+    rng = np.random.default_rng(123)
+    expected_noise = rng.normal(loc=0.0, scale=1.0, size=expected.shape) * sigma
+
+    base = np.stack([pair.sensor_values for pair in base_pairs], axis=0)
+    noisy = np.stack([pair.sensor_values for pair in noisy_pairs], axis=0)
+    np.testing.assert_allclose(noisy, base + expected_noise)
+
+    diff = noisy - base
     vnir_rms = np.sqrt(np.mean(diff[:, :95] ** 2))
     swir_rms = np.sqrt(np.mean(diff[:, 95:] ** 2))
     assert swir_rms > vnir_rms

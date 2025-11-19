@@ -43,6 +43,11 @@ cycle:
   sensor_context_dim: 0
   lab_context_dim: 0
   use_brightness_temperature: false
+  cycle_raw: true
+  cycle_continuum: false
+  slope_reg: false
+  continuum_weight: 1.0
+  slope_weight: 1.0
 
 banddepth:
   enabled: true

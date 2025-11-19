@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 try:  # pragma: no cover - distributed may be unavailable in test envs
@@ -16,21 +17,31 @@ except Exception:  # pragma: no cover - defensive
     _dist_all_gather = None
 
 
-@dataclass
-class LossOut:
-    """Container for loss scalars and auxiliary outputs."""
+@dataclass(slots=True)
+class InfoNCELossOut:
+    """Structured return type for the symmetric InfoNCE loss."""
 
     loss: torch.Tensor
-    metrics: dict[str, torch.Tensor] | None = None
-    params: dict[str, torch.nn.Parameter] | None = None
+    loss_lab_to_sensor: torch.Tensor
+    loss_sensor_to_lab: torch.Tensor
+    tau: torch.Tensor
+    logit_scale: nn.Parameter | None = None
 
-    def parameters(self) -> list[torch.nn.Parameter]:
-        if not self.params:
+    def parameters(self) -> list[nn.Parameter]:
+        if self.logit_scale is None:
             return []
-        return list(self.params.values())
+        return [self.logit_scale]
+
+    @property
+    def metrics(self) -> dict[str, torch.Tensor]:
+        return {
+            "tau": self.tau.detach(),
+            "loss_lab_to_sensor": self.loss_lab_to_sensor.detach(),
+            "loss_sensor_to_lab": self.loss_sensor_to_lab.detach(),
+        }
 
 
-_TAU_PARAMS: dict[tuple[torch.device, torch.dtype], torch.nn.Parameter] = {}
+_TAU_PARAMS: dict[tuple[torch.device, torch.dtype], nn.Parameter] = {}
 
 
 def _ddp_is_initialized() -> bool:
@@ -65,12 +76,12 @@ def _get_tau_param(
     tau_init: float,
     device: torch.device,
     dtype: torch.dtype,
-) -> torch.nn.Parameter:
+) -> nn.Parameter:
     key = (device, dtype)
     param = _TAU_PARAMS.get(key)
     if param is None:
         init_value = torch.log(torch.as_tensor(tau_init, device=device, dtype=dtype))
-        param = torch.nn.Parameter(init_value)
+        param = nn.Parameter(init_value)
         _TAU_PARAMS[key] = param
     return param
 
@@ -85,10 +96,11 @@ def info_nce_symmetric(
     z_lab: torch.Tensor,
     z_sensor: torch.Tensor,
     *,
+    logit_scale: nn.Parameter | None = None,
     tau_init: float = 0.07,
     learnable_tau: bool = True,
     gather_ddp: bool = True,
-) -> LossOut:
+) -> InfoNCELossOut:
     """CLIP-style symmetric InfoNCE with optional DDP gathering."""
 
     if z_lab.ndim != 2 or z_sensor.ndim != 2:
@@ -104,13 +116,17 @@ def info_nce_symmetric(
     device = z_lab.device
     dtype = z_lab.dtype
 
-    params: dict[str, torch.nn.Parameter] | None = None
-    if learnable_tau:
-        log_tau = _get_tau_param(tau_init=tau_init, device=device, dtype=dtype)
-        params = {"log_tau": log_tau}
-        tau = torch.exp(log_tau)
+    tau_param: nn.Parameter | None = None
+    if logit_scale is not None:
+        tau_param = logit_scale
+        tau = torch.exp(logit_scale)
+    elif learnable_tau:
+        tau_param = _get_tau_param(tau_init=tau_init, device=device, dtype=dtype)
+        tau = torch.exp(tau_param)
     else:
         tau = torch.as_tensor(tau_init, device=device, dtype=dtype)
+
+    tau = torch.clamp(tau, min=1e-3, max=1e3)
 
     gather_active = gather_ddp and _ddp_is_initialized()
     if gather_active:
@@ -134,11 +150,17 @@ def info_nce_symmetric(
     loss_sensor_to_lab = _cross_entropy_from_logits(logits_sensor_to_lab, positive_indices)
     loss = 0.5 * (loss_lab_to_sensor + loss_sensor_to_lab)
 
-    metrics = {
-        "tau": tau.detach(),
-        "loss_lab_to_sensor": loss_lab_to_sensor.detach(),
-        "loss_sensor_to_lab": loss_sensor_to_lab.detach(),
-        "world_size": torch.tensor(world_size, device=device),
-    }
+    return InfoNCELossOut(
+        loss=loss,
+        loss_lab_to_sensor=loss_lab_to_sensor,
+        loss_sensor_to_lab=loss_sensor_to_lab,
+        tau=tau.detach(),
+        logit_scale=tau_param,
+    )
 
-    return LossOut(loss=loss, metrics=metrics, params=params)
+
+# Backwards compatibility import path expected by older tests/configs.
+LossOut = InfoNCELossOut
+
+
+__all__ = ["InfoNCELossOut", "LossOut", "info_nce_symmetric"]

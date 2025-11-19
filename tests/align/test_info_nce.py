@@ -1,6 +1,6 @@
 import torch
 
-from alchemi.align.losses import LossOut, info_nce_symmetric
+from alchemi.align.losses import InfoNCELossOut, info_nce_symmetric
 from alchemi.losses import InfoNCELoss
 
 
@@ -22,7 +22,7 @@ def test_info_nce_symmetric_decreases_on_aligned_pairs():
     for _ in range(80):
         optim.zero_grad(set_to_none=True)
         loss_out = info_nce_symmetric(z_lab, z_sensor, gather_ddp=False)
-        assert isinstance(loss_out, LossOut)
+        assert isinstance(loss_out, InfoNCELossOut)
         loss_out.loss.backward()
         optim.step()
 
@@ -60,8 +60,9 @@ def test_info_nce_symmetric_tau_positive_and_grad():
     tau_metric = loss_out.metrics["tau"]
     assert tau_metric.item() > 0.0
 
-    if loss_out.params:
-        log_tau = loss_out.params["log_tau"]
+    params = loss_out.parameters()
+    if params:
+        log_tau = params[0]
         assert isinstance(log_tau, torch.nn.Parameter)
         assert log_tau.grad is not None
 

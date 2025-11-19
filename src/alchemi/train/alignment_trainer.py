@@ -12,7 +12,7 @@ import torch
 import yaml
 from torch import nn
 
-from ..align.batch_builders import NoiseConfig, build_emits_pairs
+from ..align.batch_builders import NoiseConfig, build_emit_pairs
 from ..align.cycle import CycleConfig, CycleReconstructionHeads
 from ..align.losses import info_nce_symmetric
 from ..eval.retrieval import retrieval_at_k, spectral_angle_deltas
@@ -251,6 +251,7 @@ class _TensorBatch:
     lab_values: torch.Tensor
     sensor_values: torch.Tensor
     sensor_wavelengths: torch.Tensor
+    lab_wavelengths: torch.Tensor
 
 
 class AlignmentTrainer:
@@ -305,7 +306,7 @@ class AlignmentTrainer:
                 )
             self._tau_params = loss_out.parameters()
 
-        probe_pair = build_emits_pairs(
+        probe_pair = build_emit_pairs(
             [(self.lab_wavelengths, np.ones_like(self.lab_wavelengths))],
             srf=self.cfg.data.sensor,
         )[0]
@@ -384,7 +385,7 @@ class AlignmentTrainer:
     def _build_batch(self, batch_size: int) -> _TensorBatch:
         lab_spectra = self._sample_lab_spectra(batch_size)
         lab_batch = [(self.lab_wavelengths, spec) for spec in lab_spectra]
-        pairs = build_emits_pairs(lab_batch, srf=self.cfg.data.sensor, noise_cfg=self.noise_cfg)
+        pairs = build_emit_pairs(lab_batch, srf=self.cfg.data.sensor, noise_cfg=self.noise_cfg)
         lab_tokens, lab_masks, sensor_tokens, sensor_masks = [], [], [], []
         lab_values: list[np.ndarray] = []
         sensor_values: list[np.ndarray] = []
@@ -426,6 +427,9 @@ class AlignmentTrainer:
         sensor_wavelengths = torch.as_tensor(
             pairs[0].sensor_wavelengths_nm, device=self.device, dtype=self.dtype
         )
+        lab_wavelengths = torch.as_tensor(
+            pairs[0].lab_wavelengths_nm, device=self.device, dtype=self.dtype
+        )
         return _TensorBatch(
             lab_tokens=lab_tokens_tensor,
             lab_mask=lab_mask_tensor,
@@ -434,6 +438,7 @@ class AlignmentTrainer:
             lab_values=lab_values_tensor,
             sensor_values=sensor_values_tensor,
             sensor_wavelengths=sensor_wavelengths,
+            lab_wavelengths=lab_wavelengths,
         )
 
     def _encode_tokens(
@@ -464,8 +469,11 @@ class AlignmentTrainer:
             cycle_loss, breakdown = self.cycle_heads.cycle_loss(
                 z_lab,
                 z_sensor,
-                batch.lab_values,
-                {"radiance": batch.sensor_values},
+                {"values": batch.lab_values, "wavelengths_nm": batch.lab_wavelengths},
+                {
+                    "radiance": batch.sensor_values,
+                    "wavelengths_nm": batch.sensor_wavelengths,
+                },
             )
             total_loss = total_loss + self.cfg.model.cycle_weight * cycle_loss
             metrics["cycle_loss"] = float(cycle_loss.detach().cpu())
