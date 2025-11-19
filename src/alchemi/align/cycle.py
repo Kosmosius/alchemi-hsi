@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from alchemi.losses import InfoNCELoss, SAMLoss
 
@@ -23,6 +24,12 @@ class CycleConfig:
     sensor_context_dim: int = 0
     lab_context_dim: int = 0
     use_brightness_temperature: bool = False
+    cycle_raw: bool = False
+    cycle_continuum: bool = False
+    slope_reg: bool = False
+    continuum_weight: float = 1.0
+    slope_weight: float = 1.0
+    continuum_window_nm: tuple[float, float] | None = None
 
 
 def _build_mlp(
@@ -92,7 +99,7 @@ class CycleReconstructionHeads(nn.Module):
                     "reconstruction head"
                 )
                 raise ValueError(msg)
-            sensor_targets = self._resolve_sensor_targets(sensor_tokens)
+            sensor_targets, _ = self._resolve_sensor_targets(sensor_tokens)
             self.lab_to_sensor = _build_mlp(
                 inputs.shape[-1],
                 sensor_targets.shape[-1],
@@ -129,7 +136,7 @@ class CycleReconstructionHeads(nn.Module):
                     "reconstruction head"
                 )
                 raise ValueError(msg)
-            lab_targets = lab_tokens
+            lab_targets, _ = self._resolve_lab_targets(lab_tokens)
             self.sensor_to_lab = _build_mlp(
                 inputs.shape[-1],
                 lab_targets.shape[-1],
@@ -149,7 +156,7 @@ class CycleReconstructionHeads(nn.Module):
         self,
         z_lab: torch.Tensor,
         z_sensor: torch.Tensor,
-        lab_tokens: torch.Tensor,
+        lab_tokens: torch.Tensor | Mapping[str, torch.Tensor],
         sensor_tokens: torch.Tensor | Mapping[str, torch.Tensor],
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Compute the bidirectional cycle reconstruction loss."""
@@ -158,8 +165,8 @@ class CycleReconstructionHeads(nn.Module):
             zero = torch.zeros((), device=z_lab.device, dtype=z_lab.dtype)
             return zero, {}
 
-        sensor_targets = self._resolve_sensor_targets(sensor_tokens)
-        lab_targets = lab_tokens
+        sensor_targets, sensor_axis = self._resolve_sensor_targets(sensor_tokens)
+        lab_targets, lab_axis = self._resolve_lab_targets(lab_tokens)
 
         if sensor_targets.dim() != 2 or sensor_targets.shape[-1] != self.sensor_dim:
             msg = (
@@ -177,20 +184,55 @@ class CycleReconstructionHeads(nn.Module):
         pred_sensor = self.reconstruct_sensor_from_lab(z_lab, sensor_tokens)
         pred_lab = self.reconstruct_lab_from_sensor(z_sensor, lab_tokens)
 
-        sensor_l2 = self._mse(pred_sensor, sensor_targets)
-        lab_l2 = self._mse(pred_lab, lab_targets)
-        sensor_sam = self.sam_loss(pred_sensor, sensor_targets)
-        lab_sam = self.sam_loss(pred_lab, lab_targets)
+        total = torch.zeros((), device=z_lab.device, dtype=z_lab.dtype)
+        breakdown: dict[str, torch.Tensor] = {}
 
-        total = self.config.l2_weight * (sensor_l2 + lab_l2) + self.config.sam_weight * (
-            sensor_sam + lab_sam
-        )
-        breakdown = {
-            "sensor_l2": sensor_l2.detach(),
-            "lab_l2": lab_l2.detach(),
-            "sensor_sam": sensor_sam.detach(),
-            "lab_sam": lab_sam.detach(),
-        }
+        if self.config.cycle_raw:
+            sensor_l2 = self._mse(pred_sensor, sensor_targets)
+            lab_l2 = self._mse(pred_lab, lab_targets)
+            sensor_sam = self.sam_loss(pred_sensor, sensor_targets)
+            lab_sam = self.sam_loss(pred_lab, lab_targets)
+            raw_loss = self.config.l2_weight * (sensor_l2 + lab_l2) + self.config.sam_weight * (
+                sensor_sam + lab_sam
+            )
+            total = total + raw_loss
+            breakdown.update(
+                {
+                    "sensor_l2": sensor_l2.detach(),
+                    "lab_l2": lab_l2.detach(),
+                    "sensor_sam": sensor_sam.detach(),
+                    "lab_sam": lab_sam.detach(),
+                }
+            )
+
+        if self.config.cycle_continuum:
+            cont_losses = self._continuum_losses(
+                pred_lab,
+                lab_targets,
+                lab_axis,
+                pred_sensor,
+                sensor_targets,
+                sensor_axis,
+            )
+            if cont_losses is not None:
+                cont_loss, cont_breakdown = cont_losses
+                total = total + self.config.continuum_weight * cont_loss
+                breakdown.update(cont_breakdown)
+
+        if self.config.slope_reg:
+            slope_losses = self._slope_losses(
+                pred_lab,
+                lab_targets,
+                lab_axis,
+                pred_sensor,
+                sensor_targets,
+                sensor_axis,
+            )
+            if slope_losses is not None:
+                slope_loss, slope_breakdown = slope_losses
+                total = total + self.config.slope_weight * slope_loss
+                breakdown.update(slope_breakdown)
+
         return total, breakdown
 
     def _ensure_enabled(self) -> None:
@@ -252,20 +294,120 @@ class CycleReconstructionHeads(nn.Module):
 
     def _resolve_sensor_targets(
         self, sensor_tokens: torch.Tensor | Mapping[str, torch.Tensor]
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         if isinstance(sensor_tokens, Mapping):
             candidate_keys = ["bt", "radiance", "values"]
             preferred = "bt" if self.config.use_brightness_temperature else "radiance"
             for key in (preferred, *candidate_keys):
                 if key in sensor_tokens:
-                    return sensor_tokens[key]
+                    axis_payload = sensor_tokens.get("wavelengths_nm")
+                    if axis_payload is None:
+                        axis_payload = sensor_tokens.get("axis")
+                    if axis_payload is None:
+                        axis_payload = sensor_tokens.get("axis_nm")
+                    axis = self._ensure_axis_tensor(
+                        axis_payload,
+                        sensor_tokens[key],
+                    )
+                    return sensor_tokens[key], axis
             available = ", ".join(sensor_tokens.keys())
             msg = f"No suitable sensor target found in mapping. Available keys: {available}"
             raise KeyError(msg)
         if not isinstance(sensor_tokens, torch.Tensor):
             msg = "sensor_tokens must be a tensor or mapping"
             raise TypeError(msg)
-        return sensor_tokens
+        return sensor_tokens, None
+
+    def _resolve_lab_targets(
+        self, lab_tokens: torch.Tensor | Mapping[str, torch.Tensor]
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        if isinstance(lab_tokens, Mapping):
+            for key in ("values", "reflectance", "radiance"):
+                if key in lab_tokens:
+                    axis_payload = lab_tokens.get("wavelengths_nm")
+                    if axis_payload is None:
+                        axis_payload = lab_tokens.get("axis")
+                    if axis_payload is None:
+                        axis_payload = lab_tokens.get("axis_nm")
+                    axis = self._ensure_axis_tensor(
+                        axis_payload,
+                        lab_tokens[key],
+                    )
+                    return lab_tokens[key], axis
+            available = ", ".join(lab_tokens.keys())
+            msg = f"No suitable lab target found in mapping. Available keys: {available}"
+            raise KeyError(msg)
+        if not isinstance(lab_tokens, torch.Tensor):
+            msg = "lab_tokens must be a tensor or mapping"
+            raise TypeError(msg)
+        return lab_tokens, None
+
+    def _ensure_axis_tensor(
+        self, axis: torch.Tensor | Mapping[str, torch.Tensor] | None, reference: torch.Tensor
+    ) -> torch.Tensor | None:
+        if axis is None:
+            return None
+        if isinstance(axis, Mapping):  # pragma: no cover - defensive guard
+            msg = "Axis payloads must be tensors or arrays"
+            raise TypeError(msg)
+        tensor = torch.as_tensor(axis, device=reference.device, dtype=reference.dtype)
+        if tensor.dim() != 1:
+            raise ValueError("Wavelength axes must be 1-D")
+        return tensor
+
+    def _continuum_losses(
+        self,
+        pred_lab: torch.Tensor,
+        lab_targets: torch.Tensor,
+        lab_axis: torch.Tensor | None,
+        pred_sensor: torch.Tensor,
+        sensor_targets: torch.Tensor,
+        sensor_axis: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]] | None:
+        if lab_axis is None or sensor_axis is None:
+            return None
+        lab_removed, _ = _continuum_removed(lab_targets, lab_axis, self.config)
+        pred_lab_removed, _ = _continuum_removed(pred_lab, lab_axis, self.config)
+        sensor_removed, _ = _continuum_removed(sensor_targets, sensor_axis, self.config)
+        pred_sensor_removed, _ = _continuum_removed(pred_sensor, sensor_axis, self.config)
+
+        lab_mse = self._mse(pred_lab_removed, lab_removed)
+        sensor_mse = self._mse(pred_sensor_removed, sensor_removed)
+        lab_sam = self.sam_loss(pred_lab_removed, lab_removed)
+        sensor_sam = self.sam_loss(pred_sensor_removed, sensor_removed)
+        total = lab_mse + sensor_mse + lab_sam + sensor_sam
+        breakdown = {
+            "lab_cont_mse": lab_mse.detach(),
+            "sensor_cont_mse": sensor_mse.detach(),
+            "lab_cont_sam": lab_sam.detach(),
+            "sensor_cont_sam": sensor_sam.detach(),
+        }
+        return total, breakdown
+
+    def _slope_losses(
+        self,
+        pred_lab: torch.Tensor,
+        lab_targets: torch.Tensor,
+        lab_axis: torch.Tensor | None,
+        pred_sensor: torch.Tensor,
+        sensor_targets: torch.Tensor,
+        sensor_axis: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]] | None:
+        if lab_axis is None or sensor_axis is None:
+            return None
+        lab_slope = _spectral_slope(lab_targets, lab_axis)
+        pred_lab_slope = _spectral_slope(pred_lab, lab_axis)
+        sensor_slope = _spectral_slope(sensor_targets, sensor_axis)
+        pred_sensor_slope = _spectral_slope(pred_sensor, sensor_axis)
+
+        lab_loss = F.mse_loss(pred_lab_slope, lab_slope)
+        sensor_loss = F.mse_loss(pred_sensor_slope, sensor_slope)
+        total = lab_loss + sensor_loss
+        breakdown = {
+            "lab_slope": lab_loss.detach(),
+            "sensor_slope": sensor_loss.detach(),
+        }
+        return total, breakdown
 
 
 class CycleAlignment(nn.Module):
@@ -316,3 +458,52 @@ class CycleAlignment(nn.Module):
         lab_tokens: torch.Tensor | Mapping[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         return self.cycle.reconstruct_lab_from_sensor(z_sensor, lab_tokens)
+
+
+def _continuum_removed(
+    values: torch.Tensor, axis: torch.Tensor, config: CycleConfig
+) -> tuple[torch.Tensor, torch.Tensor]:
+    axis = axis.to(device=values.device, dtype=values.dtype)
+    if axis.dim() != 1:
+        raise ValueError("Wavelength axis must be 1-D for continuum removal")
+    if axis.numel() < 2:
+        raise ValueError("Wavelength axis must contain at least two samples")
+    default_window = (float(axis[0].item()), float(axis[-1].item()))
+    left_nm, right_nm = config.continuum_window_nm or default_window
+    left_nm_t = torch.as_tensor(left_nm, device=axis.device, dtype=axis.dtype)
+    right_nm_t = torch.as_tensor(right_nm, device=axis.device, dtype=axis.dtype)
+    left_vals = _interp_axis(values, axis, left_nm_t)
+    right_vals = _interp_axis(values, axis, right_nm_t)
+    denom = torch.clamp(right_nm_t - left_nm_t, min=1e-6)
+    slope = (right_vals - left_vals) / denom
+    axis_row = axis.view(1, -1)
+    continuum = left_vals + slope * (axis_row - left_nm_t)
+    continuum = continuum.clamp_min(1e-6)
+    removed = values / continuum
+    removed = torch.nan_to_num(removed)
+    return removed, continuum
+
+
+def _interp_axis(values: torch.Tensor, axis: torch.Tensor, target_nm: torch.Tensor) -> torch.Tensor:
+    idx = torch.searchsorted(axis, target_nm)
+    idx = torch.clamp(idx, 1, axis.numel() - 1)
+    lower = idx - 1
+    upper = idx
+    wl_lower = axis[lower]
+    wl_upper = axis[upper]
+    frac = (target_nm - wl_lower) / torch.clamp(wl_upper - wl_lower, min=1e-6)
+    lower_vals = values[..., lower]
+    upper_vals = values[..., upper]
+    interp = lower_vals + frac * (upper_vals - lower_vals)
+    return interp.unsqueeze(-1)
+
+
+def _spectral_slope(values: torch.Tensor, axis: torch.Tensor) -> torch.Tensor:
+    axis = axis.to(device=values.device, dtype=values.dtype)
+    if axis.numel() < 2:
+        raise ValueError("Wavelength axis must contain at least two samples")
+    diffs = values[..., 1:] - values[..., :-1]
+    denom = torch.clamp(axis[1:] - axis[:-1], min=1e-6)
+    denom = denom.view(1, -1)
+    slopes = diffs / denom
+    return torch.nan_to_num(slopes)

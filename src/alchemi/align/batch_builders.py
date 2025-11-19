@@ -1,24 +1,32 @@
-"""Utilities for constructing lab/sensor training pairs for alignment."""
+"""Utilities for constructing SRF-aware lab↔sensor training pairs."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 
+from ..srf.avirisng import avirisng_srf_matrix
 from ..srf.batch_convolve import batch_convolve_lab_to_sensor
+from ..srf.enmap import enmap_srf_matrix
 from ..srf.registry import get_srf
 
 
 @dataclass(slots=True)
-class Pair:
-    """Container holding matched lab and sensor spectra."""
+class PairBatch:
+    """Container holding matched lab and sensor spectra for a single sample."""
 
     lab_wavelengths_nm: np.ndarray
     lab_values: np.ndarray
     sensor_wavelengths_nm: np.ndarray
     sensor_values: np.ndarray
+    sensor_id: str | None = None
+    lab_id: str | None = None
+    noise_cfg: dict[str, Any] | None = None
+    sensor_mask: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         lab_wl = np.asarray(self.lab_wavelengths_nm, dtype=np.float64).copy()
@@ -39,34 +47,53 @@ class Pair:
             msg = "sensor_values must be a 1-D array matching sensor wavelengths"
             raise ValueError(msg)
 
+        mask = None
+        if self.sensor_mask is not None:
+            mask_arr = np.asarray(self.sensor_mask, dtype=bool)
+            if mask_arr.shape != sensor_wl.shape:
+                msg = "sensor_mask must match sensor_wavelengths_nm shape"
+                raise ValueError(msg)
+            mask = mask_arr.copy()
+
         self.lab_wavelengths_nm = lab_wl
         self.lab_values = lab_vals
         self.sensor_wavelengths_nm = sensor_wl
         self.sensor_values = sensor_vals
+        self.sensor_mask = mask
 
 
 @dataclass(slots=True)
 class NoiseConfig:
     """Configuration for optional Gaussian noise injection in sensor space."""
 
-    noise_level_rel: float = 0.0
+    noise_level_rel: float | Sequence[float] | np.ndarray = 0.0
     seed: int | None = None
     rng: np.random.Generator | None = None
-
-    def __post_init__(self) -> None:
-        if self.noise_level_rel < 0.0:
-            msg = "noise_level_rel must be non-negative"
-            raise ValueError(msg)
 
     def generator(self) -> np.random.Generator:
         if self.rng is None:
             self.rng = np.random.default_rng(self.seed)
         return self.rng
 
-    @property
-    def enabled(self) -> bool:
-        return self.noise_level_rel > 0.0
-
+    def levels(
+        self,
+        band_count: int,
+        override: float | Sequence[float] | np.ndarray | None = None,
+    ) -> np.ndarray:
+        raw: Any
+        if override is not None:
+            raw = override
+        else:
+            raw = self.noise_level_rel
+        levels = np.asarray(raw, dtype=np.float64)
+        if levels.ndim == 0:
+            levels = np.full((band_count,), float(levels), dtype=np.float64)
+        elif levels.shape != (band_count,):
+            msg = "noise levels must be scalar or match the band count"
+            raise ValueError(msg)
+        if np.any(levels < 0.0):
+            raise ValueError("noise levels must be non-negative")
+        return levels
 
 _LabSpectrum = tuple[np.ndarray, np.ndarray]
 
@@ -99,20 +126,70 @@ def _apply_noise(
     cfg: NoiseConfig,
     *,
     rng: np.random.Generator,
+    override_levels: float | Sequence[float] | np.ndarray | None = None,
 ) -> np.ndarray:
-    sigma = np.abs(sensor_values) * cfg.noise_level_rel
-    if not np.any(sigma > 0.0):
-        return sensor_values.copy()
-    noise = rng.normal(loc=0.0, scale=1.0, size=sensor_values.shape)
-    return sensor_values + noise * sigma
+    arr = np.asarray(sensor_values, dtype=np.float64)
+    squeeze = False
+    if arr.ndim == 1:
+        arr = arr[None, :]
+        squeeze = True
+    elif arr.ndim != 2:
+        raise ValueError("sensor_values must be a 1-D or 2-D array")
+
+    band_count = arr.shape[-1]
+    levels = cfg.levels(band_count, override=override_levels)
+    if not np.any(levels > 0.0):
+        return arr[0] if squeeze else arr.copy()
+
+    sigma = np.abs(arr) * levels.reshape(1, -1)
+    noise = rng.normal(loc=0.0, scale=1.0, size=arr.shape)
+    out = arr + noise * sigma
+    return out[0] if squeeze else out
 
 
-def build_emits_pairs(
+def _pairs_from_projection(
+    lab_batch: Sequence[_LabSpectrum],
+    lab_wavelengths: np.ndarray,
+    sensor_values: np.ndarray,
+    sensor_wavelengths: np.ndarray,
+    *,
+    sensor_id: str,
+    sensor_mask: np.ndarray | None = None,
+    noise_levels: np.ndarray | None = None,
+) -> list[PairBatch]:
+    sensor_arr = np.asarray(sensor_values, dtype=np.float64)
+    if sensor_arr.ndim == 1:
+        sensor_arr = np.repeat(sensor_arr[None, :], len(lab_batch), axis=0)
+    if sensor_arr.shape[0] != len(lab_batch):
+        msg = "sensor_values batch dimension must match lab_batch length"
+        raise ValueError(msg)
+
+    noise_meta = None
+    if noise_levels is not None and np.any(noise_levels > 0.0):
+        noise_meta = {"noise_level_rel": np.asarray(noise_levels, dtype=np.float64).copy()}
+
+    pairs: list[PairBatch] = []
+    for idx, (_, lab_vals_row) in enumerate(lab_batch):
+        pairs.append(
+            PairBatch(
+                lab_wavelengths_nm=lab_wavelengths,
+                lab_values=np.asarray(lab_vals_row, dtype=np.float64),
+                sensor_wavelengths_nm=sensor_wavelengths,
+                sensor_values=sensor_arr[idx],
+                sensor_id=sensor_id,
+                noise_cfg=noise_meta,
+                sensor_mask=sensor_mask,
+            )
+        )
+    return pairs
+
+
+def build_emit_pairs(
     lab_batch: Sequence[_LabSpectrum],
     *,
     srf: str = "emit",
     noise_cfg: NoiseConfig | None = None,
-) -> list[Pair]:
+) -> list[PairBatch]:
     """Project high-resolution lab spectra onto EMIT bands and bundle pairs."""
 
     if len(lab_batch) == 0:
@@ -126,24 +203,105 @@ def build_emits_pairs(
 
     cfg = noise_cfg or NoiseConfig()
     rng = cfg.generator()
-    if cfg.enabled:
-        sensor_noisy = _apply_noise(sensor, cfg, rng=rng)
-    else:
-        sensor_noisy = sensor.copy()
+    sensor_noisy = _apply_noise(sensor, cfg, rng=rng)
 
     sensor_wl = srf_matrix.centers_nm.astype(np.float64, copy=True)
 
-    pairs: list[Pair] = []
-    for idx, (_, lab_vals_row) in enumerate(lab_batch):
-        pairs.append(
-            Pair(
-                lab_wavelengths_nm=lab_wl,
-                lab_values=np.asarray(lab_vals_row, dtype=np.float64),
-                sensor_wavelengths_nm=sensor_wl,
-                sensor_values=sensor_noisy[idx],
-            )
-        )
-    return pairs
+    sensor_name = (srf_matrix.sensor or srf).lower()
+    return _pairs_from_projection(
+        lab_batch,
+        lab_wl,
+        sensor_noisy,
+        sensor_wl,
+        sensor_id=sensor_name,
+        noise_levels=cfg.levels(sensor_wl.size),
+    )
 
 
-__all__ = ["NoiseConfig", "Pair", "build_emits_pairs"]
+def build_enmap_pairs(
+    lab_batch: Sequence[_LabSpectrum],
+    *,
+    cache_dir: str | Path | None = "data/srf",
+    noise_level_rel_vnir: float = 0.0,
+    noise_level_rel_swir: float = 0.0,
+    noise_cfg: NoiseConfig | None = None,
+) -> list[PairBatch]:
+    """Project lab spectra to the EnMAP VNIR+SWIR grid with optional noise."""
+
+    if len(lab_batch) == 0:
+        return []
+
+    lab_wl, lab_vals = _normalize_lab_batch(lab_batch)
+    cache_root = cache_dir if cache_dir is not None else "data/srf"
+    srf = enmap_srf_matrix(cache_dir=cache_root)
+    sensor = batch_convolve_lab_to_sensor(lab_wl, lab_vals, srf)
+    centers = np.asarray(srf.centers_nm, dtype=np.float64)
+    mask = getattr(srf, "bad_band_mask", None)
+
+    override_levels = np.where(
+        centers <= 999.0,
+        float(noise_level_rel_vnir),
+        float(noise_level_rel_swir),
+    )
+    cfg = noise_cfg or NoiseConfig()
+    rng = cfg.generator()
+    sensor_noisy = _apply_noise(sensor, cfg, rng=rng, override_levels=override_levels)
+
+    sensor_name = (srf.sensor or "enmap").lower()
+    return _pairs_from_projection(
+        lab_batch,
+        lab_wl,
+        sensor_noisy,
+        centers,
+        sensor_id=sensor_name,
+        sensor_mask=mask,
+        noise_levels=override_levels,
+    )
+
+
+def build_avirisng_pairs(
+    lab_batch: Sequence[_LabSpectrum],
+    *,
+    cache_dir: str | Path | None = None,
+    noise: float | Sequence[float] | np.ndarray | None = None,
+    noise_cfg: NoiseConfig | None = None,
+) -> list[PairBatch]:
+    """Project lab spectra onto the AVIRIS-NG grid and optionally inject noise."""
+
+    if len(lab_batch) == 0:
+        return []
+
+    lab_wl, lab_vals = _normalize_lab_batch(lab_batch)
+    srf = avirisng_srf_matrix(cache_dir=cache_dir)
+    centers = np.asarray(srf.centers_nm, dtype=np.float64)
+    mask = getattr(srf, "bad_band_mask", None)
+
+    sensor = batch_convolve_lab_to_sensor(lab_wl, lab_vals, srf)
+    cfg = noise_cfg or NoiseConfig()
+    rng = cfg.generator()
+    sensor_noisy = _apply_noise(sensor, cfg, rng=rng, override_levels=noise)
+
+    sensor_name = (srf.sensor or "avirisng").lower()
+    return _pairs_from_projection(
+        lab_batch,
+        lab_wl,
+        sensor_noisy,
+        centers,
+        sensor_id=sensor_name,
+        sensor_mask=mask,
+        noise_levels=cfg.levels(centers.size, override=noise),
+    )
+
+
+# Backwards compatibility alias retained for older tests/configs.
+build_emits_pairs = build_emit_pairs
+
+
+__all__ = [
+    "NoiseConfig",
+    "PairBatch",
+    "build_avirisng_pairs",
+    "build_emit_pairs",
+    "build_emits_pairs",
+    "build_enmap_pairs",
+]

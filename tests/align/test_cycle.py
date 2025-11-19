@@ -18,7 +18,13 @@ def _synthetic_batch(batch: int, lab_dim: int, sensor_dim: int) -> tuple[torch.T
 def test_cycle_loss_reduces_sam_angle():
     batch, lab_dim, sensor_dim = 64, 6, 5
     torch.manual_seed(0)
-    config = CycleConfig(enabled=True, hidden_dim=32, sam_weight=1.0, l2_weight=1.0)
+    config = CycleConfig(
+        enabled=True,
+        hidden_dim=32,
+        sam_weight=1.0,
+        l2_weight=1.0,
+        cycle_raw=True,
+    )
     heads = CycleReconstructionHeads(lab_dim, sensor_dim, config)
 
     z_lab, z_sensor, lab_tokens, sensor_tokens = _synthetic_batch(batch, lab_dim, sensor_dim)
@@ -45,7 +51,11 @@ def test_cycle_alignment_keeps_infonce_finite():
     torch.manual_seed(0)
     z_lab, z_sensor, lab_tokens, sensor_tokens = _synthetic_batch(batch, lab_dim, sensor_dim)
 
-    aligner = CycleAlignment(lab_dim, sensor_dim, CycleConfig(enabled=True))
+    aligner = CycleAlignment(
+        lab_dim,
+        sensor_dim,
+        CycleConfig(enabled=True, cycle_raw=True),
+    )
     losses = aligner(z_lab, z_sensor, lab_tokens, sensor_tokens)
 
     assert torch.isfinite(losses["infonce"]) and torch.isfinite(losses["cycle"])
