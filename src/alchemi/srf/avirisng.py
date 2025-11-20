@@ -215,5 +215,6 @@ def _clone_matrix(matrix: SRFMatrix) -> SRFMatrix:
     if hasattr(matrix, "bad_band_mask"):
         clone.bad_band_mask = np.asarray(matrix.bad_band_mask, dtype=bool).copy()
     if hasattr(matrix, "bad_band_windows_nm"):
-        clone.bad_band_windows_nm = tuple(matrix.bad_band_windows_nm)
+        if matrix.bad_band_windows_nm is not None:
+            clone.bad_band_windows_nm = tuple(matrix.bad_band_windows_nm)
     return clone
