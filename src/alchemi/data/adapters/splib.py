@@ -26,8 +26,8 @@ def load_splib_spectrum(
     return spectra[0]
 
 
-def _resolve_alias(catalog: SPLIBCatalog, name: str) -> Iterable[Spectrum]:
+def _resolve_alias(catalog: SPLIBCatalog, name: str) -> list[Spectrum]:
     try:
-        return catalog.resolve(name)
+        return list(catalog.resolve(name))
     except KeyError:
-        return catalog.get(name, [])
+        return list(catalog.get(name, []))

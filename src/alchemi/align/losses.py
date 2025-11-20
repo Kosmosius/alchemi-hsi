@@ -130,7 +130,6 @@ def info_nce_symmetric(
 
     gather_active = gather_ddp and _ddp_is_initialized()
     if gather_active:
-        world_size = dist.get_world_size() if dist else 1
         batch_size = z_lab.size(0)
         rank = dist.get_rank() if dist else 0
         gathered_lab = _gather_embeddings(z_lab)
@@ -139,7 +138,6 @@ def info_nce_symmetric(
     else:
         gathered_lab = z_lab
         gathered_sensor = z_sensor
-        world_size = 1
         batch_size = z_lab.size(0)
         positive_indices = torch.arange(batch_size, device=device)
 
