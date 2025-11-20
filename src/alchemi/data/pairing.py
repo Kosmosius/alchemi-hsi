@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 from joblib import Memory
+from numpy.typing import NDArray
 
 from ..srf import SRFRegistry, batch_convolve_lab_to_sensor
 from ..types import Sample, Spectrum, SpectrumKind, WavelengthGrid
@@ -15,12 +16,19 @@ class LabSensorCache:
 
     def convolve(
         self, lab_nm: np.ndarray, lab_values: np.ndarray, sensor: str, srf_reg: SRFRegistry
-    ) -> np.ndarray:
+    ) -> NDArray[np.float64]:
         srf = srf_reg.get(sensor)
 
-        @self.mem.cache
-        def _conv(lab_nm_hash: str, lab_values: np.ndarray, sensor_key: str, srf_data_hash: str):
-            return batch_convolve_lab_to_sensor(lab_nm, lab_values, srf)
+        @self.mem.cache  # type: ignore[misc]
+        def _conv(
+            lab_nm_hash: str,
+            lab_values: np.ndarray,
+            sensor_key: str,
+            srf_data_hash: str,
+        ) -> NDArray[np.float64]:
+            return np.asarray(
+                batch_convolve_lab_to_sensor(lab_nm, lab_values, srf), dtype=np.float64
+            )
 
         key_nm = str(hash(lab_nm.tobytes()))
         key_srf = srf.cache_key or "nosha"

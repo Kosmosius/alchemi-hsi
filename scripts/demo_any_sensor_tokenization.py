@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+from numpy.typing import NDArray
 
 from alchemi.data.cube import Cube
 from alchemi.srf import project_to_sensor
@@ -10,8 +11,11 @@ from alchemi.srf.synthetic import SyntheticSensorConfig, project_lab_to_syntheti
 from alchemi.srf.utils import load_sensor_srf
 
 
-def _lab_spectrum(highres: np.ndarray) -> np.ndarray:
-    return 0.5 + 0.05 * np.sin(highres / 250.0) + 0.02 * np.cos(highres / 600.0)
+def _lab_spectrum(highres: np.ndarray) -> NDArray[np.float64]:
+    return np.asarray(
+        0.5 + 0.05 * np.sin(highres / 250.0) + 0.02 * np.cos(highres / 600.0),
+        dtype=np.float64,
+    )
 
 
 def main() -> None:
