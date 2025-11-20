@@ -20,7 +20,7 @@ from ..models import (
 )
 from ..masking import MaskingConfig
 from ..utils.ckpt import save_checkpoint
-from ..utils.logging import get_logger
+from ..utils.logging import ThroughputMeter, ThroughputStats, get_logger
 from .seed import seed_everything
 from .amp import autocast
 from .config import TrainCfg
@@ -60,9 +60,10 @@ def _mask_spectral(
     *,
     persist_path: Path | None = None,
 ) -> tuple[Tensor, Tensor]:
+    """Randomly mask a fraction of spectral positions."""
     B = values.shape[0]
     k = max(1, int(B * spectral_mask_ratio))
-    idx = torch.randperm(B)[:k]
+    idx = torch.randperm(B, device=values.device)[:k]
     m = mask.clone()
     m[idx] = False
 
@@ -103,9 +104,42 @@ def _encode_pixel(
     return tokens.squeeze(0)
 
 
+def _aggregate_stats(stats_list: list[ThroughputStats]) -> ThroughputStats:
+    """Aggregate per-step stats into a single summary."""
+    if not stats_list:
+        return ThroughputStats(
+            tokens_per_s=0.0,
+            gb_per_s=0.0,
+            peak_mem_gb=None,
+            step_time_s=0.0,
+            tokens=0,
+            num_bytes=0,
+        )
+
+    total_tokens = sum(int(s.tokens) for s in stats_list)
+    total_bytes = sum(int(s.num_bytes or 0) for s in stats_list)
+    total_time = sum(float(s.step_time_s) for s in stats_list)
+    peak_mem = max(float(s.peak_mem_gb or 0.0) for s in stats_list)
+
+    total_time = max(total_time, 1e-12)
+    tokens_per_s = total_tokens / total_time
+    gb_per_s = total_bytes / (total_time * 1e9)
+    avg_step_time = total_time / len(stats_list)
+
+    return ThroughputStats(
+        tokens_per_s=tokens_per_s,
+        gb_per_s=gb_per_s,
+        peak_mem_gb=peak_mem if peak_mem > 0.0 else None,
+        step_time_s=avg_step_time,
+        tokens=total_tokens,
+        num_bytes=total_bytes,
+    )
+
+
 def run_pretrain_mae(
     config_path: str, *, no_spatial_mask: bool = False, no_posenc: bool = False
-) -> None:
+) -> ThroughputStats:
+    """Toy MAE pretraining loop with spatial+spectral masking and throughput measurement."""
     cfg = TrainCfg(**yaml.safe_load(Path(config_path).read_text())["train"])
 
     # Fold CLI toggles into config so baselines are properly recorded.
@@ -126,6 +160,8 @@ def run_pretrain_mae(
         mask_str = getattr(cfg, "mask_path")
         if mask_str:
             mask_path = Path(mask_str)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     basis, setenc = _build_embedder(cfg)
 
@@ -150,6 +186,9 @@ def run_pretrain_mae(
         out_dim=cfg.embed_dim,
     )
 
+    for module in (basis, setenc, enc, dec):
+        module.to(device)
+
     recon_loss = ReconstructionLoss()
     smooth_loss = SpectralSmoothnessLoss()
     opt = torch.optim.AdamW(
@@ -161,8 +200,9 @@ def run_pretrain_mae(
     )
     weights = Weights(recon=1.0, nce=0.0, sam=0.0, smooth=1e-4)
 
+    meter = ThroughputMeter(device)
+    step_stats: list[ThroughputStats] = []
     mask_persisted = False
-    device = next(enc.parameters()).device
 
     # Simple synthetic MAE loop: random tokens with spatial+spectral masking.
     for step in range(1, cfg.max_steps + 1):
@@ -185,7 +225,8 @@ def run_pretrain_mae(
             spectral_mask_ratio=mask_cfg.spectral_mask_ratio,
             persist_path=persist_target,
         )
-        mask_persisted = mask_persisted or persist_target is not None
+        if persist_target is not None:
+            mask_persisted = True
 
         # Spatial mask over tokens.
         spatial_mask = _mask_spatial(
@@ -201,6 +242,12 @@ def run_pretrain_mae(
         combined_mask_2d = spatial_mask.unsqueeze(-1) & spectral_mask.unsqueeze(0)
         combined_mask = combined_mask_2d.unsqueeze(0).expand(batch_size, -1, -1)
 
+        # Throughput accounting.
+        active_tokens = int(combined_mask.sum().item())
+        element_size = tokens.element_size()
+        num_bytes = int(tokens.numel() * element_size)
+
+        meter.start()
         with autocast(enabled=False):
             z = enc(tokens, key_padding_mask=key_padding_mask)
             y = dec(z)
@@ -217,23 +264,43 @@ def run_pretrain_mae(
         loss.backward()
         opt.step()
 
+        stats = meter.stop(tokens=active_tokens, num_bytes=num_bytes)
+        step_stats.append(stats)
+
         if step % cfg.log_every == 0:
-            _LOG.info("[MAE] step %d loss=%.4f", step, float(loss))
+            _LOG.info(
+                "[MAE] step %d loss=%.4f tokens/s=%.1f gb/s=%.2f peak_mem=%.2fGB",
+                step,
+                float(loss),
+                stats.tokens_per_s,
+                stats.gb_per_s or 0.0,
+                stats.peak_mem_gb or 0.0,
+            )
 
     save_checkpoint(
         "checkpoints/mae.pt",
         {"basis": basis.state_dict(), "enc": enc.state_dict(), "dec": dec.state_dict()},
     )
 
+    return _aggregate_stats(step_stats)
 
-def run_align(config_path: str) -> None:
+
+def run_align(config_path: str) -> ThroughputStats:
+    """Toy alignment loop with throughput measurement."""
     cfg = TrainCfg(**yaml.safe_load(Path(config_path).read_text())["train"])
+
     seed_everything(cfg.seed, cfg.deterministic)
     _LOG.info("Using seed=%s deterministic=%s", cfg.seed, cfg.deterministic)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     basis, setenc = _build_embedder(cfg)
     enc = MAEEncoder(embed_dim=cfg.embed_dim, depth=cfg.depth, n_heads=cfg.n_heads)
     nce = InfoNCELoss()
     domain = DomainDiscriminator(embed_dim=cfg.embed_dim, n_domains=4)
+
+    for module in (basis, setenc, enc, domain):
+        module.to(device)
 
     params = (
         list(basis.parameters())
@@ -253,13 +320,24 @@ def run_align(config_path: str) -> None:
         params += list(band_head.parameters())
     opt = torch.optim.AdamW(params, lr=cfg.lr)
 
+    # Synthetic paired feature/lab spectra
     Xf = torch.randn(512, 64)
     Xl = torch.randn(512, 64)
     loader: DataLoader[tuple[Tensor, Tensor]] = DataLoader(
         list(zip(Xf, Xl, strict=False)), batch_size=cfg.batch_size, shuffle=True
     )
 
+    meter = ThroughputMeter(device)
+    step_stats: list[ThroughputStats] = []
+
     for step, (f, lab) in enumerate(loader, start=1):
+        f = f.to(device)
+        lab = lab.to(device)
+
+        tokens = int(f.numel() + lab.numel())
+        num_bytes = int(tokens * f.element_size())
+
+        meter.start()
         with autocast(enabled=False):
             zf = enc(f.unsqueeze(1)).squeeze(1)
             zl = enc(lab.unsqueeze(1)).squeeze(1)
@@ -281,14 +359,27 @@ def run_align(config_path: str) -> None:
         opt.zero_grad(set_to_none=True)
         loss.backward()
         opt.step()
+        stats = meter.stop(tokens=tokens, num_bytes=num_bytes)
+        step_stats.append(stats)
+
         if step % cfg.log_every == 0:
-            _LOG.info("[ALIGN] step %d nce=%.4f", step, float(loss))
+            _LOG.info(
+                "[ALIGN] step %d nce=%.4f tokens/s=%.1f gb/s=%.2f peak_mem=%.2fGB",
+                step,
+                float(loss),
+                stats.tokens_per_s,
+                stats.gb_per_s or 0.0,
+                stats.peak_mem_gb or 0.0,
+            )
         if step >= cfg.max_steps:
             break
+
     save_checkpoint("checkpoints/align.pt", {"basis": basis.state_dict(), "enc": enc.state_dict()})
+    return _aggregate_stats(step_stats)
 
 
 def run_eval(config_path: str) -> None:
+    """Placeholder eval that wires up metric plumbing."""
     import numpy as np
 
     from ..eval.metrics_solids import macro_f1

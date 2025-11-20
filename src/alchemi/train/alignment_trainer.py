@@ -24,7 +24,7 @@ from ..models.set_encoder import SetEncoder
 from ..tokens.band_tokenizer import BandTokConfig, BandTokenizer
 from ..tokens.registry import AxisUnit
 from ..training.amp import autocast
-from ..utils.logging import get_logger
+from ..utils.logging import ThroughputMeter, get_logger
 
 _LOG = get_logger(__name__)
 
@@ -283,6 +283,7 @@ class AlignmentTrainer:
             if self._amp_enabled and self._amp_dtype == torch.float16
             else None
         )
+        self._throughput = ThroughputMeter(self.device)
         if torch.cuda.is_available():
             torch.backends.cuda.matmul.allow_tf32 = True
 
@@ -379,6 +380,16 @@ class AlignmentTrainer:
     def from_yaml(cls, path: str | Path) -> AlignmentTrainer:
         return cls(load_alignment_config(path))
 
+    def _count_tokens(self, batch: _TensorBatch) -> int:
+        lab_tokens = int(batch.lab_mask.sum().item())
+        sensor_tokens = int(batch.sensor_mask.sum().item())
+        return lab_tokens + sensor_tokens
+
+    def _estimate_bytes(self, batch: _TensorBatch) -> int:
+        token_dim = int(batch.lab_tokens.shape[-1])
+        element_size = torch.tensor([], dtype=self.dtype, device=self.device).element_size()
+        return self._count_tokens(batch) * token_dim * element_size
+
     def train(self, *, max_steps: int | None = None) -> list[dict[str, float]]:
         """Run the training loop and return loss history."""
 
@@ -387,13 +398,27 @@ class AlignmentTrainer:
         log_every = max(1, self.cfg.trainer.log_every)
         eval_every = max(1, self.cfg.trainer.eval_every)
         for step in range(1, total_steps + 1):
+            self._throughput.start()
             batch = self._build_batch(self.cfg.trainer.batch_size)
+            tokens = self._count_tokens(batch)
+            approx_bytes = self._estimate_bytes(batch)
+
             metrics = self._train_step(batch)
-            history.append({"step": float(step), **metrics})
+            stats = self._throughput.stop(tokens=tokens, num_bytes=approx_bytes)
+            combined = {"step": float(step), **metrics, **stats.as_dict()}
+            history.append(combined)
+
             if step % log_every == 0:
                 _LOG.info(
-                    "step=%d loss=%.4f tau=%.4f", step, metrics["loss"], metrics.get("tau", 0.0)
+                    "step=%d loss=%.4f tau=%.4f tokens/s=%.1f gb/s=%.2f peak_mem=%.2fGB",
+                    step,
+                    metrics["loss"],
+                    metrics.get("tau", 0.0),
+                    stats.tokens_per_s,
+                    stats.gb_per_s or 0.0,
+                    stats.peak_mem_gb or 0.0,
                 )
+
             if step % eval_every == 0:
                 eval_metrics = self._evaluate(batch)
                 _LOG.info(

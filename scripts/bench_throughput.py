@@ -1,139 +1,144 @@
 from __future__ import annotations
 
+"""Benchmark training throughput and record run-to-run variance."""
+
 import argparse
-
 import csv
-import time
+import sys
+import tempfile
+from dataclasses import asdict
 from pathlib import Path
-from typing import Sequence
+from statistics import mean, pstdev
+from typing import Callable
 
-import torch
+import yaml
 
-from spectra.data.datamodule import SpectralEarthDataModule
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
+from alchemi.training.trainer import run_align, run_pretrain_mae
+from alchemi.utils.logging import ThroughputStats, get_logger
 
-@torch.no_grad()
-def benchmark_throughput(
-    roots: Sequence[str | Path],
-    *,
-    device: str,
-    device_label: str | None,
-    batch_size: int,
-    num_workers: int,
-    num_batches: int,
-) -> dict[str, float | int | str]:
-    """Measure SpectralEarth throughput in images/s, tokens/s, and GB/s."""
-
-    torch_device = torch.device(device)
-    if torch_device.type == "cuda":
-        torch.cuda.get_device_capability(torch_device)
-        device_name = device_label or torch.cuda.get_device_name(torch_device)
-    else:
-        device_name = device_label or "CPU"
-
-    dm = SpectralEarthDataModule(
-        roots=roots,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=torch_device.type == "cuda",
-        persistent_workers=num_workers > 0,
-    )
-    dm.setup()
-    loader = dm.train_dataloader()
-
-    total_images = 0
-    total_tokens = 0
-    total_bytes = 0
-
-    start = time.perf_counter()
-    for batch_idx, batch in enumerate(loader):
-        if batch_idx >= num_batches:
-            break
-
-        cube = batch["cube"].to(torch_device, non_blocking=True)
-        band_mask = batch["band_valid_mask"].to(torch_device, non_blocking=True)
-
-        if torch_device.type == "cuda":
-            torch.cuda.synchronize(torch_device)
-
-        bs, h, w, _ = cube.shape
-        valid_bands = band_mask.sum(dim=1)  # [bs]
-        tokens = (valid_bands * h * w).sum().item()
-
-        total_images += bs
-        total_tokens += int(tokens)
-        total_bytes += cube.numel() * cube.element_size()
-
-    if torch_device.type == "cuda":
-        torch.cuda.synchronize(torch_device)
-
-    elapsed = max(time.perf_counter() - start, 1e-6)
-
-    return {
-        "device": device_name,
-        "device_arg": device,
-        "batch_size": batch_size,
-        "num_batches": batch_idx + 1,
-        "images_per_s": total_images / elapsed,
-        "tokens_per_s": total_tokens / elapsed,
-        "gb_per_s": (total_bytes / (1024**3)) / elapsed,
-    }
+_LOG = get_logger(__name__)
 
 
-def _append_csv_row(path: Path, row: dict[str, float | int | str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_header = not path.exists()
-    with path.open("a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(row))
-        if write_header:
-            writer.writeheader()
-        writer.writerow(row)
+def _build_runner(mode: str) -> Callable[[str], ThroughputStats]:
+    if mode == "mae":
+        return run_pretrain_mae
+    if mode == "align":
+        return run_align
+    raise ValueError(f"Unsupported mode: {mode}")
+
+
+def _prepare_config(config_path: str, max_steps: int | None) -> tuple[str, bool]:
+    """Optionally override train.max_steps in a temporary config file."""
+    if max_steps is None:
+        return config_path, False
+
+    config = yaml.safe_load(Path(config_path).read_text())
+    config.setdefault("train", {})["max_steps"] = max_steps
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=Path(config_path).suffix)
+    tmp.write(yaml.safe_dump(config).encode("utf-8"))
+    tmp.flush()
+    return tmp.name, True
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Benchmark SpectralEarth throughput")
-    parser.add_argument("roots", nargs="+", help="Dataset root directories containing SpectralEarth NPZ samples")
-    parser.add_argument(
-        "--device",
-        default="cuda" if torch.cuda.is_available() else "cpu",
-        help="Torch device, e.g. 'cuda', 'cuda:1', or 'cpu'",
+    parser = argparse.ArgumentParser(
+        description="Benchmark training throughput and run-to-run variance."
     )
     parser.add_argument(
-        "--device-label",
-        default=None,
-        help="Human-readable device label for CSV (e.g. 'A100', 'H100', 'RTX 4090')",
+        "--config",
+        type=str,
+        default="configs/train.mae.yaml",
+        help="Path to training YAML config.",
     )
-    parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--num-batches", type=int, default=10)
+    parser.add_argument(
+        "--mode",
+        choices=["mae", "align"],
+        default="mae",
+        help="Which training loop to benchmark.",
+    )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=3,
+        help="Number of independent runs to average over.",
+    )
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=50,
+        help="Override train.max_steps in the config for this benchmark.",
+    )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("outputs/benchmarks/spectralearth_throughput.csv"),
-        help="CSV file to append benchmark results to",
+        default=Path("benchmarks/throughput.csv"),
+        help="Where to store throughput results.",
     )
     args = parser.parse_args()
 
-    results = benchmark_throughput(
-        roots=args.roots,
-        device=args.device,
-        device_label=args.device_label,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        num_batches=args.num_batches,
-    )
+    runner = _build_runner(args.mode)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+
+    config_override, needs_cleanup = _prepare_config(args.config, args.max_steps)
+    rows: list[dict[str, float]] = []
+
+    try:
+        for i in range(1, args.runs + 1):
+            stats = runner(config_override)
+            stats_dict = asdict(stats)
+            rows.append({"run": float(i), **stats_dict})
+            _LOG.info(
+                "[%s run %d/%d] tokens/s=%.1f gb/s=%.2f peak_mem=%.2fGB",
+                args.mode,
+                i,
+                args.runs,
+                stats.tokens_per_s,
+                stats.gb_per_s or 0.0,
+                stats.peak_mem_gb or 0.0,
+            )
+    finally:
+        if needs_cleanup:
+            Path(config_override).unlink(missing_ok=True)
+
+    tokens = [row["tokens_per_s"] for row in rows]
+    avg_tokens = mean(tokens) if tokens else 0.0
+    variability = pstdev(tokens) / avg_tokens if avg_tokens else 0.0
+
+    _LOG.info("Tokens/s coefficient of variation across runs: %.2f%%", variability * 100)
+    if variability > 0.10:
+        _LOG.warning(
+            "Throughput variability exceeds 10%% (cv=%.2f%%). "
+            "Consider rerunning or pinning seeds.",
+            variability * 100,
+        )
+
+    fieldnames = [
+        "run",
+        "tokens_per_s",
+        "gb_per_s",
+        "peak_mem_gb",
+        "step_time_s",
+        "tokens",
+        "num_bytes",
+        "cv_tokens",
+    ]
+    with args.output.open("w", newline="") as fp:
+        writer = csv.DictWriter(fp, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            out = row.copy()
+            out["cv_tokens"] = variability
+            writer.writerow(out)
 
     print(
-        f"Device: {results['device']} (arg={results['device_arg']})\n"
-        f"Batch size: {results['batch_size']} | "
-        f"Batches: {results['num_batches']}\n"
-        f"Images/s: {results['images_per_s']:.2f}\n"
-        f"Tokens/s: {results['tokens_per_s']:.2f}\n"
-        f"GB/s: {results['gb_per_s']:.3f}"
+        f"Stored throughput results in {args.output} "
+        f"(cv={variability * 100:.2f}% over {args.runs} runs)"
     )
-
-    _append_csv_row(args.output, results)
-    print(f"Appended results to {args.output}")
 
 
 if __name__ == "__main__":
