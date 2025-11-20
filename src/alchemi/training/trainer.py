@@ -7,6 +7,8 @@ import yaml
 from torch import Tensor
 from torch.utils.data import DataLoader, TensorDataset
 
+from spectra.utils.seed import persist_mask
+
 from ..heads import BandDepthHead, load_banddepth_config
 from ..losses import InfoNCELoss, ReconstructionLoss, SpectralSmoothnessLoss
 from ..models import (
@@ -18,6 +20,7 @@ from ..models import (
 )
 from ..utils.ckpt import save_checkpoint
 from ..utils.logging import get_logger
+from .seed import seed_everything
 from .amp import autocast
 from .config import TrainCfg
 from .loss_mixer import Weights
@@ -26,13 +29,21 @@ _LOG = get_logger(__name__)
 
 
 def _mask_spectral(
-    values: Tensor, mask: Tensor, spectral_mask_ratio: float
+    values: Tensor,
+    mask: Tensor,
+    spectral_mask_ratio: float,
+    *,
+    persist_path: Path | None = None,
 ) -> tuple[Tensor, Tensor]:
     B = values.shape[0]
     k = max(1, int(B * spectral_mask_ratio))
     idx = torch.randperm(B)[:k]
     m = mask.clone()
     m[idx] = False
+
+    if persist_path is not None:
+        persist_mask(m, persist_path)
+
     return m, idx
 
 
@@ -56,6 +67,9 @@ def _encode_pixel(
 
 def run_pretrain_mae(config_path: str) -> None:
     cfg = TrainCfg(**yaml.safe_load(Path(config_path).read_text())["train"])
+    seed_everything(cfg.seed, cfg.deterministic)
+    _LOG.info("Using seed=%s deterministic=%s", cfg.seed, cfg.deterministic)
+    mask_path = Path(cfg.mask_path) if cfg.mask_path else None
     basis, setenc = _build_embedder(cfg)
     enc = MAEEncoder(embed_dim=cfg.embed_dim, depth=cfg.depth, n_heads=cfg.n_heads)
     dec = MAEDecoder(
@@ -76,12 +90,21 @@ def run_pretrain_mae(config_path: str) -> None:
         TensorDataset(torch.randn(128, 32)), batch_size=cfg.batch_size
     )
 
+    mask_persisted = False
+
     step = 0
     for _batch in loader:
         step += 1
         x = torch.randn(64, 64)
         band_mask = torch.ones(64, dtype=torch.bool)
-        masked, _ = _mask_spectral(x[:, 0], band_mask, spectral_mask_ratio=0.5)
+        persist_target = mask_path if (mask_path and not mask_persisted) else None
+        masked, _ = _mask_spectral(
+            x[:, 0],
+            band_mask,
+            spectral_mask_ratio=0.5,
+            persist_path=persist_target,
+        )
+        mask_persisted = mask_persisted or persist_target is not None
         with autocast(enabled=False):
             z = enc(x.unsqueeze(0))
             y = dec(z)
@@ -102,6 +125,8 @@ def run_pretrain_mae(config_path: str) -> None:
 
 def run_align(config_path: str) -> None:
     cfg = TrainCfg(**yaml.safe_load(Path(config_path).read_text())["train"])
+    seed_everything(cfg.seed, cfg.deterministic)
+    _LOG.info("Using seed=%s deterministic=%s", cfg.seed, cfg.deterministic)
     basis, setenc = _build_embedder(cfg)
     enc = MAEEncoder(embed_dim=cfg.embed_dim, depth=cfg.depth, n_heads=cfg.n_heads)
     nce = InfoNCELoss()
