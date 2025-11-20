@@ -48,7 +48,7 @@ raster = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/alchemi"]
+packages = ["src/alchemi", "src/spectra"]
 
 [tool.black]
 line-length = 100
@@ -57,7 +57,7 @@ target-version = ["py310"]
 [tool.isort]
 profile = "black"
 line_length = 100
-known_first_party = ["alchemi"]
+known_first_party = ["alchemi", "spectra"]
 src_paths = ["src", "tests"]
 
 [tool.ruff]

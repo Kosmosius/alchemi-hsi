@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Iterable, Sequence
+from typing import cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -76,7 +77,7 @@ def gaussian_srf(
     exponent = -0.5 * ((wl - center) / sigma) ** 2
     response = np.exp(exponent)
 
-    area = float(np.trapezoid(response, wl))
+    area = float(cast(np.floating[np.float64], np.trapezoid(response, wl)))
     if area <= 0:
         raise ValueError("Gaussian SRF integrates to a non-positive area")
     response /= area
@@ -98,7 +99,8 @@ def build_matrix_from_centers(
     _ = _grid_spacing(wl)  # validates monotonicity
 
     if np.isscalar(fwhm_nm):
-        fwhms = np.full_like(centers, float(fwhm_nm), dtype=np.float64)
+        fwhm_value = float(cast(float, fwhm_nm))
+        fwhms = np.full_like(centers, fwhm_value, dtype=np.float64)
     else:
         fwhms = _as_float_array(fwhm_nm, name="fwhm_nm")
         if fwhms.shape != centers.shape:
