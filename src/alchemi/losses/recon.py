@@ -5,8 +5,17 @@ from torch import Tensor, nn
 
 
 class ReconstructionLoss(nn.Module):
+    """Mask-aware MSE reconstruction loss.
+
+    - If mask is None: plain MSE over all elements.
+    - If mask is provided: it is broadcast to recon/target and only masked
+      locations contribute to the loss.
+    """
+
     def __init__(self, reduction: str = "mean") -> None:
         super().__init__()
+        if reduction not in {"mean", "sum"}:
+            raise ValueError(f"Unsupported reduction: {reduction}")
         self.reduction = reduction
 
     def forward(
@@ -15,11 +24,18 @@ class ReconstructionLoss(nn.Module):
         target: Tensor,
         mask: Tensor | None = None,
     ) -> Tensor:
-        diff = (recon - target) * (mask.unsqueeze(-1) if mask is not None else 1)
+        if mask is not None:
+            mask_expanded = mask
+            # Broadcast mask up to recon/target rank by unsqueezing trailing dims.
+            while mask_expanded.dim() < recon.dim():
+                mask_expanded = mask_expanded.unsqueeze(-1)
+            diff = (recon - target) * mask_expanded
+            denom = mask_expanded.sum()
+        else:
+            diff = recon - target
+            denom = torch.tensor(recon.numel(), device=recon.device, dtype=recon.dtype)
+
         loss = (diff**2).sum()
         if self.reduction == "mean":
-            denom = (
-                mask.sum() if mask is not None else torch.tensor(recon.numel(), device=recon.device)
-            )
             loss = loss / denom.clamp_min(1)
         return loss

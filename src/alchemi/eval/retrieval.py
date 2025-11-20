@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
 
 import numpy as np
@@ -27,7 +28,7 @@ def compute_retrieval_at_k(
     indices = _topk_indices(q, keys, k)
 
     # Ground truth: index i should retrieve key i
-    gt = np.arange(q.shape[0], dtype=np.int64)
+    gt: NDArray[np.int64] = np.arange(q.shape[0], dtype=np.int64)
     hits = (indices == gt[:, None]).any(axis=1)
 
     recall = float(hits.mean())
