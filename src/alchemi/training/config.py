@@ -13,6 +13,9 @@ class TrainCfg(BaseModel):
     log_every: int = 100
     eval_every: int = 1000
     save_every: int = 1000
+    seed: int = 42
+    deterministic: bool = False
+    mask_path: str | None = "checkpoints/mask.json"
     embed_dim: int = 256
     n_heads: int = 8
     depth: int = 6

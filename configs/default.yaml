@@ -1,3 +1,4 @@
 project: alchemi
 seed: 42
+deterministic: false
 device: cuda
