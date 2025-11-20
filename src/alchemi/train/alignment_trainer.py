@@ -11,6 +11,8 @@ import numpy as np
 import torch
 import yaml
 from torch import nn
+from torch.cuda.amp import GradScaler
+from torch.nn.utils import clip_grad_norm_
 
 from ..align.batch_builders import NoiseConfig, build_emit_pairs
 from ..align.cycle import CycleConfig, CycleReconstructionHeads
@@ -20,6 +22,7 @@ from ..heads.banddepth import BandDepthHead, load_banddepth_config
 from ..models.set_encoder import SetEncoder
 from ..tokens.band_tokenizer import BandTokConfig, BandTokenizer
 from ..tokens.registry import AxisUnit
+from ..training.amp import autocast
 from ..utils.logging import get_logger
 
 _LOG = get_logger(__name__)
@@ -34,6 +37,9 @@ class TrainerConfig:
     device: str = "cpu"
     dtype: str = "float32"
     seed: int = 0
+    grad_clip_norm: float | None = None
+    use_amp: bool = False
+    amp_dtype: str = "bfloat16"
 
 
 @dataclass(slots=True)
@@ -116,6 +122,11 @@ class AlignmentExperimentConfig:
                 device=str(cfg.get("device", "cpu")),
                 dtype=str(cfg.get("dtype", "float32")),
                 seed=int(cfg.get("seed", 0)),
+                grad_clip_norm=(
+                    float(cfg["grad_clip_norm"]) if "grad_clip_norm" in cfg else None
+                ),
+                use_amp=bool(cfg.get("use_amp", False)),
+                amp_dtype=str(cfg.get("amp_dtype", "bfloat16")),
             )
 
         def _build_grid(raw: Mapping[str, Any] | Iterable[float] | None) -> LabGridConfig:
@@ -264,6 +275,15 @@ class AlignmentTrainer:
         torch.manual_seed(self.cfg.trainer.seed)
         self.device = torch.device(self.cfg.trainer.device)
         self.dtype = _dtype_from_str(self.cfg.trainer.dtype)
+        self._amp_dtype = _amp_dtype_from_str(self.cfg.trainer.amp_dtype)
+        self._amp_enabled = bool(self.cfg.trainer.use_amp and torch.cuda.is_available())
+        self.grad_scaler = (
+            GradScaler(enabled=True)
+            if self._amp_enabled and self._amp_dtype == torch.float16
+            else None
+        )
+        if torch.cuda.is_available():
+            torch.backends.cuda.matmul.allow_tf32 = True
 
         self.lab_wavelengths = self.cfg.data.lab_grid_nm.to_array()
         if self.lab_wavelengths.ndim != 1 or self.lab_wavelengths.size < 2:
@@ -345,6 +365,7 @@ class AlignmentTrainer:
         if self.banddepth_head is not None:
             params += list(self.banddepth_head.parameters())
         params += self._tau_params
+        self._trainable_params = params
 
         self.optimizer = torch.optim.AdamW(
             params,
@@ -451,47 +472,61 @@ class AlignmentTrainer:
 
     def _train_step(self, batch: _TensorBatch) -> dict[str, float]:
         self.optimizer.zero_grad(set_to_none=True)
-        z_lab = self._encode_tokens(batch.lab_tokens, batch.lab_mask, self.model["lab"])
-        z_sensor = self._encode_tokens(batch.sensor_tokens, batch.sensor_mask, self.model["sensor"])
-        loss_out = info_nce_symmetric(
-            z_lab,
-            z_sensor,
-            tau_init=self.cfg.loss.tau_init,
-            learnable_tau=self.cfg.loss.learnable_tau,
-            gather_ddp=self.cfg.loss.gather_ddp,
-        )
-        total_loss = loss_out.loss
-        metrics: dict[str, float] = {"loss": float(total_loss.detach().cpu())}
-        if loss_out.metrics and "tau" in loss_out.metrics:
-            metrics["tau"] = float(loss_out.metrics["tau"].detach().cpu())
-
-        if self.cycle_heads is not None and self.cycle_heads.enabled:
-            cycle_loss, breakdown = self.cycle_heads.cycle_loss(
+        with autocast(enabled=self._amp_enabled, dtype=self._amp_dtype):
+            z_lab = self._encode_tokens(batch.lab_tokens, batch.lab_mask, self.model["lab"])
+            z_sensor = self._encode_tokens(
+                batch.sensor_tokens, batch.sensor_mask, self.model["sensor"]
+            )
+            loss_out = info_nce_symmetric(
                 z_lab,
                 z_sensor,
-                {"values": batch.lab_values, "wavelengths_nm": batch.lab_wavelengths},
-                {
-                    "radiance": batch.sensor_values,
-                    "wavelengths_nm": batch.sensor_wavelengths,
-                },
+                tau_init=self.cfg.loss.tau_init,
+                learnable_tau=self.cfg.loss.learnable_tau,
+                gather_ddp=self.cfg.loss.gather_ddp,
             )
-            total_loss = total_loss + self.cfg.model.cycle_weight * cycle_loss
-            metrics["cycle_loss"] = float(cycle_loss.detach().cpu())
-            for key, value in breakdown.items():
-                metrics[f"cycle_{key}"] = float(value.detach().cpu())
+            total_loss = loss_out.loss
+            metrics: dict[str, float] = {"loss": float(total_loss.detach().cpu())}
+            if loss_out.metrics and "tau" in loss_out.metrics:
+                metrics["tau"] = float(loss_out.metrics["tau"].detach().cpu())
 
-        if self.banddepth_head is not None:
-            preds = self.banddepth_head(z_sensor)
-            targets = self.banddepth_head.compute_targets(
-                batch.sensor_wavelengths,
-                batch.sensor_values,
-            )
-            band_loss = self.banddepth_head.loss(preds, targets)
-            total_loss = total_loss + self.cfg.banddepth.weight * band_loss
-            metrics["banddepth_loss"] = float(band_loss.detach().cpu())
+            if self.cycle_heads is not None and self.cycle_heads.enabled:
+                cycle_loss, breakdown = self.cycle_heads.cycle_loss(
+                    z_lab,
+                    z_sensor,
+                    {"values": batch.lab_values, "wavelengths_nm": batch.lab_wavelengths},
+                    {
+                        "radiance": batch.sensor_values,
+                        "wavelengths_nm": batch.sensor_wavelengths,
+                    },
+                )
+                total_loss = total_loss + self.cfg.model.cycle_weight * cycle_loss
+                metrics["cycle_loss"] = float(cycle_loss.detach().cpu())
+                for key, value in breakdown.items():
+                    metrics[f"cycle_{key}"] = float(value.detach().cpu())
 
-        total_loss.backward()
-        self.optimizer.step()
+            if self.banddepth_head is not None:
+                preds = self.banddepth_head(z_sensor)
+                targets = self.banddepth_head.compute_targets(
+                    batch.sensor_wavelengths,
+                    batch.sensor_values,
+                )
+                band_loss = self.banddepth_head.loss(preds, targets)
+                total_loss = total_loss + self.cfg.banddepth.weight * band_loss
+                metrics["banddepth_loss"] = float(band_loss.detach().cpu())
+
+        if self.grad_scaler is not None:
+            self.grad_scaler.scale(total_loss).backward()
+            if self.cfg.trainer.grad_clip_norm is not None:
+                self.grad_scaler.unscale_(self.optimizer)
+                clip_grad_norm_(self._trainable_params, self.cfg.trainer.grad_clip_norm)
+            self.grad_scaler.step(self.optimizer)
+            self.grad_scaler.update()
+        else:
+            total_loss.backward()
+            if self.cfg.trainer.grad_clip_norm is not None:
+                clip_grad_norm_(self._trainable_params, self.cfg.trainer.grad_clip_norm)
+            self.optimizer.step()
+
         metrics["loss"] = float(total_loss.detach().cpu())
         return metrics
 
@@ -546,3 +581,12 @@ def _dtype_from_str(name: str) -> torch.dtype:
     if name in {"float16", "fp16", "half"}:
         return torch.float16
     raise ValueError(f"Unsupported dtype: {name}")
+
+
+def _amp_dtype_from_str(name: str) -> torch.dtype:
+    name = name.lower()
+    if name in {"bfloat16", "bf16"}:
+        return torch.bfloat16
+    if name in {"float16", "fp16", "half"}:
+        return torch.float16
+    raise ValueError(f"Unsupported amp dtype: {name}")

@@ -6,6 +6,9 @@ trainer:
   device: cpu
   dtype: float32
   seed: 1337
+  grad_clip_norm: 1.0
+  use_amp: false
+  amp_dtype: bfloat16
 
 data:
   sensor: emit
