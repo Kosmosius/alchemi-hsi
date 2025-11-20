@@ -31,7 +31,7 @@ def _mask_spectral(
     """Randomly mask a fraction of spectral positions."""
     B = values.shape[0]
     k = max(1, int(B * spectral_mask_ratio))
-    idx = torch.randperm(B)[:k]
+    idx = torch.randperm(B, device=values.device)[:k]
     m = mask.clone()
     m[idx] = False
     return m, idx
