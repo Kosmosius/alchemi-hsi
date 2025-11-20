@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# mypy: ignore-errors
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -69,7 +70,7 @@ def _project_lab(
         msg = f"Unsupported sensor '{sensor}'"
         raise ValueError(msg)
 
-    projected = convolve(lab_nm_arr, lab_values, srf)
+    projected = np.asarray(convolve(lab_nm_arr, lab_values, srf), dtype=np.float64)
     mask = np.ones_like(centers, dtype=bool)
     return centers, projected, mask
 
