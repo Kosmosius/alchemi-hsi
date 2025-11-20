@@ -1,4 +1,7 @@
 train:
+  seed: 42
+  deterministic: false
+  mask_path: checkpoints/mask.json
   mode: mae
   batch_size: 64
   lr: 0.0003
