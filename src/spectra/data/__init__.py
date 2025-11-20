@@ -1,6 +1,19 @@
-from __future__ import annotations
+"""Data modules and loaders for spectral pretraining."""
 
-from .datamodule import SpectralEarthDataModule, pad_collate
+from .datamodule import (
+    DataConfig,
+    RandomCubeDataset,
+    SpectralEarthDataModule,
+    SyntheticInfiniteDataModule,
+    pad_collate,
+)
 from .spectralearth import SpectralEarthDataset
 
-__all__ = ["SpectralEarthDataModule", "SpectralEarthDataset", "pad_collate"]
+__all__ = [
+    "DataConfig",
+    "RandomCubeDataset",
+    "SpectralEarthDataModule",
+    "SyntheticInfiniteDataModule",
+    "SpectralEarthDataset",
+    "pad_collate",
+]

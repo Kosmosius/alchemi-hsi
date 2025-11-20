@@ -1,0 +1,2 @@
+precision: bf16
+flash_attn: false

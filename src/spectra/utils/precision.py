@@ -1,4 +1,3 @@
-"""Precision helpers with fp8/bf16/fp16 autocast toggles."""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -21,7 +20,6 @@ def _has_transformer_engine() -> bool:
 
 @contextmanager
 def fp8_autocast() -> Iterator[None]:
-    """Activate TransformerEngine fp8 autocast if available; otherwise no-op."""
     if not _has_transformer_engine():
         yield
         return
@@ -39,11 +37,9 @@ class PrecisionConfig:
     enable_fp8: bool = False
 
     def resolved_precision(self) -> PrecisionType:
-        """Return the actual precision that will be used."""
         if self.target == "fp8" and self.enable_fp8 and _has_transformer_engine():
             return "fp8"
         if self.target == "fp8":
-            # Fall back when fp8 is requested but unavailable.
             return "bf16"
         return self.target
 
@@ -62,7 +58,6 @@ class PrecisionConfig:
 
 @contextmanager
 def autocast(precision: PrecisionConfig) -> Iterator[None]:
-    """Autocast context that routes through fp8 / bf16 / fp16 when available."""
     resolved = precision.resolved_precision()
     if resolved == "fp8":
         with fp8_autocast():
@@ -75,4 +70,22 @@ def autocast(precision: PrecisionConfig) -> Iterator[None]:
         yield
 
 
-__all__ = ["PrecisionConfig", "autocast", "fp8_autocast", "PrecisionType"]
+@contextmanager
+def autocast_from_config(config: dict | None) -> Iterator[None]:
+    if config is None:
+        cfg = PrecisionConfig()
+    elif isinstance(config, PrecisionConfig):
+        cfg = config
+    else:
+        cfg = PrecisionConfig(target=str(config.get("precision", "bf16")))
+    with autocast(cfg):
+        yield
+
+
+__all__ = [
+    "PrecisionConfig",
+    "autocast",
+    "autocast_from_config",
+    "fp8_autocast",
+    "PrecisionType",
+]
