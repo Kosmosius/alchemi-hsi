@@ -41,7 +41,7 @@ class _EmitSRFArchive(Sequence[NDArray[np.float64]]):
             raise ValueError("Response count must match number of band centers")
 
     def __len__(self) -> int:
-        return self.responses.shape[0]
+        return int(self.responses.shape[0])
 
     @overload
     def __getitem__(self, idx: int) -> np.ndarray: ...

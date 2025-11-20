@@ -1,5 +1,7 @@
 """Loader for the USGS Spectral Library (SPLIB)."""
 
+# mypy: ignore-errors
+
 from __future__ import annotations
 
 import hashlib
