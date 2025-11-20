@@ -24,16 +24,16 @@ class ReconstructionLoss(nn.Module):
         target: Tensor,
         mask: Tensor | None = None,
     ) -> Tensor:
+        diff = recon - target
         if mask is not None:
-            mask_expanded = mask
             # Broadcast mask up to recon/target rank by unsqueezing trailing dims.
-            while mask_expanded.dim() < recon.dim():
+            mask_expanded = mask.to(device=recon.device, dtype=recon.dtype)
+            while mask_expanded.dim() < diff.dim():
                 mask_expanded = mask_expanded.unsqueeze(-1)
-            diff = (recon - target) * mask_expanded
+            diff = diff * mask_expanded
             denom = mask_expanded.sum()
         else:
-            diff = recon - target
-            denom = torch.tensor(recon.numel(), device=recon.device, dtype=recon.dtype)
+            denom = torch.tensor(diff.numel(), device=recon.device, dtype=recon.dtype)
 
         loss = (diff**2).sum()
         if self.reduction == "mean":

@@ -17,7 +17,16 @@ class MAEOutput(NamedTuple):
 
 
 class MAEEncoder(nn.Module):
-    def __init__(self, embed_dim: int = 256, depth: int = 6, n_heads: int = 8) -> None:
+    def __init__(
+        self,
+        embed_dim: int = 256,
+        depth: int = 6,
+        n_heads: int = 8,
+        *,
+        use_posenc: bool = True,
+        posenc: nn.Module | None = None,
+        max_tokens: int = 1024,
+    ) -> None:
         super().__init__()
         layer = nn.TransformerEncoderLayer(
             d_model=embed_dim,
@@ -25,6 +34,12 @@ class MAEEncoder(nn.Module):
             batch_first=True,
         )
         self.enc = nn.TransformerEncoder(layer, num_layers=depth)
+        self.use_posenc = use_posenc
+        # If positional encoding is enabled, either use the provided module or
+        # fall back to a simple learnable embedding over token positions.
+        self.posenc: nn.Module | None = None if not use_posenc else (
+            posenc or nn.Embedding(max_tokens, embed_dim)
+        )
 
     def forward(self, tokens: Tensor, key_padding_mask: Tensor | None = None) -> Tensor:
         """Encode per-token embeddings.
@@ -34,6 +49,12 @@ class MAEEncoder(nn.Module):
         """
         if tokens.dim() == 2:
             tokens = tokens.unsqueeze(0)
+        if self.use_posenc and self.posenc is not None:
+            positions = torch.arange(tokens.size(1), device=tokens.device)
+            pos = self.posenc(positions)
+            if pos.dim() == 2:
+                pos = pos.unsqueeze(0)
+            tokens = tokens + pos[:, : tokens.size(1), :]
         return self.enc(tokens, src_key_padding_mask=key_padding_mask)
 
 
@@ -160,7 +181,11 @@ class MaskedAutoencoder(nn.Module):
         )
         full_memory[:, spatial_mask] = encoded
         if masked_tokens.shape[1] > 0:
-            full_memory[:, ~spatial_mask] = self.mask_token.expand(batch, masked_tokens.shape[1], -1)
+            full_memory[:, ~spatial_mask] = self.mask_token.expand(
+                batch,
+                masked_tokens.shape[1],
+                -1,
+            )
 
         # --- decode to reconstruct all tokens ---
         decoded = self.decoder(full_memory, mem=full_memory)
@@ -186,6 +211,10 @@ class MaskedAutoencoder(nn.Module):
             loss_all = torch.nn.functional.mse_loss(decoded, tokens)
             loss_terms.append(0.1 * loss_all)
 
-        total_loss = torch.stack(loss_terms).sum() if loss_terms else torch.tensor(0.0, device=tokens.device)
+        total_loss = (
+            torch.stack(loss_terms).sum()
+            if loss_terms
+            else torch.tensor(0.0, device=tokens.device)
+        )
 
         return MAEOutput(decoded, spatial_mask, spectral_mask, total_loss)

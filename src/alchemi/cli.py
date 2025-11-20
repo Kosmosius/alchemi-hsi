@@ -45,9 +45,17 @@ def validate_data(config: str = "configs/data.yaml") -> None:
 
 
 @app.command()  # type: ignore[misc]
-def pretrain_mae(config: str = "configs/train.mae.yaml") -> None:
+def pretrain_mae(
+    config: str = "configs/train.mae.yaml",
+    no_spatial_mask: bool = typer.Option(
+        False, "--no-spatial-mask", help="Disable spatial masking for MAE baseline"
+    ),
+    no_posenc: bool = typer.Option(
+        False, "--no-posenc", help="Disable wavelength positional encoding for MAE baseline"
+    ),
+) -> None:
     seed_everything(42)
-    run_pretrain_mae(config)
+    run_pretrain_mae(config, no_spatial_mask=no_spatial_mask, no_posenc=no_posenc)
 
 
 @align_app.command("train")  # type: ignore[misc]

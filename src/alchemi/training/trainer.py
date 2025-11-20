@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Tuple
 
 import torch
 import yaml
 from torch import Tensor
 from torch.utils.data import DataLoader, TensorDataset
-
-from spectra.utils.seed import persist_mask
 
 from ..heads import BandDepthHead, load_banddepth_config
 from ..losses import InfoNCELoss, ReconstructionLoss, SpectralSmoothnessLoss
@@ -19,6 +18,7 @@ from ..models import (
     SetEncoder,
     SpectralBasisProjector,
 )
+from ..masking import MaskingConfig
 from ..utils.ckpt import save_checkpoint
 from ..utils.logging import get_logger
 from .seed import seed_everything
@@ -47,6 +47,12 @@ def _is_main_process() -> bool:
     return True
 
 
+def persist_mask(mask: Tensor, path: Path) -> None:
+    """Persist a boolean mask tensor for later inspection."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(mask.cpu(), path)
+
+
 def _mask_spectral(
     values: Tensor,
     mask: Tensor,
@@ -64,6 +70,19 @@ def _mask_spectral(
         persist_mask(m, persist_path)
 
     return m, idx
+
+
+def _mask_spatial(shape: Tuple[int, ...], spatial_mask_ratio: float, *, disabled: bool) -> Tensor:
+    mask = torch.ones(shape, dtype=torch.bool)
+    if disabled:
+        return mask
+
+    numel = mask.numel()
+    k = max(1, int(numel * spatial_mask_ratio))
+    flat = mask.view(-1)
+    idx = torch.randperm(numel)[:k]
+    flat[idx] = False
+    return flat.view_as(mask)
 
 
 def _build_embedder(cfg: TrainCfg) -> tuple[SpectralBasisProjector, SetEncoder]:
@@ -84,16 +103,53 @@ def _encode_pixel(
     return tokens.squeeze(0)
 
 
-def run_pretrain_mae(config_path: str) -> None:
+def run_pretrain_mae(
+    config_path: str, *, no_spatial_mask: bool = False, no_posenc: bool = False
+) -> None:
     cfg = TrainCfg(**yaml.safe_load(Path(config_path).read_text())["train"])
+
+    # Fold CLI toggles into config so baselines are properly recorded.
+    cfg = cfg.copy(
+        update={
+            "no_spatial_mask": cfg.no_spatial_mask or no_spatial_mask,
+            "no_posenc": cfg.no_posenc or no_posenc,
+        }
+    )
+
+    # Seed / determinism config.
     seed_everything(cfg.seed, cfg.deterministic)
     _LOG.info("Using seed=%s deterministic=%s", cfg.seed, cfg.deterministic)
-    mask_path = Path(cfg.mask_path) if cfg.mask_path else None
+
+    # Optional mask persistence path, if present in the config.
+    mask_path: Path | None = None
+    if hasattr(cfg, "mask_path"):
+        mask_str = getattr(cfg, "mask_path")
+        if mask_str:
+            mask_path = Path(mask_str)
+
     basis, setenc = _build_embedder(cfg)
-    enc = MAEEncoder(embed_dim=cfg.embed_dim, depth=cfg.depth, n_heads=cfg.n_heads)
-    dec = MAEDecoder(
-        embed_dim=cfg.embed_dim, depth=max(1, cfg.depth // 2), n_heads=cfg.n_heads, out_dim=1
+
+    mask_cfg = MaskingConfig(
+        spatial_mask_ratio=cfg.spatial_mask_ratio,
+        spectral_mask_ratio=cfg.spectral_mask_ratio,
+        no_spatial_mask=cfg.no_spatial_mask,
+        no_posenc=cfg.no_posenc,
     )
+
+    enc = MAEEncoder(
+        embed_dim=cfg.embed_dim,
+        depth=cfg.depth,
+        n_heads=cfg.n_heads,
+        use_posenc=not mask_cfg.no_posenc,
+        max_tokens=cfg.embed_dim * 2,
+    )
+    dec = MAEDecoder(
+        embed_dim=cfg.embed_dim,
+        depth=max(1, cfg.depth // 2),
+        n_heads=cfg.n_heads,
+        out_dim=cfg.embed_dim,
+    )
+
     recon_loss = ReconstructionLoss()
     smooth_loss = SpectralSmoothnessLoss()
     opt = torch.optim.AdamW(
@@ -105,39 +161,65 @@ def run_pretrain_mae(config_path: str) -> None:
     )
     weights = Weights(recon=1.0, nce=0.0, sam=0.0, smooth=1e-4)
 
-    loader: DataLoader[Tensor] = DataLoader(
-        TensorDataset(torch.randn(128, 32)), batch_size=cfg.batch_size
-    )
-
     mask_persisted = False
+    device = next(enc.parameters()).device
 
-    step = 0
-    for _batch in loader:
-        step += 1
-        x = torch.randn(64, 64)
-        band_mask = torch.ones(64, dtype=torch.bool)
+    # Simple synthetic MAE loop: random tokens with spatial+spectral masking.
+    for step in range(1, cfg.max_steps + 1):
+        batch_size = cfg.batch_size
+        num_tokens = cfg.embed_dim
+        embed_dim = cfg.embed_dim
+
+        # Fake token grid: (B, T, D)
+        tokens = torch.randn(batch_size, num_tokens, embed_dim, device=device)
+
+        # Spectral mask over feature dimension.
+        spectral_values = torch.arange(embed_dim, dtype=torch.float32, device=device)
+        base_band_mask = torch.ones(embed_dim, dtype=torch.bool, device=device)
         persist_target = (
             mask_path if (mask_path and not mask_persisted and _is_main_process()) else None
         )
-        masked, _ = _mask_spectral(
-            x[:, 0],
-            band_mask,
-            spectral_mask_ratio=0.5,
+        spectral_mask, _ = _mask_spectral(
+            spectral_values,
+            base_band_mask,
+            spectral_mask_ratio=mask_cfg.spectral_mask_ratio,
             persist_path=persist_target,
         )
         mask_persisted = mask_persisted or persist_target is not None
+
+        # Spatial mask over tokens.
+        spatial_mask = _mask_spatial(
+            (num_tokens,),
+            mask_cfg.spatial_mask_ratio,
+            disabled=mask_cfg.no_spatial_mask,
+        ).to(device)
+
+        # Encoder key padding mask: True = pad (i.e. masked-out tokens).
+        key_padding_mask = (~spatial_mask).unsqueeze(0).expand(batch_size, -1)
+
+        # Combined mask for reconstruction loss: (B, T, D)
+        combined_mask_2d = spatial_mask.unsqueeze(-1) & spectral_mask.unsqueeze(0)
+        combined_mask = combined_mask_2d.unsqueeze(0).expand(batch_size, -1, -1)
+
         with autocast(enabled=False):
-            z = enc(x.unsqueeze(0))
+            z = enc(tokens, key_padding_mask=key_padding_mask)
             y = dec(z)
-            loss = weights.recon * recon_loss(y.squeeze(0), x, masked)
-            loss = loss + weights.smooth * smooth_loss(x, masked)
+
+            # Reconstruction over masked region.
+            loss = weights.recon * recon_loss(y, tokens, mask=combined_mask)
+
+            # Spectral smoothness: first batch element, shape (bands, tokens)
+            values_for_smooth = tokens[0].transpose(0, 1)  # (D, T)
+            smooth = smooth_loss(values_for_smooth, spectral_mask)
+            loss = loss + weights.smooth * smooth
+
         opt.zero_grad(set_to_none=True)
         loss.backward()
         opt.step()
+
         if step % cfg.log_every == 0:
-            _LOG.info(f"[MAE] step {step} loss={float(loss):.4f}")
-        if step >= cfg.max_steps:
-            break
+            _LOG.info("[MAE] step %d loss=%.4f", step, float(loss))
+
     save_checkpoint(
         "checkpoints/mae.pt",
         {"basis": basis.state_dict(), "enc": enc.state_dict(), "dec": dec.state_dict()},
@@ -200,7 +282,7 @@ def run_align(config_path: str) -> None:
         loss.backward()
         opt.step()
         if step % cfg.log_every == 0:
-            _LOG.info(f"[ALIGN] step {step} nce={float(loss):.4f}")
+            _LOG.info("[ALIGN] step %d nce=%.4f", step, float(loss))
         if step >= cfg.max_steps:
             break
     save_checkpoint("checkpoints/align.pt", {"basis": basis.state_dict(), "enc": enc.state_dict()})
