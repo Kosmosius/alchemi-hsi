@@ -116,12 +116,20 @@ def save_checkpoint(
     torch.save(state.__dict__, path)
 
 
+def _move_optimizer_state(optimizer: torch.optim.Optimizer, device: torch.device) -> None:
+    for state in optimizer.state.values():
+        for key, value in state.items():
+            if isinstance(value, torch.Tensor):
+                state[key] = value.to(device)
+
+
 def load_checkpoint(
     path: Path,
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
     scheduler: Optional[_LRScheduler],
     scaler: Optional[torch.cuda.amp.GradScaler],
+    device: Optional[torch.device] = None,
 ) -> int:
     """Load model/optimizer/(optional) scheduler + scaler from disk.
 
@@ -130,6 +138,8 @@ def load_checkpoint(
     state_dict = torch.load(path, map_location="cpu", weights_only=False)
     model.load_state_dict(state_dict["model"])
     optimizer.load_state_dict(state_dict["optimizer"])
+    if device is not None:
+        _move_optimizer_state(optimizer, device)
     if scheduler is not None and state_dict["scheduler"] is not None:
         scheduler.load_state_dict(state_dict["scheduler"])
     if scaler is not None and state_dict["scaler"] is not None:
@@ -163,10 +173,14 @@ def train_one_epoch(
     cfg: TrainingConfig,
     rank: int,
     start_step: int = 0,
+    device: Optional[torch.device] = None,
 ) -> list[float]:
     """Run a full training run from start_step → cfg.steps on a single rank."""
-    device = torch.device("cuda", rank) if torch.cuda.is_available() else torch.device("cpu")
-    model.to(device)
+    device = device or (
+        torch.device("cuda", rank) if torch.cuda.is_available() else torch.device("cpu")
+    )
+    if next(model.parameters()).device != device:
+        model.to(device)
     ddp_model = DDP(model, device_ids=None if device.type == "cpu" else [rank])
 
     losses: list[float] = []
@@ -219,11 +233,16 @@ def train_ddp(
             enabled=torch.cuda.is_available() and cfg.precision.resolved_precision() == "fp16"
         )
 
+        device = torch.device("cuda", rank) if torch.cuda.is_available() else torch.device("cpu")
+        model.to(device)
+
         start_step = 0
         if resume and cfg.checkpoint_path is not None and cfg.checkpoint_path.exists():
-            start_step = load_checkpoint(cfg.checkpoint_path, model, optimizer, None, scaler) + 1
+            start_step = (
+                load_checkpoint(cfg.checkpoint_path, model, optimizer, None, scaler, device) + 1
+            )
 
-        losses = train_one_epoch(model, optimizer, scaler, cfg, rank, start_step)
+        losses = train_one_epoch(model, optimizer, scaler, cfg, rank, start_step, device)
 
         if cfg.checkpoint_path is not None and rank == 0:
             save_checkpoint(cfg.checkpoint_path, model, optimizer, None, scaler, cfg.steps - 1, cfg)
