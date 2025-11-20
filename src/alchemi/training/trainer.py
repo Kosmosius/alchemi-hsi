@@ -17,7 +17,7 @@ from ..models import (
     SpectralBasisProjector,
 )
 from ..utils.ckpt import save_checkpoint
-from ..utils.logging import get_logger
+from ..utils.logging import ThroughputMeter, ThroughputStats, get_logger
 from .amp import autocast
 from .config import TrainCfg
 from .loss_mixer import Weights
@@ -28,6 +28,7 @@ _LOG = get_logger(__name__)
 def _mask_spectral(
     values: Tensor, mask: Tensor, spectral_mask_ratio: float
 ) -> tuple[Tensor, Tensor]:
+    """Randomly mask a fraction of spectral positions."""
     B = values.shape[0]
     k = max(1, int(B * spectral_mask_ratio))
     idx = torch.randperm(B)[:k]
@@ -54,13 +55,55 @@ def _encode_pixel(
     return tokens.squeeze(0)
 
 
-def run_pretrain_mae(config_path: str) -> None:
+def _aggregate_stats(
+    stats_list: list[ThroughputStats],
+) -> ThroughputStats:
+    """Aggregate per-step stats into a single summary."""
+    if not stats_list:
+        return ThroughputStats(
+            tokens_per_s=0.0,
+            gb_per_s=0.0,
+            peak_mem_gb=None,
+            step_time_s=0.0,
+            tokens=0,
+            num_bytes=0,
+        )
+
+    total_tokens = sum(int(s.tokens) for s in stats_list)
+    total_bytes = sum(int(s.num_bytes or 0) for s in stats_list)
+    total_time = sum(float(s.step_time_s) for s in stats_list)
+    peak_mem = max(float(s.peak_mem_gb or 0.0) for s in stats_list)
+
+    total_time = max(total_time, 1e-12)
+    tokens_per_s = total_tokens / total_time
+    gb_per_s = total_bytes / (total_time * 1e9)
+    avg_step_time = total_time / len(stats_list)
+
+    return ThroughputStats(
+        tokens_per_s=tokens_per_s,
+        gb_per_s=gb_per_s,
+        peak_mem_gb=peak_mem if peak_mem > 0.0 else None,
+        step_time_s=avg_step_time,
+        tokens=total_tokens,
+        num_bytes=total_bytes,
+    )
+
+
+def run_pretrain_mae(config_path: str) -> ThroughputStats:
+    """Toy MAE pretraining loop with throughput measurement."""
     cfg = TrainCfg(**yaml.safe_load(Path(config_path).read_text())["train"])
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     basis, setenc = _build_embedder(cfg)
     enc = MAEEncoder(embed_dim=cfg.embed_dim, depth=cfg.depth, n_heads=cfg.n_heads)
     dec = MAEDecoder(
         embed_dim=cfg.embed_dim, depth=max(1, cfg.depth // 2), n_heads=cfg.n_heads, out_dim=1
     )
+
+    for module in (basis, setenc, enc, dec):
+        module.to(device)
+
     recon_loss = ReconstructionLoss()
     smooth_loss = SpectralSmoothnessLoss()
     opt = torch.optim.AdamW(
@@ -76,12 +119,18 @@ def run_pretrain_mae(config_path: str) -> None:
         TensorDataset(torch.randn(128, 32)), batch_size=cfg.batch_size
     )
 
-    step = 0
-    for _batch in loader:
-        step += 1
-        x = torch.randn(64, 64)
-        band_mask = torch.ones(64, dtype=torch.bool)
+    meter = ThroughputMeter(device)
+    step_stats: list[ThroughputStats] = []
+
+    for step, _batch in enumerate(loader, start=1):
+        x = torch.randn(64, 64, device=device)
+        band_mask = torch.ones(64, dtype=torch.bool, device=device)
         masked, _ = _mask_spectral(x[:, 0], band_mask, spectral_mask_ratio=0.5)
+
+        tokens = int(x.numel())
+        num_bytes = int(tokens * x.element_size())
+
+        meter.start()
         with autocast(enabled=False):
             z = enc(x.unsqueeze(0))
             y = dec(z)
@@ -90,22 +139,42 @@ def run_pretrain_mae(config_path: str) -> None:
         opt.zero_grad(set_to_none=True)
         loss.backward()
         opt.step()
+        stats = meter.stop(tokens=tokens, num_bytes=num_bytes)
+        step_stats.append(stats)
+
         if step % cfg.log_every == 0:
-            _LOG.info(f"[MAE] step {step} loss={float(loss):.4f}")
+            _LOG.info(
+                "[MAE] step %d loss=%.4f tokens/s=%.1f gb/s=%.2f peak_mem=%.2fGB",
+                step,
+                float(loss),
+                stats.tokens_per_s,
+                stats.gb_per_s or 0.0,
+                stats.peak_mem_gb or 0.0,
+            )
+
         if step >= cfg.max_steps:
             break
+
     save_checkpoint(
         "checkpoints/mae.pt",
         {"basis": basis.state_dict(), "enc": enc.state_dict(), "dec": dec.state_dict()},
     )
 
+    return _aggregate_stats(step_stats)
 
-def run_align(config_path: str) -> None:
+
+def run_align(config_path: str) -> ThroughputStats:
+    """Toy alignment loop with throughput measurement."""
     cfg = TrainCfg(**yaml.safe_load(Path(config_path).read_text())["train"])
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     basis, setenc = _build_embedder(cfg)
     enc = MAEEncoder(embed_dim=cfg.embed_dim, depth=cfg.depth, n_heads=cfg.n_heads)
     nce = InfoNCELoss()
     domain = DomainDiscriminator(embed_dim=cfg.embed_dim, n_domains=4)
+
+    for module in (basis, setenc, enc, domain):
+        module.to(device)
 
     params = (
         list(basis.parameters())
@@ -131,7 +200,17 @@ def run_align(config_path: str) -> None:
         list(zip(Xf, Xl, strict=False)), batch_size=cfg.batch_size, shuffle=True
     )
 
+    meter = ThroughputMeter(device)
+    step_stats: list[ThroughputStats] = []
+
     for step, (f, lab) in enumerate(loader, start=1):
+        f = f.to(device)
+        lab = lab.to(device)
+
+        tokens = int(f.numel() + lab.numel())
+        num_bytes = int(tokens * f.element_size())
+
+        meter.start()
         with autocast(enabled=False):
             zf = enc(f.unsqueeze(1)).squeeze(1)
             zl = enc(lab.unsqueeze(1)).squeeze(1)
@@ -153,14 +232,28 @@ def run_align(config_path: str) -> None:
         opt.zero_grad(set_to_none=True)
         loss.backward()
         opt.step()
+        stats = meter.stop(tokens=tokens, num_bytes=num_bytes)
+        step_stats.append(stats)
+
         if step % cfg.log_every == 0:
-            _LOG.info(f"[ALIGN] step {step} nce={float(loss):.4f}")
+            _LOG.info(
+                "[ALIGN] step %d nce=%.4f tokens/s=%.1f gb/s=%.2f peak_mem=%.2fGB",
+                step,
+                float(loss),
+                stats.tokens_per_s,
+                stats.gb_per_s or 0.0,
+                stats.peak_mem_gb or 0.0,
+            )
+
         if step >= cfg.max_steps:
             break
+
     save_checkpoint("checkpoints/align.pt", {"basis": basis.state_dict(), "enc": enc.state_dict()})
+    return _aggregate_stats(step_stats)
 
 
 def run_eval(config_path: str) -> None:
+    """Placeholder eval that wires up metric plumbing."""
     import numpy as np
 
     from ..eval.metrics_solids import macro_f1
