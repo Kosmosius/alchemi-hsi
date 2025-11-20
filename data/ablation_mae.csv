@@ -1,0 +1,4 @@
+model,steps,score
+mae_main,100,0.123000
+mae_no_spatial_mask,100,0.456000
+mae_no_posenc,100,0.321000

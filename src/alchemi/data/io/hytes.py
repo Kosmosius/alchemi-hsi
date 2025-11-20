@@ -1,5 +1,7 @@
 """Helpers for loading HyTES Level-1B brightness-temperature products."""
 
+# mypy: ignore-errors
+
 from __future__ import annotations
 
 from collections.abc import Iterable

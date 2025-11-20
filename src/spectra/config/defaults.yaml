@@ -1,0 +1,12 @@
+# Default configuration for spectra experiments.
+# Extend this file with experiment-specific overrides or use it as a base
+# for Hydra-style composition.
+
+seed: 42
+
+# When true, torch will prefer deterministic kernels and disable cuDNN
+# benchmarking to improve reproducibility across runs and GPUs.
+deterministic: false
+
+# Optional path where the first sampled mask for a run will be persisted.
+mask_path: checkpoints/mask.json
