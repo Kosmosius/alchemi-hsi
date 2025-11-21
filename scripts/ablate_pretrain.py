@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 import typer
 
-from spectra.utils.plotting import plot_metric_bars  # type: ignore[import-not-found]
+from spectra.utils.plotting import plot_metric_bars
 
 # Search space
 MASK_SPATIAL = (0.5, 0.75)
