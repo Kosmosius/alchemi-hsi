@@ -12,8 +12,12 @@ from typing import Any
 import numpy as np
 import typer
 import xarray as xr
-import tomllib
 import yaml
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib  # type: ignore[import-not-found]
 
 from .data.cube import Cube
 from .data.io import load_avirisng_l1b, load_emit_l1b, load_enmap_l1b, load_hytes_l1b_bt
@@ -72,13 +76,19 @@ def handle_cli_exceptions(func: Callable[..., Any]) -> Callable[..., Any]:
             return func(*args, **kwargs)
         except (typer.BadParameter, typer.Exit, KeyboardInterrupt):
             raise
-        except (FileNotFoundError, OSError, yaml.YAMLError, json.JSONDecodeError, ValueError) as exc:
+        except (
+            FileNotFoundError,
+            OSError,
+            yaml.YAMLError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as exc:
             _log_cli_exception(exc, func.__name__)
             _echo_error(str(exc))
         except Exception as exc:  # pragma: no cover - handled by debug path
             if _debug_enabled():
                 raise
-            _LOG.exception("Unexpected error while running %s", func.__name__)
+            _LOG.exception("Unexpected error while running %s: %s", func.__name__, exc)
             _echo_error(f"Unexpected error. Re-run with {_DEBUG_ENV}=1 for a traceback.")
 
         raise typer.Exit(code=1)

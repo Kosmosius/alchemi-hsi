@@ -21,6 +21,7 @@ dependencies = [
   "tqdm>=4.66",
   "rich>=13.7",
   "pyyaml>=6.0",
+  "tomli>=2.0; python_version < '3.11'",
   "matplotlib>=3.8",
   "pydantic>=2.7",
   "joblib>=1.4",
