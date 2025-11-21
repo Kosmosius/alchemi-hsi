@@ -1,7 +1,5 @@
 """Loader utilities for EnMAP Level-1B products."""
 
-# mypy: ignore-errors
-
 from __future__ import annotations
 
 from dataclasses import dataclass

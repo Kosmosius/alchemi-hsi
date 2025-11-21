@@ -1,7 +1,5 @@
 """Loader for the USGS Spectral Library (SPLIB)."""
 
-# mypy: ignore-errors
-
 from __future__ import annotations
 
 import hashlib
@@ -36,10 +34,10 @@ class SPLIBCatalog(dict[str, list[Spectrum]]):
 
     def __init__(
         self,
-        *args,
+        *args: object,
         alias_map: Mapping[str, str] | None = None,
         aliases: Mapping[str, Sequence[str]] | None = None,
-        **kwargs,
+        **kwargs: object,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.alias_map = dict(alias_map or {})

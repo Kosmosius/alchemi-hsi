@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-# mypy: ignore-errors
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
 

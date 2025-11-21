@@ -8,7 +8,6 @@ kinds, and relevant sensor metadata.
 
 from __future__ import annotations
 
-# mypy: ignore-errors
 import json
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
@@ -17,9 +16,9 @@ from typing import Any, cast
 
 import numpy as np
 
-from ..tokens.band_tokenizer import AxisUnit, BandTokenizer, Tokens
-from ..tokens.registry import get_default_tokenizer
-from ..types import Sample, SampleMeta, Spectrum, SpectrumKind, WavelengthGrid
+from alchemi.tokens.band_tokenizer import AxisUnit, BandTokenizer, Tokens
+from alchemi.tokens.registry import get_default_tokenizer
+from alchemi.types import Sample, SampleMeta, Spectrum, SpectrumKind, WavelengthGrid
 
 __all__ = ["Cube", "GeoInfo", "geo_from_attrs"]
 
@@ -307,10 +306,10 @@ class Cube:
         """Return spectral axis expressed in nanometres when possible."""
 
         if self.axis_unit == "wavelength_nm":
-            return cast(np.ndarray, self.axis)
+            return self.axis
         if self.axis_unit == "wavenumber_cm1":
             converted = (1.0e7 / self.axis).astype(np.float64, copy=False)
-            return cast(np.ndarray, converted)
+            return converted
         return None
 
     def iter_tiles(
