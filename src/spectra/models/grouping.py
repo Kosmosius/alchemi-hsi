@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Literal, Optional
+from typing import Literal
 
 import torch
 
@@ -14,8 +14,8 @@ class GroupingConfig:
     mode: GroupingMode = "contiguous"
 
 
-def _contiguous_groups(B: int, G: int) -> List[List[int]]:
-    groups: List[List[int]] = []
+def _contiguous_groups(B: int, G: int) -> list[list[int]]:
+    groups: list[list[int]] = []
     sizes = [B // G + (1 if i < B % G else 0) for i in range(G)]
     start = 0
     for size in sizes:
@@ -26,8 +26,8 @@ def _contiguous_groups(B: int, G: int) -> List[List[int]]:
 
 
 def _kmeans_groups(
-    B: int, G: int, wavelengths_nm: Optional[torch.Tensor], spectra_sample: Optional[torch.Tensor]
-) -> Optional[List[List[int]]]:
+    B: int, G: int, wavelengths_nm: torch.Tensor | None, spectra_sample: torch.Tensor | None
+) -> list[list[int]] | None:
     if spectra_sample is None or wavelengths_nm is None:
         return None
     if spectra_sample.ndim != 2:
@@ -36,7 +36,9 @@ def _kmeans_groups(
     cov = torch.cov(spectra_sample.T)
     if wavelengths_nm.numel() != B:
         return None
-    centroids = torch.linspace(wavelengths_nm.min(), wavelengths_nm.max(), G, device=wavelengths_nm.device)
+    centroids = torch.linspace(
+        wavelengths_nm.min(), wavelengths_nm.max(), G, device=wavelengths_nm.device
+    )
     centroids = centroids.unsqueeze(1)
     bands_pos = wavelengths_nm.unsqueeze(1)
     assignments = torch.zeros(B, dtype=torch.long, device=wavelengths_nm.device)
@@ -47,8 +49,10 @@ def _kmeans_groups(
         counts = torch.bincount(assignments, minlength=G)
         if (counts == 0).any():
             return None
-        centroids = torch.stack([bands_pos[assignments == i].mean(dim=0) for i in range(G)]).unsqueeze(1)
-    groups: List[List[int]] = []
+        centroids = torch.stack(
+            [bands_pos[assignments == i].mean(dim=0) for i in range(G)]
+        ).unsqueeze(1)
+    groups: list[list[int]] = []
     for i in range(G):
         groups.append(assignments.eq(i).nonzero(as_tuple=True)[0].tolist())
     return groups
@@ -58,9 +62,9 @@ def make_groups(
     B: int,
     G: int,
     mode: GroupingMode = "contiguous",
-    wavelengths_nm: Optional[torch.Tensor] = None,
-    spectra_sample: Optional[torch.Tensor] = None,
-) -> List[List[int]]:
+    wavelengths_nm: torch.Tensor | None = None,
+    spectra_sample: torch.Tensor | None = None,
+) -> list[list[int]]:
     if G <= 0:
         raise ValueError("G must be positive")
     if mode == "contiguous":

@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Tuple
 
 import torch
 import yaml
 from torch import Tensor
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader
 
 from ..heads import BandDepthHead, load_banddepth_config
 from ..losses import InfoNCELoss, ReconstructionLoss, SpectralSmoothnessLoss
@@ -15,16 +14,16 @@ from ..models import (
     DomainDiscriminator,
     MAEDecoder,
     MAEEncoder,
+    MaskingConfig,
     SetEncoder,
     SpectralBasisProjector,
 )
-from ..masking import MaskingConfig
 from ..utils.ckpt import save_checkpoint
 from ..utils.logging import ThroughputMeter, ThroughputStats, get_logger
-from .seed import seed_everything
 from .amp import autocast
 from .config import TrainCfg
 from .loss_mixer import Weights
+from .seed import seed_everything
 
 _LOG = get_logger(__name__)
 
@@ -73,7 +72,7 @@ def _mask_spectral(
     return m, idx
 
 
-def _mask_spatial(shape: Tuple[int, ...], spatial_mask_ratio: float, *, disabled: bool) -> Tensor:
+def _mask_spatial(shape: tuple[int, ...], spatial_mask_ratio: float, *, disabled: bool) -> Tensor:
     mask = torch.ones(shape, dtype=torch.bool)
     if disabled:
         return mask
@@ -157,7 +156,7 @@ def run_pretrain_mae(
     # Optional mask persistence path, if present in the config.
     mask_path: Path | None = None
     if hasattr(cfg, "mask_path"):
-        mask_str = getattr(cfg, "mask_path")
+        mask_str = cfg.mask_path
         if mask_str:
             mask_path = Path(mask_str)
 

@@ -10,12 +10,12 @@ from . import config, data, models, train, utils
 from .models import SpectralTokenizer, WavelengthPosEnc, WavelengthPositionalEncoding
 
 __all__ = [
+    "SpectralTokenizer",
+    "WavelengthPosEnc",
+    "WavelengthPositionalEncoding",
     "config",
     "data",
     "models",
     "train",
     "utils",
-    "SpectralTokenizer",
-    "WavelengthPosEnc",
-    "WavelengthPositionalEncoding",
 ]

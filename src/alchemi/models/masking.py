@@ -40,14 +40,16 @@ class MaskingConfig:
         return cfg_path
 
 
-def make_spatial_mask(num_tokens: int, mask_ratio_spatial: float, seed: int | None = None) -> Tensor:
+def make_spatial_mask(
+    num_tokens: int, mask_ratio_spatial: float, seed: int | None = None
+) -> Tensor:
     """Return a boolean mask of tokens to KEEP after spatial masking.
 
     True = keep token, False = masked-out token.
     """
     num_tokens = int(num_tokens)
     keep = torch.ones(num_tokens, dtype=torch.bool)
-    num_mask = max(0, min(num_tokens, int(round(num_tokens * mask_ratio_spatial))))
+    num_mask = max(0, min(num_tokens, round(num_tokens * mask_ratio_spatial)))
     if num_mask == 0:
         return keep
 
@@ -79,7 +81,7 @@ def make_spectral_mask(
     for start in range(0, B, group_size):
         end = min(B, start + group_size)
         n = end - start
-        k = max(1, int(round(n * mask_ratio_spectral)))
+        k = max(1, round(n * mask_ratio_spectral))
         local_idx = torch.randperm(n, generator=gen)[:k]
         idx = local_idx + start
         keep[idx] = False

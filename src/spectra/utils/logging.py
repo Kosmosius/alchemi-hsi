@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import csv
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, Optional
 
 
 @dataclass
 class CSVLogger:
     path: Path
     fieldnames: Iterable[str] | None = None
-    _writer: Optional[csv.DictWriter] = field(init=False, default=None)
-    _file: Optional[object] = field(init=False, default=None)
+    _writer: csv.DictWriter | None = field(init=False, default=None)
+    _file: object | None = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -21,7 +21,7 @@ class CSVLogger:
             self._writer = csv.DictWriter(self._file, fieldnames=list(self.fieldnames))
             self._writer.writeheader()
 
-    def log(self, row: Dict) -> None:
+    def log(self, row: dict) -> None:
         if self._writer is None:
             self._writer = csv.DictWriter(self._file, fieldnames=sorted(row))  # type: ignore[arg-type]
             self._writer.writeheader()
@@ -34,7 +34,7 @@ class CSVLogger:
             self._file.close()
 
 
-def maybe_init_wandb(config: Dict) -> Optional[object]:
+def maybe_init_wandb(config: dict) -> object | None:
     if os.environ.get("WANDB_API_KEY") is None:
         return None
     try:  # pragma: no cover - optional dependency

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterator, Literal, Optional
+from typing import Literal
 
 import torch
 
@@ -11,7 +12,6 @@ PrecisionType = Literal["fp8", "bf16", "fp16", "fp32"]
 
 def _has_transformer_engine() -> bool:
     try:
-        import transformer_engine.pytorch  # type: ignore
 
         return True
     except Exception:  # pragma: no cover - import guards
@@ -46,7 +46,7 @@ class PrecisionConfig:
     def autocast_enabled(self) -> bool:
         return self.resolved_precision() in {"fp8", "bf16", "fp16"}
 
-    def autocast_dtype(self) -> Optional[torch.dtype]:
+    def autocast_dtype(self) -> torch.dtype | None:
         match self.resolved_precision():
             case "bf16":
                 return torch.bfloat16
@@ -84,8 +84,8 @@ def autocast_from_config(config: dict | None) -> Iterator[None]:
 
 __all__ = [
     "PrecisionConfig",
+    "PrecisionType",
     "autocast",
     "autocast_from_config",
     "fp8_autocast",
-    "PrecisionType",
 ]

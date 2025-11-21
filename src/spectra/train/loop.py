@@ -6,10 +6,10 @@ without needing a full training stack.
 from __future__ import annotations
 
 import random
+from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Iterator, Optional
 
 import numpy as np
 import torch
@@ -36,7 +36,7 @@ class TrainingConfig:
     precision: PrecisionConfig = field(default_factory=PrecisionConfig)
     sdp_preference: SDPBackend = "flash"
     gradient_checkpointing: bool = False
-    checkpoint_path: Optional[Path] = None
+    checkpoint_path: Path | None = None
 
 
 class ToyModel(nn.Module):
@@ -63,7 +63,7 @@ class ToyModel(nn.Module):
 def _seed_all(seed: int, rank: int) -> None:
     """Seed Python, NumPy, and PyTorch RNGs in a rank-dependent way."""
     torch.manual_seed(seed + rank)
-    np.random.seed(seed + rank)
+    np.random.default_rng(seed + rank)
     random.seed(seed + rank)
 
 
@@ -88,8 +88,8 @@ def _build_optimizer(model: nn.Module, cfg: TrainingConfig) -> torch.optim.Optim
 class CheckpointState:
     model: dict
     optimizer: dict
-    scheduler: Optional[dict]
-    scaler: Optional[dict]
+    scheduler: dict | None
+    scaler: dict | None
     step: int
     config: dict
 
@@ -98,8 +98,8 @@ def save_checkpoint(
     path: Path,
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
-    scheduler: Optional[_LRScheduler],
-    scaler: Optional[torch.cuda.amp.GradScaler],
+    scheduler: _LRScheduler | None,
+    scaler: torch.cuda.amp.GradScaler | None,
     step: int,
     cfg: TrainingConfig,
 ) -> None:
@@ -127,9 +127,9 @@ def load_checkpoint(
     path: Path,
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
-    scheduler: Optional[_LRScheduler],
-    scaler: Optional[torch.cuda.amp.GradScaler],
-    device: Optional[torch.device] = None,
+    scheduler: _LRScheduler | None,
+    scaler: torch.cuda.amp.GradScaler | None,
+    device: torch.device | None = None,
 ) -> int:
     """Load model/optimizer/(optional) scheduler + scaler from disk.
 
@@ -169,11 +169,11 @@ def _generate_batch(
 def train_one_epoch(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
-    scaler: Optional[torch.cuda.amp.GradScaler],
+    scaler: torch.cuda.amp.GradScaler | None,
     cfg: TrainingConfig,
     rank: int,
     start_step: int = 0,
-    device: Optional[torch.device] = None,
+    device: torch.device | None = None,
 ) -> list[float]:
     """Run a full training run from start_step → cfg.steps on a single rank."""
     device = device or (
@@ -252,9 +252,9 @@ def train_ddp(
 
 
 __all__ = [
-    "TrainingConfig",
     "ToyModel",
-    "train_ddp",
-    "save_checkpoint",
+    "TrainingConfig",
     "load_checkpoint",
+    "save_checkpoint",
+    "train_ddp",
 ]

@@ -1,9 +1,9 @@
 from .loop import (
-    TrainingConfig,
     ToyModel,
+    TrainingConfig,
     load_checkpoint,
     save_checkpoint,
     train_ddp,
 )
 
-__all__ = ["TrainingConfig", "ToyModel", "train_ddp", "save_checkpoint", "load_checkpoint"]
+__all__ = ["ToyModel", "TrainingConfig", "load_checkpoint", "save_checkpoint", "train_ddp"]

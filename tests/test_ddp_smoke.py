@@ -47,7 +47,7 @@ def ddp_smoketest() -> None:
     assert len(second_half) == 10
 
     resumed = first_half + second_half
-    for idx, (ref, got) in enumerate(zip(baseline, resumed)):
+    for idx, (ref, got) in enumerate(zip(baseline, resumed, strict=True)):
         if ref == 0:
             continue
         delta = abs(ref - got) / abs(ref)

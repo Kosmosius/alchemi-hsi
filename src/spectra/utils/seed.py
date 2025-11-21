@@ -111,7 +111,6 @@ def seed_everything(
     )
 
     random.seed(full_seed)
-    np.random.seed(full_seed)
     generator = np.random.default_rng(full_seed)
     _MASK_RNG = generator
 
@@ -132,7 +131,7 @@ def seed_worker(worker_id: int) -> None:
     :func:`seed_everything`.
     """
     worker_seed = (torch.initial_seed() + worker_id) % np.iinfo(np.int32).max
-    np.random.seed(worker_seed)
+    np.random.default_rng(worker_seed)
     random.seed(worker_seed)
 
 

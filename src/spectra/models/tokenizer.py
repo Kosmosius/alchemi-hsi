@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -34,14 +33,16 @@ class SpectralTokenizer(nn.Module):
             include_log_lambda=self.config.include_log_lambda,
             include_normalized_wavelength=self.config.include_normalized_wavelength,
         )
-        self.per_band_feature_dim = self.config.context_size * self.config.context_size + self.pos_enc.output_dim
+        self.per_band_feature_dim = (
+            self.config.context_size * self.config.context_size + self.pos_enc.output_dim
+        )
 
     def forward(
         self,
         cube: torch.Tensor,
         wavelengths_nm: torch.Tensor,
-        band_valid_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor | Dict[str, object]]]:
+        band_valid_mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor | dict[str, object]]]:
         if cube.ndim == 3:
             cube = cube.unsqueeze(0)
         if cube.ndim != 4:
@@ -103,9 +104,11 @@ class SpectralTokenizer(nn.Module):
         band_pad_mask = ~mask
         feature_mask = mask.view(batch, 1, bands).expand(batch, height * width, bands)
         if self.config.context_size > 1:
-            feature_mask = feature_mask.repeat(1, 1, self.config.context_size * self.config.context_size)
+            feature_mask = feature_mask.repeat(
+                1, 1, self.config.context_size * self.config.context_size
+            )
 
-        token_info: Dict[str, torch.Tensor | Dict[str, object]] = {
+        token_info: dict[str, torch.Tensor | dict[str, object]] = {
             "attn_mask": attn_mask,
             "band_pad_mask": band_pad_mask,
             "band_mask": feature_mask,
@@ -120,4 +123,4 @@ class SpectralTokenizer(nn.Module):
         return tokens, token_info
 
 
-__all__ = ["TokenizerConfig", "SpectralTokenizer"]
+__all__ = ["SpectralTokenizer", "TokenizerConfig"]
