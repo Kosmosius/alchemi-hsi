@@ -1,8 +1,9 @@
 ## Experiment configuration and reproducibility
 
 Training entrypoints consume YAML configs in ``configs/`` and share a small,
-central schema defined in ``src/alchemi/config.py``. Each config can include a
-``global`` block to standardize runtime settings:
+central schema defined in ``src/alchemi/config.py`` (see ``docs/CONFIG.md`` for
+the full guide). Each config can include a ``global`` block to standardize
+runtime settings:
 
 ```yaml
 global:

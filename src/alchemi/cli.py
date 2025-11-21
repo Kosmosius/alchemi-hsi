@@ -160,7 +160,11 @@ def validate_data(config: str = "configs/data.yaml") -> None:
 
 
 @app.command(
-    help="Synthetic MAE sandbox for masking/throughput baselines."
+    help=(
+        "Synthetic MAE sandbox for masking/throughput baselines. Config YAMLs "
+        "share the global RuntimeConfig schema from src/alchemi/config.py; see "
+        "docs/CONFIG.md."
+    )
 )  # type: ignore[misc]
 @handle_cli_exceptions
 def pretrain_mae(
@@ -192,7 +196,14 @@ def align_train(
         None, "--seed", help="Override random seed configured in the YAML file"
     ),
 ) -> None:
-    """Run the mainline CLIP-style alignment trainer used for the encoder."""
+    """Run the mainline CLIP-style alignment trainer used for the encoder.
+
+    The config YAML shares the global ``RuntimeConfig`` block with the MAE
+    harness (see ``docs/CONFIG.md``) and uses the dataclass-backed
+    ``AlignmentExperimentConfig`` sections under ``trainer``, ``data``,
+    ``tokenizer``, ``model``, ``optimizer``, ``loss``, ``cycle``, and optional
+    ``banddepth`` entries.
+    """
     trainer = AlignmentTrainer.from_yaml(cfg, seed_override=seed)
     trainer.train(max_steps=max_steps)
 
