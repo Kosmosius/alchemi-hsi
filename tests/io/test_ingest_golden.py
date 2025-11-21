@@ -13,14 +13,15 @@ from alchemi.data.io import (
     load_hytes_l1b_bt,
 )
 
-
 rasterio = pytest.importorskip("rasterio")
 
 
 def _write_emit_fixture(path):
     width, height, bands = 4, 3, 5
     wavelengths_um = np.array([0.42, 0.65, 1.42, 1.93, 2.25], dtype=np.float32)
-    radiance_um = np.arange(bands * height * width, dtype=np.float32).reshape(bands, height, width) + 1.0
+    radiance_um = (
+        np.arange(bands * height * width, dtype=np.float32).reshape(bands, height, width) + 1.0
+    )
 
     with rasterio.open(
         path,
@@ -62,7 +63,9 @@ def _write_enmap_slice(path, wavelengths_um, radiance_value, units, mask=None):
 
 def _write_aviris_fixture(path):
     wavelengths = np.array([410.0, 870.0, 1050.0, 2100.0], dtype=np.float64)
-    radiance = np.arange(2 * 2 * wavelengths.size, dtype=np.float64).reshape(wavelengths.size, 2, 2) + 5.0
+    radiance = (
+        np.arange(2 * 2 * wavelengths.size, dtype=np.float64).reshape(wavelengths.size, 2, 2) + 5.0
+    )
 
     ds = xr.Dataset(
         {
@@ -76,7 +79,9 @@ def _write_aviris_fixture(path):
 
 
 def _write_hytes_fixture(path):
-    data = np.linspace(280.0, 320.0, num=HYTES_BAND_COUNT * 2 * 2, dtype=np.float64).reshape(HYTES_BAND_COUNT, 2, 2)
+    data = np.linspace(280.0, 320.0, num=HYTES_BAND_COUNT * 2 * 2, dtype=np.float64).reshape(
+        HYTES_BAND_COUNT, 2, 2
+    )
 
     raw = xr.Dataset(
         {"BrightnessTemperature": (("band", "y", "x"), data, {"units": "K"})},
@@ -104,8 +109,12 @@ def test_emit_golden_ingest(tmp_path):
 def test_enmap_golden_ingest(tmp_path):
     vnir_path = tmp_path / "vnir.nc"
     swir_path = tmp_path / "swir.nc"
-    _write_enmap_slice(vnir_path, [0.45, 0.55, 0.65], radiance_value=1.5, units="W m-2 sr-1 um-1", mask=[1, 0, 1])
-    _write_enmap_slice(swir_path, [1.20, 1.40], radiance_value=4.0, units="W m-2 sr-1 nm-1", mask=[0, 1])
+    _write_enmap_slice(
+        vnir_path, [0.45, 0.55, 0.65], radiance_value=1.5, units="W m-2 sr-1 um-1", mask=[1, 0, 1]
+    )
+    _write_enmap_slice(
+        swir_path, [1.20, 1.40], radiance_value=4.0, units="W m-2 sr-1 nm-1", mask=[0, 1]
+    )
 
     ds = load_enmap_l1b(vnir_path, swir_path)
     assert ds["radiance"].shape == (2, 3, 5)

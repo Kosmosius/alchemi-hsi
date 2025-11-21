@@ -12,7 +12,7 @@ import json
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 
@@ -242,7 +242,9 @@ class Cube:
 
         height, width, _ = self.shape
         if not (0 <= row < height and 0 <= col < width):
-            raise IndexError(f"Pixel indices out of bounds for cube shape {self.shape}: {(row, col)}")
+            raise IndexError(
+                f"Pixel indices out of bounds for cube shape {self.shape}: {(row, col)}"
+            )
 
         kind_map = {
             "radiance": SpectrumKind.RADIANCE,
@@ -318,7 +320,7 @@ class Cube:
         tile_w: int,
         step_h: int | None = None,
         step_w: int | None = None,
-    ) -> Iterator[tuple[slice, slice, "Cube"]]:
+    ) -> Iterator[tuple[slice, slice, Cube]]:
         """Iterate over spatial tiles of the cube.
 
         Parameters

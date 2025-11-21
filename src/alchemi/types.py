@@ -1,16 +1,15 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-import logging
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 from alchemi.utils.integrate import np_integrate as _np_integrate
-
 
 logger = logging.getLogger(__name__)
 
