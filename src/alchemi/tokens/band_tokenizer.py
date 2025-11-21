@@ -1,4 +1,37 @@
-"""Tokenisation primitives for per-band spectral encodings."""
+"""Tokenisation primitives for per-band spectral encodings.
+
+``BandTokenizer`` consumes per-band spectra and augments each band with
+positional and optional instrument metadata before projecting the features into
+tokens. Inputs are expected to be one-dimensional spectra; batching is not
+currently supported.
+
+Key expectations
+----------------
+* ``values``: shape ``(C,)`` of per-band measurements.
+* ``axis``: shape ``(C,)`` spectral coordinate matching ``values``.
+* ``width``: optional scalar or array. If an array is provided it must be
+  shape-compatible with ``axis`` (``(C,)``). Scalars are broadcast to ``C``.
+* ``srf_row``: optional sensor-response features aligned to bands. Must have
+  the same leading dimension as ``values``/``axis``; either ``(C,)`` or
+  ``(C, S)`` where ``S`` is the number of SRF-derived features.
+
+Units and normalisation
+-----------------------
+* ``axis_unit`` describes the provided coordinates and must be either
+  ``"nm"`` (wavelength) or ``"cm-1"`` (wavenumber). Values are internally
+  converted to the configured :class:`BandTokConfig.lambda_unit` before
+  normalisation.
+* ``value_norm`` controls how ``values`` are scaled: ``"none"`` leaves them
+  unchanged, ``"per_spectrum_zscore"`` and ``"robust"`` compute statistics per
+  input spectrum, and ``"global_zscore"`` expects precomputed statistics.
+  When ``global_zscore`` is selected, :class:`ValueStats` must be supplied at
+  construction time; otherwise a ``ValueError`` is raised when calling the
+  tokenizer.
+* ``include_width`` toggles whether band full-width-at-half-maximum metadata is
+  incorporated (using defaults when ``width`` is omitted).
+* ``include_srf_embed`` enables SRF feature projection when ``srf_row`` is
+  supplied; SRF data is ignored when this flag is ``False``.
+"""
 
 from __future__ import annotations
 
@@ -95,9 +128,24 @@ class BandTokenizer:
         vals = np.asarray(values, dtype=np.float64)
         coords = np.asarray(axis, dtype=np.float64)
         if vals.ndim != 1 or coords.ndim != 1:
-            raise ValueError("values and axis must be one-dimensional")
+            msg = "values and axis must be one-dimensional (shape (C,))"
+            raise ValueError(msg)
         if vals.shape != coords.shape:
-            raise ValueError("values and axis must have matching lengths")
+            msg = (
+                "values and axis must have matching lengths; "
+                f"got values shape {vals.shape} and axis shape {coords.shape}"
+            )
+            raise ValueError(msg)
+        channels = vals.shape[0]
+
+        if cfg.include_srf_embed and srf_row is not None:
+            srf_arr = np.asarray(srf_row)
+            if srf_arr.shape[0] != channels:
+                msg = (
+                    "srf_row must align with the spectral axis; "
+                    f"expected {channels} rows, got {srf_arr.shape[0]}"
+                )
+                raise ValueError(msg)
 
         axis_nm = self._to_nm(coords, axis_unit)
         axis_target = self._convert_axis(coords, axis_unit, cfg.lambda_unit)
@@ -218,7 +266,11 @@ class BandTokenizer:
             if arr.ndim == 0:
                 arr = np.full(axis_nm.shape, float(arr), dtype=np.float64)
             if arr.shape != axis_nm.shape:
-                raise ValueError("width must align with the spectral axis")
+                msg = (
+                    "width must align with the spectral axis; "
+                    f"expected shape {axis_nm.shape}, got {arr.shape}"
+                )
+                raise ValueError(msg)
             if axis_unit == "cm-1":
                 # Convert from wavenumber (cm^-1) to nanometres via derivative dλ/dnu.
                 nu = 1.0e7 / axis_nm
