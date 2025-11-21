@@ -390,15 +390,25 @@ class Cube:
         Parameters
         ----------
         tokenizer:
-            :class:`BandTokenizer` instance. When ``None`` a default preset is
-            selected based on :attr:`axis_unit` and :attr:`srf_id`.
+            :class:`BandTokenizer` instance. When ``None`` a preset from
+            :func:`alchemi.tokens.registry.get_default_tokenizer` is selected
+            based on the cube's resolved sensor id (``srf_id`` / ``sensor``) and
+            axis units (``axis_unit`` translated to ``"nm"`` or ``"cm-1"``).
         reducer:
             Callable used to collapse the spatial dimensions into a single
             spectrum. Defaults to a ``nanmean`` across all pixels.
         width:
             Optional full-width-at-half-maximum metadata aligned with the
             spectral axis. When omitted the method attempts to source the data
-            from cube attributes before delegating to tokenizer heuristics.
+            from cube attributes before delegating to tokenizer heuristics (for
+            example, synthetic widths via :func:`alchemi.srf.utils.default_band_widths`).
+
+        Notes
+        -----
+        If the chosen tokenizer includes SRF embeddings, SRF features are
+        lazily loaded using the resolved sensor id. When the SRF centres match
+        the cube axis (or its nanometre conversion) within tolerance,
+        ``srf_row`` is passed to the tokenizer; otherwise SRF data is ignored.
         """
 
         axis_unit: AxisUnit = "nm" if self.axis_unit == "wavelength_nm" else "cm-1"
