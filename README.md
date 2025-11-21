@@ -29,6 +29,10 @@ for row_slice, col_slice, tile in cube.iter_tiles(tile_h=64, tile_w=64):
 
 Edges are handled automatically, so partial tiles at the borders are yielded with the correct shape.
 
+For experiment knobs and YAML shapes, the canonical schemas live in
+[`docs/CONFIG.md`](docs/CONFIG.md); both training entrypoints share the
+``global`` block defined in `src/alchemi/config.py`.
+
 ## Pretraining ablations
 
 A lightweight synthetic harness in `scripts/ablate_pretrain.py` sweeps masking ratios, grouping modes/sizes, and any-sensor ingest. It emits one CSV per run plus reconstruction-MSE and throughput plots under `outputs/ablations/`, and reports a retrieval@1 sanity check over a toy probe set.
