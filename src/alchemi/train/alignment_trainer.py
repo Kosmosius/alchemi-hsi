@@ -123,9 +123,7 @@ class AlignmentExperimentConfig:
                 device=str(cfg.get("device", "cpu")),
                 dtype=str(cfg.get("dtype", "float32")),
                 seed=int(cfg.get("seed", 0)),
-                grad_clip_norm=(
-                    float(cfg["grad_clip_norm"]) if "grad_clip_norm" in cfg else None
-                ),
+                grad_clip_norm=(float(cfg["grad_clip_norm"]) if "grad_clip_norm" in cfg else None),
                 use_amp=bool(cfg.get("use_amp", False)),
                 amp_dtype=str(cfg.get("amp_dtype", "bfloat16")),
             )

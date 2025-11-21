@@ -6,7 +6,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from alchemi import cli
-from alchemi.models.mae_baselines import BASELINES, available_baselines
+from alchemi.models.mae_baselines import available_baselines
 
 
 def test_mae_cli_exposes_baseline_flags() -> None:

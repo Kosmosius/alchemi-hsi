@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any
 
 import torch
-from torch.utils.data import DataLoader, Dataset, IterableDataset
+from torch.utils.data import DataLoader, IterableDataset
 
 try:  # pragma: no cover - optional dependency
     from lightning import LightningDataModule
@@ -20,21 +21,22 @@ except Exception:  # pragma: no cover - fallback
             def __init__(self, *args: Any, **kwargs: Any) -> None:
                 super().__init__()
 
-            def setup(self, stage: str | None = None) -> None:  # noqa: D401
+            def setup(self, stage: str | None = None) -> None:
                 """Placeholder setup."""
 
-            def train_dataloader(self) -> Iterable[Any]:  # noqa: D401
+            def train_dataloader(self) -> Iterable[Any]:
                 """Placeholder train loader."""
 
-            def val_dataloader(self) -> Iterable[Any]:  # noqa: D401
+            def val_dataloader(self) -> Iterable[Any]:
                 """Placeholder val loader."""
 
-            def test_dataloader(self) -> Iterable[Any]:  # noqa: D401
+            def test_dataloader(self) -> Iterable[Any]:
                 """Placeholder test loader."""
 
 
-from .spectralearth import SpectralEarthDataset
 from spectra.utils.seed import seed_everything
+
+from .spectralearth import SpectralEarthDataset
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +173,9 @@ class SpectralEarthDataModule(LightningDataModule):
     # ------------------------------------------------------------------
     # DataLoaders
     # ------------------------------------------------------------------
-    def _loader(self, dataset: SpectralEarthDataset | None, shuffle: bool) -> DataLoader[dict[str, Any]]:
+    def _loader(
+        self, dataset: SpectralEarthDataset | None, shuffle: bool
+    ) -> DataLoader[dict[str, Any]]:
         if dataset is None:
             msg = "DataModule.setup() must be called before requesting dataloaders"
             raise RuntimeError(msg)
@@ -264,9 +268,9 @@ class SyntheticInfiniteDataModule(LightningDataModule):
 
 
 __all__ = [
-    "pad_collate",
-    "SpectralEarthDataModule",
     "DataConfig",
     "RandomCubeDataset",
+    "SpectralEarthDataModule",
     "SyntheticInfiniteDataModule",
+    "pad_collate",
 ]

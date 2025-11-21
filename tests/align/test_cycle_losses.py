@@ -29,9 +29,7 @@ def test_cycle_continuum_and_slope_losses_reduce():
     )
     heads = CycleReconstructionHeads(lab_dim, sensor_dim, config)
 
-    z_lab, z_sensor, lab_tokens, sensor_tokens = _synthetic_alignment(
-        batch, lab_dim, sensor_dim
-    )
+    z_lab, z_sensor, lab_tokens, sensor_tokens = _synthetic_alignment(batch, lab_dim, sensor_dim)
 
     loss, init_breakdown = heads.cycle_loss(z_lab, z_sensor, lab_tokens, sensor_tokens)
     init_cont = init_breakdown["lab_cont_mse"] + init_breakdown["sensor_cont_mse"]

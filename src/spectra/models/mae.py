@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import torch
 from torch import nn
@@ -32,14 +31,18 @@ class MAEConfig:
 class SpectralMAE(nn.Module):
     def __init__(
         self,
-        config: Optional[MAEConfig] = None,
-        posenc_config: Optional[PosEncConfig] = None,
-        tokenizer_config: Optional[TokenizerConfig] = None,
+        config: MAEConfig | None = None,
+        posenc_config: PosEncConfig | None = None,
+        tokenizer_config: TokenizerConfig | None = None,
     ) -> None:
         super().__init__()
         self.config = config or MAEConfig()
-        self.tokenizer = SpectralTokenizer(tokenizer_config or TokenizerConfig(context_size=self.config.context_size))
-        self.posenc = WavelengthPositionalEncoding(posenc_config or PosEncConfig(dim=self.config.encoder_dim))
+        self.tokenizer = SpectralTokenizer(
+            tokenizer_config or TokenizerConfig(context_size=self.config.context_size)
+        )
+        self.posenc = WavelengthPositionalEncoding(
+            posenc_config or PosEncConfig(dim=self.config.encoder_dim)
+        )
         posenc_dim = self.posenc.config.dim
         self.masker = MaskingHelper(
             MaskingConfig(

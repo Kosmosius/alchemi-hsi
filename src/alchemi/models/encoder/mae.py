@@ -37,8 +37,8 @@ class MAEEncoder(nn.Module):
         self.use_posenc = use_posenc
         # If positional encoding is enabled, either use the provided module or
         # fall back to a simple learnable embedding over token positions.
-        self.posenc: nn.Module | None = None if not use_posenc else (
-            posenc or nn.Embedding(max_tokens, embed_dim)
+        self.posenc: nn.Module | None = (
+            None if not use_posenc else (posenc or nn.Embedding(max_tokens, embed_dim))
         )
 
     def forward(self, tokens: Tensor, key_padding_mask: Tensor | None = None) -> Tensor:
@@ -147,12 +147,15 @@ class MaskedAutoencoder(nn.Module):
         # --- persist mask config if requested ---
         if persist_dir is not None:
             run_dir = Path(persist_dir)
-            run_dir = run_dir / f"run-{self.mask_cfg.mask_seed if self.mask_cfg.mask_seed is not None else 'default'}"
+            run_dir = (
+                run_dir
+                / f"run-{self.mask_cfg.mask_seed if self.mask_cfg.mask_seed is not None else 'default'}"
+            )
             self.mask_cfg.persist(run_dir)
 
         # --- apply spatial masking on tokens ---
-        visible_tokens = tokens[:, spatial_mask]      # (B, T_keep, C)
-        masked_tokens = tokens[:, ~spatial_mask]      # (B, T_mask, C)
+        visible_tokens = tokens[:, spatial_mask]  # (B, T_keep, C)
+        masked_tokens = tokens[:, ~spatial_mask]  # (B, T_mask, C)
 
         # Zero-out masked spectral bands on visible tokens.
         visible_tokens_masked = visible_tokens.clone()
@@ -212,9 +215,7 @@ class MaskedAutoencoder(nn.Module):
             loss_terms.append(0.1 * loss_all)
 
         total_loss = (
-            torch.stack(loss_terms).sum()
-            if loss_terms
-            else torch.tensor(0.0, device=tokens.device)
+            torch.stack(loss_terms).sum() if loss_terms else torch.tensor(0.0, device=tokens.device)
         )
 
         return MAEOutput(decoded, spatial_mask, spectral_mask, total_loss)

@@ -6,10 +6,10 @@ import argparse
 import csv
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from statistics import mean, pstdev
-from typing import Callable
 
 import yaml
 

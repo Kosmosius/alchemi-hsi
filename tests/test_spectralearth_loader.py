@@ -56,7 +56,6 @@ def test_collate_padding() -> None:
         assert torch.all(valid[b:] == 0)
 
 
-
 def spectraleart_loader_smoketest(tmp_path: Path) -> None:
     root = tmp_path / "spectralearth"
     root.mkdir()
@@ -107,7 +106,9 @@ def spectraleart_loader_smoketest(tmp_path: Path) -> None:
     )
     dm_again.setup()
     assert dm.train_set is not None and dm_again.train_set is not None
-    assert [s.scene_id for s in dm.train_set.samples] == [s.scene_id for s in dm_again.train_set.samples]
+    assert [s.scene_id for s in dm.train_set.samples] == [
+        s.scene_id for s in dm_again.train_set.samples
+    ]
 
     images_seen = 0
     start = time.perf_counter()

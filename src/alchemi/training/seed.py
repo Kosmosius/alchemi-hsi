@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+
 from spectra.utils.seed import seed_everything as _spectra_seed
 
 _NP_GENERATOR: np.random.Generator | None = None

@@ -8,8 +8,8 @@ conventions used throughout Alchemi.
 from __future__ import annotations
 
 import warnings
+from collections.abc import Mapping, MutableMapping, Sequence
 from pathlib import Path
-from typing import Mapping, MutableMapping, Sequence
 
 import numpy as np
 

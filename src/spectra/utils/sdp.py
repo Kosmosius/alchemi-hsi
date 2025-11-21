@@ -1,8 +1,10 @@
 """Selective SDP/FlashAttention helpers."""
+
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator, Literal
+from typing import Literal
 
 import torch
 
@@ -53,4 +55,4 @@ def select_sdp_backend(preference: SDPBackend) -> Iterator[None]:
         available.enable_math(original[2])
 
 
-__all__ = ["select_sdp_backend", "SDPBackend"]
+__all__ = ["SDPBackend", "select_sdp_backend"]

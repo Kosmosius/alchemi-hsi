@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Tuple
 
 import torch
 from torch import nn
@@ -28,7 +27,7 @@ class MaskingHelper(nn.Module):
         self._seed_tensor.add_(1)
         return g
 
-    def spatial_mask(self, tokens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def spatial_mask(self, tokens: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         batch, num_tokens, _ = tokens.shape
         keep = max(1, int((1 - self.config.spatial_mask_ratio) * num_tokens))
         rng = self._rng()
@@ -41,13 +40,15 @@ class MaskingHelper(nn.Module):
     def spectral_mask(self, band_mask: torch.Tensor) -> torch.Tensor:
         batch, bands = band_mask.shape
         rng = self._rng()
-        keep = (1 - self.config.spectral_mask_ratio)
+        keep = 1 - self.config.spectral_mask_ratio
         probs = torch.rand(batch, bands, generator=rng, device=band_mask.device)
         spec_mask = probs > keep
         spec_mask = torch.where(band_mask, spec_mask, torch.ones_like(spec_mask))
         return spec_mask
 
-    def combined_mask(self, tokens: torch.Tensor, band_mask: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def combined_mask(
+        self, tokens: torch.Tensor, band_mask: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
         spatial_mask, keep_idx = self.spatial_mask(tokens)
         spectral_mask = self.spectral_mask(band_mask)
         return {

@@ -96,6 +96,7 @@ class NoiseConfig:
             raise ValueError("noise levels must be non-negative")
         return levels
 
+
 _LabSpectrum = tuple[np.ndarray, np.ndarray]
 
 

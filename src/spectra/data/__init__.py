@@ -13,7 +13,7 @@ __all__ = [
     "DataConfig",
     "RandomCubeDataset",
     "SpectralEarthDataModule",
-    "SyntheticInfiniteDataModule",
     "SpectralEarthDataset",
+    "SyntheticInfiniteDataModule",
     "pad_collate",
 ]

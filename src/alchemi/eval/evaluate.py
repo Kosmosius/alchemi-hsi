@@ -24,9 +24,7 @@ def evaluate_solids(
     return out
 
 
-def evaluate_gases(
-    mask_true: np.ndarray, score_map: np.ndarray, thresh: float = 0.5
-) -> PRAUCIou:
+def evaluate_gases(mask_true: np.ndarray, score_map: np.ndarray, thresh: float = 0.5) -> PRAUCIou:
     return pr_auc_iou(np.asarray(mask_true), np.asarray(score_map), thresh)
 
 

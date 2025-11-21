@@ -6,18 +6,18 @@ loss and throughput for quick comparisons. The underlying computations are
 synthetic to keep tests fast while still exercising the orchestration code
 paths (grid construction, logging, plotting).
 """
+
 from __future__ import annotations
 
 import csv
 import math
 import time
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
 
 import numpy as np
 import typer
-
 from spectra.utils.plotting import plot_metric_bars
 
 # Search space

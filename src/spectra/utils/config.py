@@ -4,6 +4,7 @@ This module provides a small Hydra-style loader that composes multiple YAML
 files and optional in-memory overrides. The packaged ``defaults.yaml`` serves
 as a base layer for spectra-based experiments.
 """
+
 from __future__ import annotations
 
 import copy

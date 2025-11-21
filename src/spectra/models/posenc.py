@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional
 
 import torch
 from torch import nn
@@ -17,7 +16,7 @@ class PosEncConfig:
 class WavelengthPositionalEncoding(nn.Module):
     """Fourier features computed over wavelengths expressed in nanometers."""
 
-    def __init__(self, config: Optional[PosEncConfig] = None) -> None:
+    def __init__(self, config: PosEncConfig | None = None) -> None:
         super().__init__()
         self.config = config or PosEncConfig()
         freq_bands = 2.0 ** torch.linspace(0, self.config.max_freq_log2, self.config.dim // 4)
@@ -30,10 +29,22 @@ class WavelengthPositionalEncoding(nn.Module):
             raise ValueError("pad_mask must match wavelengths")
 
         eps = 1e-6
-        valid_waves = torch.where(pad_mask, wavelengths_nm, torch.tensor(float("inf"), device=wavelengths_nm.device))
-        min_w = torch.where(valid_waves.isfinite().any(dim=1, keepdim=True), valid_waves.min(dim=1, keepdim=True).values, torch.zeros_like(valid_waves[:, :1]))
-        valid_waves = torch.where(pad_mask, wavelengths_nm, torch.tensor(float("-inf"), device=wavelengths_nm.device))
-        max_w = torch.where(valid_waves.isfinite().any(dim=1, keepdim=True), valid_waves.max(dim=1, keepdim=True).values, torch.ones_like(valid_waves[:, :1]))
+        valid_waves = torch.where(
+            pad_mask, wavelengths_nm, torch.tensor(float("inf"), device=wavelengths_nm.device)
+        )
+        min_w = torch.where(
+            valid_waves.isfinite().any(dim=1, keepdim=True),
+            valid_waves.min(dim=1, keepdim=True).values,
+            torch.zeros_like(valid_waves[:, :1]),
+        )
+        valid_waves = torch.where(
+            pad_mask, wavelengths_nm, torch.tensor(float("-inf"), device=wavelengths_nm.device)
+        )
+        max_w = torch.where(
+            valid_waves.isfinite().any(dim=1, keepdim=True),
+            valid_waves.max(dim=1, keepdim=True).values,
+            torch.ones_like(valid_waves[:, :1]),
+        )
 
         norm = (wavelengths_nm - min_w) / (max_w - min_w + eps)
         norm = norm.clamp(0, 1)
@@ -80,7 +91,7 @@ class WavelengthPosEnc(nn.Module):
     def forward(
         self,
         wavelengths_nm: torch.Tensor,
-        valid_mask: Optional[torch.Tensor] = None,
+        valid_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         w = wavelengths_nm
         if w.ndim == 1:
@@ -113,12 +124,12 @@ class WavelengthPosEnc(nn.Module):
         eps = torch.finfo(w.dtype).eps
         mask_any = valid_mask.any(dim=1, keepdim=True)
 
-        masked_min = torch.where(
-            valid_mask, w, torch.full_like(w, float("inf"))
-        ).amin(dim=1, keepdim=True)
-        masked_max = torch.where(
-            valid_mask, w, torch.full_like(w, float("-inf"))
-        ).amax(dim=1, keepdim=True)
+        masked_min = torch.where(valid_mask, w, torch.full_like(w, float("inf"))).amin(
+            dim=1, keepdim=True
+        )
+        masked_max = torch.where(valid_mask, w, torch.full_like(w, float("-inf"))).amax(
+            dim=1, keepdim=True
+        )
 
         default_min = torch.zeros_like(masked_min)
         default_max = torch.ones_like(masked_max)
@@ -136,10 +147,8 @@ class WavelengthPosEnc(nn.Module):
             feature_chunks.append(norm.unsqueeze(-1))
 
         if self.num_frequencies > 0:
-            freq_exponents = torch.arange(
-                self.num_frequencies, device=w.device, dtype=w.dtype
-            )
-            freq_scales = (2.0 ** freq_exponents) * (2.0 * math.pi)
+            freq_exponents = torch.arange(self.num_frequencies, device=w.device, dtype=w.dtype)
+            freq_scales = (2.0**freq_exponents) * (2.0 * math.pi)
             angles = norm.unsqueeze(-1) * freq_scales
 
             sin = torch.sin(angles)
@@ -176,4 +185,4 @@ class WavelengthPosEnc(nn.Module):
         return out
 
 
-__all__ = ["PosEncConfig", "WavelengthPositionalEncoding", "WavelengthPosEnc"]
+__all__ = ["PosEncConfig", "WavelengthPosEnc", "WavelengthPositionalEncoding"]

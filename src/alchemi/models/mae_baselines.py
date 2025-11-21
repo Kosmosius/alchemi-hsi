@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 
 @dataclass(frozen=True)
@@ -31,8 +31,8 @@ def rows_from_scores(steps: int, scores: Mapping[str, float]) -> list[dict[str, 
 
 
 def write_ablation_csv(path: str, steps: int, scores: Mapping[str, float]) -> None:
-    from pathlib import Path
     import csv
+    from pathlib import Path
 
     rows = rows_from_scores(steps, scores)
     with Path(path).open("w", newline="") as f:
