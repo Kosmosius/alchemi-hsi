@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import typer
@@ -73,19 +73,40 @@ def evaluate(config: str = "configs/eval.yaml") -> None:
     run_eval(config)
 
 
+SensorLiteral = Literal["emit", "enmap", "avirisng", "hytes", "mako"]
+_SENSOR_CHOICES: tuple[SensorLiteral, ...] = (
+    "emit",
+    "enmap",
+    "avirisng",
+    "hytes",
+    "mako",
+)
+SensorChoice = typer.Option(  # type: ignore[misc]
+    None,
+    "--sensor",
+    case_sensitive=False,
+    help="Explicitly specify the sensor instead of sniffing from the path.",
+    show_default=False,
+)
+
+
 @data_app.command("info")  # type: ignore[misc]
-def data_info(path: Path) -> None:
+def data_info(path: Path, sensor: SensorLiteral | None = SensorChoice) -> None:
     """Inspect a hyperspectral cube and print a short summary."""
 
-    cube = _load_cube(path)
+    cube = _load_cube(path, sensor)
     _print_cube_summary(cube)
 
 
 @data_app.command("to-canonical")  # type: ignore[misc]
-def data_to_canonical(path: Path, out: str = typer.Option("npz", "--out")) -> None:
+def data_to_canonical(
+    path: Path,
+    out: str = typer.Option("npz", "--out"),
+    sensor: SensorLiteral | None = SensorChoice,
+) -> None:
     """Write the canonical representation of a hyperspectral cube."""
 
-    cube = _load_cube(path)
+    cube = _load_cube(path, sensor)
     fmt, destination = _resolve_output_path(path, out)
 
     if fmt == "npz":
@@ -104,11 +125,9 @@ class _SniffResult:
     description: str
 
 
-def _load_cube(path: Path) -> Cube:
+def _load_cube(path: Path, sensor: SensorLiteral | None = None) -> Cube:
     path = path.expanduser()
-    sniffed = _sniff_dataset(path)
-    if sniffed is None:
-        raise typer.BadParameter(f"Could not determine sensor for: {path}")
+    sniffed = _resolve_loader(path, sensor)
     dataset = sniffed.loader()
     return Cube.from_xarray(dataset)
 
@@ -124,6 +143,43 @@ def _resolve_output_path(source: Path, out: str) -> tuple[str, Path]:
     if suffix not in {"npz", "zarr"}:
         raise typer.BadParameter("Output must be a .npz or .zarr path or format keyword")
     return suffix, destination
+
+
+def _resolve_loader(path: Path, sensor: SensorLiteral | None) -> _SniffResult:
+    if sensor is not None:
+        return _loader_for_sensor(path, sensor)
+
+    sniffed = _sniff_dataset(path)
+    if sniffed is None:
+        valid = ", ".join(_SENSOR_CHOICES)
+        raise typer.BadParameter(
+            f"Could not determine sensor for: {path}. "
+            f"Specify --sensor to override. Valid sensors: {valid}"
+        )
+    return sniffed
+
+
+def _loader_for_sensor(path: Path, sensor: SensorLiteral) -> _SniffResult:
+    sensor_lower = sensor.lower()
+    if sensor_lower == "emit":
+        return _SniffResult(lambda: load_emit_l1b(str(path)), "EMIT L1B")
+    if sensor_lower == "avirisng":
+        return _SniffResult(lambda: load_avirisng_l1b(str(path)), "AVIRIS-NG L1B")
+    if sensor_lower == "hytes":
+        return _SniffResult(lambda: load_hytes_l1b_bt(str(path)), "HyTES L1B")
+    if sensor_lower == "enmap":
+        result = _sniff_enmap(path)
+    elif sensor_lower == "mako":
+        result = _sniff_mako(path)
+    else:  # pragma: no cover - guarded by typer Choice
+        valid = ", ".join(_SENSOR_CHOICES)
+        raise typer.BadParameter(
+            f"Unknown sensor '{sensor}'. Valid sensors: {valid}"
+        )
+
+    if result is None:
+        raise typer.BadParameter(f"Could not load sensor '{sensor}' for: {path}")
+    return result
 
 
 def _sniff_dataset(path: Path) -> _SniffResult | None:
