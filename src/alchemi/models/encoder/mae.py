@@ -202,7 +202,7 @@ class MaskedAutoencoder(nn.Module):
             loss_terms.append(loss_spatial)
 
         # spectral loss: reconstruct masked bands on visible tokens
-        spectral_weight = 1.0
+        spectral_weight = float((~spectral_mask).float().mean().item())
         if (~spectral_mask).any() and spatial_mask.any():
             target_masked_bands = visible_tokens[..., ~spectral_mask]
             pred_masked_bands = decoded[:, spatial_mask][..., ~spectral_mask]
@@ -214,8 +214,9 @@ class MaskedAutoencoder(nn.Module):
             loss_all = torch.nn.functional.mse_loss(decoded, tokens)
             loss_terms.append(0.1 * loss_all)
 
-        total_loss = (
-            torch.stack(loss_terms).sum() if loss_terms else torch.tensor(0.0, device=tokens.device)
-        )
+        if loss_terms:
+            total_loss = torch.stack(loss_terms).sum()
+        else:
+            total_loss = decoded.sum() * 0
 
         return MAEOutput(decoded, spatial_mask, spectral_mask, total_loss)

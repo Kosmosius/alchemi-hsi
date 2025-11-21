@@ -70,7 +70,7 @@ ignore = ["E203"]
 "scripts/ablate_pretrain.py" = ["B008"]
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+addopts = "-ra -p no:hypothesispytest"  # Disable real Hypothesis plugin; tests use the local shim.
 testpaths = ["tests"]
 pythonpath = ["src"]
 
