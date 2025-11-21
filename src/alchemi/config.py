@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 import torch
 
@@ -21,7 +22,7 @@ class RuntimeConfig:
     @classmethod
     def from_mapping(
         cls, data: Mapping[str, Any] | None, fallback: Mapping[str, Any] | None = None
-    ) -> "RuntimeConfig":
+    ) -> RuntimeConfig:
         raw: dict[str, Any] = {}
         if fallback:
             raw.update(fallback)
@@ -35,7 +36,7 @@ class RuntimeConfig:
             deterministic=bool(raw.get("deterministic", cls.deterministic)),
         )
 
-    def with_seed(self, seed: int | None) -> "RuntimeConfig":
+    def with_seed(self, seed: int | None) -> RuntimeConfig:
         if seed is None:
             return self
         return RuntimeConfig(

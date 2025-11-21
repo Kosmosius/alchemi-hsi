@@ -15,10 +15,10 @@ from torch import nn
 from torch.cuda.amp import GradScaler
 from torch.nn.utils import clip_grad_norm_
 
-from ..config import RuntimeConfig, resolve_amp_dtype, resolve_dtype, select_device
 from ..align.batch_builders import NoiseConfig, build_emit_pairs
 from ..align.cycle import CycleConfig, CycleReconstructionHeads
 from ..align.losses import info_nce_symmetric
+from ..config import RuntimeConfig, resolve_amp_dtype, resolve_dtype, select_device
 from ..eval.retrieval import retrieval_at_k, spectral_angle_deltas
 from ..heads.banddepth import BandDepthHead, load_banddepth_config
 from ..models.set_encoder import SetEncoder
@@ -300,7 +300,8 @@ class AlignmentTrainer:
         if torch.cuda.is_available():
             torch.backends.cuda.matmul.allow_tf32 = True
         _LOG.info(
-            "Starting alignment trainer config=%s seed=%s deterministic=%s device=%s dtype=%s amp_dtype=%s",
+            "Starting alignment trainer config=%s seed=%s deterministic=%s "
+            "device=%s dtype=%s amp_dtype=%s",
             self.config_path or "<in-memory>",
             self.cfg.trainer.seed,
             self.cfg.trainer.deterministic,
