@@ -1,7 +1,5 @@
 """Loader utilities for AVIRIS-NG Level-1B products."""
 
-# mypy: ignore-errors
-
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence

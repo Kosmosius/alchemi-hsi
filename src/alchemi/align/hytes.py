@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-# mypy: ignore-errors
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
 
@@ -78,8 +77,8 @@ def build_hytes_pairs(
 def _planck_radiance_derivative(bt_K: np.ndarray, wl_nm: np.ndarray) -> np.ndarray:
     """Return ∂L/∂T for Planck radiance at ``bt_K`` and wavelengths ``wl_nm``."""
 
-    Tk = np.asarray(bt_K, dtype=np.float64)
-    wl = np.asarray(wl_nm, dtype=np.float64)
+    Tk: np.ndarray = np.asarray(bt_K, dtype=np.float64)
+    wl: np.ndarray = np.asarray(wl_nm, dtype=np.float64)
     if wl.ndim != 1:
         raise ValueError("HyTES wavelengths must be 1-D")
 
@@ -99,7 +98,7 @@ def _planck_radiance_derivative(bt_K: np.ndarray, wl_nm: np.ndarray) -> np.ndarr
     expm1_term = np.clip(expm1_term, _MIN_EXPM1, np.inf)
 
     derivative_m = prefactor * (exponent / Tk_safe) * exp_term / (expm1_term**2)
-    derivative_nm = derivative_m * _NM_TO_M
+    derivative_nm: np.ndarray = derivative_m * _NM_TO_M
     return derivative_nm
 
 

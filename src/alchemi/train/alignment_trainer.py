@@ -8,7 +8,6 @@ produces the encoder shipped to downstream tasks.
 
 from __future__ import annotations
 
-# mypy: ignore-errors
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,18 +20,18 @@ from torch import nn
 from torch.cuda.amp import GradScaler
 from torch.nn.utils import clip_grad_norm_
 
-from ..align.batch_builders import NoiseConfig, build_emit_pairs
-from ..align.cycle import CycleConfig, CycleReconstructionHeads
-from ..align.losses import info_nce_symmetric
-from ..config import RuntimeConfig, resolve_amp_dtype, resolve_dtype, select_device
-from ..eval.retrieval import retrieval_at_k, spectral_angle_deltas
-from ..heads.banddepth import BandDepthHead, load_banddepth_config
-from ..models import build_set_encoder
-from ..tokens.band_tokenizer import BandTokConfig, BandTokenizer
-from ..tokens.registry import AxisUnit
-from ..training.amp import autocast
-from ..training.seed import seed_everything
-from ..utils.logging import ThroughputMeter, get_logger
+from alchemi.align.batch_builders import NoiseConfig, build_emit_pairs
+from alchemi.align.cycle import CycleConfig, CycleReconstructionHeads
+from alchemi.align.losses import info_nce_symmetric
+from alchemi.config import RuntimeConfig, resolve_amp_dtype, resolve_dtype, select_device
+from alchemi.eval.retrieval import retrieval_at_k, spectral_angle_deltas
+from alchemi.heads.banddepth import BandDepthHead, load_banddepth_config
+from alchemi.models import build_set_encoder
+from alchemi.tokens.band_tokenizer import BandTokConfig, BandTokenizer
+from alchemi.tokens.registry import AxisUnit
+from alchemi.training.amp import autocast
+from alchemi.training.seed import seed_everything
+from alchemi.utils.logging import ThroughputMeter, get_logger
 
 _LOG = get_logger(__name__)
 
@@ -59,7 +58,8 @@ class LabGridConfig:
     num: int = 256
 
     def to_array(self) -> np.ndarray:
-        return np.linspace(self.start, self.stop, self.num, dtype=np.float64)
+        grid: np.ndarray = np.linspace(self.start, self.stop, self.num, dtype=np.float64)
+        return grid
 
 
 @dataclass(slots=True)
@@ -421,7 +421,9 @@ class AlignmentTrainer:
 
     def _estimate_bytes(self, batch: _TensorBatch) -> int:
         token_dim = int(batch.lab_tokens.shape[-1])
-        element_size = torch.tensor([], dtype=self.dtype, device=self.device).element_size()
+        element_size = int(
+            torch.tensor([], dtype=self.dtype, device=self.device).element_size()
+        )
         return self._count_tokens(batch) * token_dim * element_size
 
     def train(self, *, max_steps: int | None = None) -> list[dict[str, float]]:
@@ -612,15 +614,16 @@ class AlignmentTrainer:
     def _sample_lab_spectra(self, batch: int) -> np.ndarray:
         lam = self.lab_wavelengths
         normed = (lam - lam.min()) / (lam.max() - lam.min())
-        base = 0.5 + 0.5 * np.sin(2.0 * np.pi * normed)[None, :]
-        spectra = np.repeat(base, batch, axis=0)
+        base: np.ndarray = 0.5 + 0.5 * np.sin(2.0 * np.pi * normed)[None, :]
+        spectra: np.ndarray = np.repeat(base, batch, axis=0)
         for _ in range(self.cfg.data.synthetic_peaks):
             centers = self._rng_lab.uniform(lam.min(), lam.max(), size=(batch, 1))
             widths = self._rng_lab.uniform(20.0, 120.0, size=(batch, 1))
             amps = self._rng_lab.uniform(0.05, 0.3, size=(batch, 1))
             spectra += amps * np.exp(-0.5 * ((lam[None, :] - centers) / widths) ** 2)
         spectra += self._rng_lab.normal(scale=self.cfg.data.lab_noise_std, size=spectra.shape)
-        return np.clip(spectra, 0.0, 2.0)
+        clipped: np.ndarray = np.clip(spectra, 0.0, 2.0)
+        return clipped
 
     def _infer_token_dim(self) -> int:
         dummy = self.tokenizer(

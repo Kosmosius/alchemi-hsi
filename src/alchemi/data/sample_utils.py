@@ -23,7 +23,12 @@ def cube_from_sample(sample: Sample) -> Cube:
     axis = np.asarray(sample.spectrum.wavelengths.nm, dtype=np.float64)
 
     sensor = None
-    attrs = dict(sample.meta)
+    attrs_raw = sample.meta
+    attrs = (
+        dict(attrs_raw)
+        if isinstance(attrs_raw, dict)
+        else attrs_raw.as_dict()
+    )
     if "sensor" in attrs:
         sensor = str(attrs["sensor"])
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-# mypy: ignore-errors
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,10 +9,10 @@ from typing import Any
 
 import numpy as np
 
-from ..srf.avirisng import avirisng_srf_matrix
-from ..srf.batch_convolve import batch_convolve_lab_to_sensor
-from ..srf.enmap import enmap_srf_matrix
-from ..srf.registry import get_srf
+from alchemi.srf.avirisng import avirisng_srf_matrix
+from alchemi.srf.batch_convolve import batch_convolve_lab_to_sensor
+from alchemi.srf.enmap import enmap_srf_matrix
+from alchemi.srf.registry import get_srf
 
 
 @dataclass(slots=True)
@@ -86,7 +85,7 @@ class NoiseConfig:
             raw = override
         else:
             raw = self.noise_level_rel
-        levels = np.asarray(raw, dtype=np.float64)
+        levels: np.ndarray = np.asarray(raw, dtype=np.float64)
         if levels.ndim == 0:
             levels = np.full((band_count,), float(levels), dtype=np.float64)
         elif levels.shape != (band_count,):
@@ -104,17 +103,17 @@ def _normalize_lab_batch(lab_batch: Sequence[_LabSpectrum]) -> tuple[np.ndarray,
     if not lab_batch:
         raise ValueError("lab_batch must contain at least one spectrum")
 
-    first_wl = np.asarray(lab_batch[0][0], dtype=np.float64)
+    first_wl: np.ndarray = np.asarray(lab_batch[0][0], dtype=np.float64)
     if first_wl.ndim != 1 or first_wl.size < 2 or np.any(np.diff(first_wl) <= 0):
         raise ValueError("Lab wavelengths must be a strictly increasing 1-D array")
 
     values: list[np.ndarray] = []
     for wl, vals in lab_batch:
-        wl_arr = np.asarray(wl, dtype=np.float64)
+        wl_arr: np.ndarray = np.asarray(wl, dtype=np.float64)
         if wl_arr.shape != first_wl.shape or not np.allclose(wl_arr, first_wl):
             msg = "All lab spectra must share the same wavelength grid"
             raise ValueError(msg)
-        val_arr = np.asarray(vals, dtype=np.float64)
+        val_arr: np.ndarray = np.asarray(vals, dtype=np.float64)
         if val_arr.ndim != 1 or val_arr.shape[0] != wl_arr.shape[0]:
             msg = "Lab spectrum values must match wavelength grid length"
             raise ValueError(msg)
@@ -130,7 +129,7 @@ def _apply_noise(
     rng: np.random.Generator,
     override_levels: float | Sequence[float] | np.ndarray | None = None,
 ) -> np.ndarray:
-    arr = np.asarray(sensor_values, dtype=np.float64)
+    arr: np.ndarray = np.asarray(sensor_values, dtype=np.float64)
     squeeze = False
     if arr.ndim == 1:
         arr = arr[None, :]
@@ -144,8 +143,8 @@ def _apply_noise(
         return arr[0] if squeeze else arr.copy()
 
     sigma = np.abs(arr) * levels.reshape(1, -1)
-    noise = rng.normal(loc=0.0, scale=1.0, size=arr.shape)
-    out = arr + noise * sigma
+    noise: np.ndarray = rng.normal(loc=0.0, scale=1.0, size=arr.shape)
+    out: np.ndarray = arr + noise * sigma
     return out[0] if squeeze else out
 
 

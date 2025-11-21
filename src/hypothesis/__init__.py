@@ -1,4 +1,3 @@
-# mypy: ignore-errors
 """Minimal stub of the Hypothesis API used in tests."""
 
 from __future__ import annotations

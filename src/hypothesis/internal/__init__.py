@@ -1,5 +1,3 @@
-# mypy: ignore-errors
-
 """Internal namespace stub for the bundled Hypothesis shim."""
 
 from .observability import _WROTE_TO

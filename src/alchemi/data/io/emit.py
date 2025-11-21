@@ -1,7 +1,5 @@
 """Helpers for loading EMIT Level-1B radiance products."""
 
-# mypy: ignore-errors
-
 from __future__ import annotations
 
 from collections.abc import Sequence

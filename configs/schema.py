@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
-class GlobalConfig(BaseModel):
+class GlobalConfig(BaseModel):  # type: ignore[misc]
     seed: int = Field(42, description="Random seed applied across libraries")
     device: str = Field(
         "auto", description="Torch device string; 'auto' picks CUDA if available"

@@ -1,5 +1,3 @@
-# mypy: ignore-errors
-
 """Minimal observability hooks for the Hypothesis pytest plugin."""
 
 # The real plugin tracks test files written during execution to emit warnings.

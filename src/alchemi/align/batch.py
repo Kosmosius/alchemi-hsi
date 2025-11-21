@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-# mypy: ignore-errors
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from ..srf import SRFRegistry, batch_convolve_lab_to_sensor
-from ..srf.avirisng import avirisng_srf_matrix
+from alchemi.srf import SRFRegistry, batch_convolve_lab_to_sensor
+from alchemi.srf.avirisng import avirisng_srf_matrix
 
 __all__ = ["build_avirisng_pairs", "build_emit_pairs", "build_enmap_pairs"]
 
 
 def _as_2d(values: np.ndarray | Sequence[float] | Sequence[Sequence[float]]) -> np.ndarray:
-    arr = np.asarray(values, dtype=np.float64)
+    arr: np.ndarray = np.asarray(values, dtype=np.float64)
     if arr.ndim == 1:
         return arr[None, :]
     if arr.ndim != 2:
@@ -40,7 +39,7 @@ def _project_lab(
     sensor: str,
     cache_dir: str | Path | None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    lab_nm_arr = np.asarray(lab_nm, dtype=np.float64)
+    lab_nm_arr: np.ndarray = np.asarray(lab_nm, dtype=np.float64)
     if lab_nm_arr.ndim != 1 or not np.all(np.diff(lab_nm_arr) > 0):
         msg = "lab_nm must be a strictly increasing 1-D array"
         raise ValueError(msg)
@@ -70,8 +69,8 @@ def _project_lab(
         msg = f"Unsupported sensor '{sensor}'"
         raise ValueError(msg)
 
-    projected = np.asarray(convolve(lab_nm_arr, lab_values, srf), dtype=np.float64)
-    mask = np.ones_like(centers, dtype=bool)
+    projected: np.ndarray = np.asarray(convolve(lab_nm_arr, lab_values, srf), dtype=np.float64)
+    mask: np.ndarray = np.ones_like(centers, dtype=bool)
     return centers, projected, mask
 
 
@@ -137,15 +136,15 @@ def build_enmap_pairs(
     centers, projected, mask = _project_lab(lab_nm, lab_reflectance, "enmap", cache_dir)
     generator = _ensure_rng(rng)
 
-    rel_levels = np.where(
+    rel_levels: np.ndarray = np.where(
         centers <= 999.0,
         float(noise_level_rel_vnir),
         float(noise_level_rel_swir),
     )
     if np.any(rel_levels > 0.0):
-        sigma = rel_levels[None, :] * np.maximum(np.abs(projected), 1e-8)
-        noise = generator.normal(loc=0.0, scale=sigma, size=projected.shape)
-        sensor = projected + noise
+        sigma: np.ndarray = rel_levels[None, :] * np.maximum(np.abs(projected), 1e-8)
+        noise: np.ndarray = generator.normal(loc=0.0, scale=sigma, size=projected.shape)
+        sensor: np.ndarray = projected + noise
     else:
         sensor = projected.copy()
     return centers, projected, sensor, mask
@@ -155,7 +154,7 @@ def build_enmap_pairs(
 
 
 def _validate_wavelengths(lab_nm: np.ndarray) -> np.ndarray:
-    nm = np.asarray(lab_nm, dtype=np.float64)
+    nm: np.ndarray = np.asarray(lab_nm, dtype=np.float64)
     if nm.ndim != 1:
         raise ValueError("lab_nm must be a 1-D array")
     if nm.size < 2:
@@ -166,7 +165,7 @@ def _validate_wavelengths(lab_nm: np.ndarray) -> np.ndarray:
 
 
 def _validate_lab_values(lab_values: np.ndarray, expected: int) -> np.ndarray:
-    values = np.asarray(lab_values, dtype=np.float64)
+    values: np.ndarray = np.asarray(lab_values, dtype=np.float64)
     if values.ndim == 1:
         values = values.reshape(1, -1)
     if values.ndim != 2:
@@ -179,7 +178,7 @@ def _validate_lab_values(lab_values: np.ndarray, expected: int) -> np.ndarray:
 def _resolve_noise(noise: float | np.ndarray | None, band_count: int) -> np.ndarray | None:
     if noise is None:
         return None
-    coeff = np.asarray(noise, dtype=np.float64)
+    coeff: np.ndarray = np.asarray(noise, dtype=np.float64)
     if coeff.ndim == 0:
         coeff = np.full((band_count,), float(coeff), dtype=np.float64)
     elif coeff.shape != (band_count,):
