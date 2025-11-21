@@ -44,7 +44,7 @@ def validate_data(config: str = "configs/data.yaml") -> None:
     validate_srf_dir(cfg.get("data", {}).get("srf_root", "data/srf"))
 
 
-@app.command()  # type: ignore[misc]
+@app.command(help="Synthetic MAE sandbox for masking/throughput baselines.")  # type: ignore[misc]
 def pretrain_mae(
     config: str = "configs/train.mae.yaml",
     no_spatial_mask: bool = typer.Option(
@@ -63,7 +63,7 @@ def align_train(
     cfg: str = typer.Option("configs/phase2/alignment.yaml", "--cfg", "-c"),
     max_steps: int | None = typer.Option(None, "--max-steps", "-m"),
 ) -> None:
-    """Run the Phase-2 alignment trainer."""
+    """Run the mainline CLIP-style alignment trainer used for the encoder."""
     trainer = AlignmentTrainer.from_yaml(cfg)
     trainer.train(max_steps=max_steps)
 
