@@ -1,7 +1,5 @@
 """COMEX Mako L2S radiance ingestion utilities."""
 
-# mypy: ignore-errors
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -60,7 +58,7 @@ def open_mako_l2s(path: Path | str) -> xr.Dataset:
 
     radiance = np.moveaxis(data, 0, -1) * _MICROFLICK_TO_W_M2_SR_NM
 
-    coords = {
+    coords: dict[str, np.ndarray] = {
         "y": np.arange(height, dtype=np.int32),
         "x": np.arange(width, dtype=np.int32),
         "band": np.arange(MAKO_BAND_COUNT, dtype=np.int32),
@@ -120,7 +118,7 @@ def open_mako_btemp(path: Path | str) -> xr.Dataset:
 
     bt_kelvin = np.moveaxis(data, 0, -1) + _CELSIUS_TO_KELVIN
 
-    coords = {
+    coords: dict[str, np.ndarray] = {
         "y": np.arange(height, dtype=np.int32),
         "x": np.arange(width, dtype=np.int32),
         "band": np.arange(MAKO_BAND_COUNT, dtype=np.int32),

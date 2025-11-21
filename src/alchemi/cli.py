@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
@@ -14,9 +15,9 @@ import typer
 import xarray as xr
 import yaml
 
-try:
+if sys.version_info >= (3, 11):
     import tomllib
-except ModuleNotFoundError:  # Python < 3.11
+else:  # pragma: no cover - Python <3.11 fallback
     import tomli as tomllib  # type: ignore[import-not-found]
 
 from .data.cube import Cube
@@ -168,7 +169,7 @@ def _read_local_version() -> str:
     return str(data.get("project", {}).get("version", "unknown"))
 
 
-@app.callback()
+@app.callback()  # type: ignore[misc]
 def main(
     version: bool = typer.Option(
         False,
@@ -276,7 +277,7 @@ _SENSOR_CHOICES: tuple[SensorLiteral, ...] = (
     "hytes",
     "mako",
 )
-SensorChoice = typer.Option(  # type: ignore[misc]
+SensorChoice = typer.Option(
     None,
     "--sensor",
     case_sensitive=False,

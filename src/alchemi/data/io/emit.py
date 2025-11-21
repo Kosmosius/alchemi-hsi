@@ -1,7 +1,5 @@
 """Helpers for loading EMIT Level-1B radiance products."""
 
-# mypy: ignore-errors
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -43,7 +41,7 @@ def load_emit_l1b(path: str, *, band_mask: bool = True) -> xr.Dataset:
         data = src.read(out_dtype=np.float64)
         data *= _radiance_scale(source_units)
 
-        coords = {
+        coords: dict[str, np.ndarray] = {
             "y": np.arange(src.height, dtype=np.int32),
             "x": np.arange(src.width, dtype=np.int32),
             "band": np.arange(src.count, dtype=np.int32),
@@ -205,7 +203,7 @@ def _radiance_scale(units: str | None) -> float:
 
 def _ensure_nanometers(values: np.ndarray, unit: str | None) -> np.ndarray:
     normalized = _normalize_units(unit) if unit is not None else None
-    out = values.astype(np.float64, copy=True)
+    out: np.ndarray = values.astype(np.float64, copy=True)
     if normalized is None:
         if np.nanmax(out) < 10.0:
             out *= 1000.0

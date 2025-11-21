@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-# mypy: ignore-errors
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from ..srf import SRFRegistry, batch_convolve_lab_to_sensor
-from ..srf.avirisng import avirisng_srf_matrix
+from alchemi.srf import SRFRegistry, batch_convolve_lab_to_sensor
+from alchemi.srf.avirisng import avirisng_srf_matrix
 
 __all__ = ["build_avirisng_pairs", "build_emit_pairs", "build_enmap_pairs"]
 
@@ -50,15 +49,19 @@ def _project_lab(
         raise ValueError(msg)
 
     if sensor.lower() == "emit":
-        from ..srf.batch_convolve import batch_convolve_lab_to_sensor as _convolve
-        from ..srf.emit import emit_srf_matrix
+        from alchemi.srf.batch_convolve import (
+            batch_convolve_lab_to_sensor as _convolve,
+        )
+        from alchemi.srf.emit import emit_srf_matrix
 
         srf = emit_srf_matrix(lab_nm_arr)
         centers = srf.centers_nm
         convolve = _convolve
     elif sensor.lower() == "enmap":
-        from ..srf.batch_convolve import batch_convolve_lab_to_sensor as _convolve
-        from ..srf.enmap import enmap_srf_matrix
+        from alchemi.srf.batch_convolve import (
+            batch_convolve_lab_to_sensor as _convolve,
+        )
+        from alchemi.srf.enmap import enmap_srf_matrix
 
         if cache_dir is None:
             srf = enmap_srf_matrix()

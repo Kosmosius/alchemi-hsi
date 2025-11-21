@@ -1,12 +1,11 @@
 """Loader utilities for AVIRIS-NG Level-1B products."""
 
-# mypy: ignore-errors
-
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import xarray as xr
@@ -40,7 +39,7 @@ def load_avirisng_l1b(path: str | Path) -> xr.Dataset:
     radiance = spectral.radiance[..., order]
 
     y_size, x_size, band_size = radiance.shape
-    coords = {
+    coords: dict[str, np.ndarray] = {
         "y": np.arange(y_size, dtype=np.int64),
         "x": np.arange(x_size, dtype=np.int64),
         "band": np.arange(band_size, dtype=np.int64),
@@ -104,7 +103,7 @@ def _read_file(path: Path) -> _SpectralData:
 
 def _read_file_hdf5(path: Path) -> _SpectralData:
     try:
-        import h5py  # type: ignore[import]
+        import h5py  # type: ignore[import-not-found]
     except ModuleNotFoundError as exc:  # pragma: no cover - exercised in fallback
         msg = "h5py is required to read AVIRIS-NG HDF5 products"
         raise ModuleNotFoundError(msg) from exc
@@ -181,7 +180,7 @@ def _read_file_netcdf(path: Path) -> _SpectralData:
     return _SpectralData(rad_values, wavelengths_nm, fwhm, mask)
 
 
-def _read_radiance_hdf5(handle, h5py_module):
+def _read_radiance_hdf5(handle: Any, h5py_module: Any) -> tuple[np.ndarray, str | None]:
     dataset = _find_dataset(handle, ["radiance", "Radiance"], h5py_module)
     if dataset is None:
         raise ValueError("Radiance dataset not found in AVIRIS-NG file")
@@ -191,7 +190,9 @@ def _read_radiance_hdf5(handle, h5py_module):
     return dataset[...], units
 
 
-def _read_array_hdf5(handle, names: Iterable[str], h5py_module):
+def _read_array_hdf5(
+    handle: Any, names: Iterable[str], h5py_module: Any
+) -> tuple[np.ndarray | None, str | None]:
     dataset = _find_dataset(handle, names, h5py_module)
     if dataset is None:
         return None, None
@@ -201,10 +202,10 @@ def _read_array_hdf5(handle, names: Iterable[str], h5py_module):
     return dataset[...], units
 
 
-def _find_dataset(handle, candidates: Iterable[str], h5py_module):
+def _find_dataset(handle: Any, candidates: Iterable[str], h5py_module: Any) -> Any | None:
     wanted = {name.lower() for name in candidates}
 
-    def _visit(group):
+    def _visit(group: Any) -> Any | None:
         for key, item in group.items():
             if isinstance(item, h5py_module.Dataset) and key.lower() in wanted:
                 return item

@@ -1,7 +1,5 @@
 """Helpers for loading HyTES Level-1B brightness-temperature products."""
 
-# mypy: ignore-errors
-
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -122,7 +120,7 @@ def load_hytes_l1b_bt(path: str | Path) -> xr.Dataset:
     sizes = {dim: size for dim, size in zip(bt.dims, bt.values.shape, strict=True)}
     y_coord = _extract_coordinate(bt, "y", sizes["y"])
     x_coord = _extract_coordinate(bt, "x", sizes["x"])
-    band_coord = np.arange(sizes["band"], dtype=np.int32)
+    band_coord: np.ndarray = np.arange(sizes["band"], dtype=np.int32)
 
     coords = {
         "y": y_coord,

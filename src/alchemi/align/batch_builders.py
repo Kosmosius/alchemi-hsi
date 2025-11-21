@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-# mypy: ignore-errors
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,10 +9,10 @@ from typing import Any
 
 import numpy as np
 
-from ..srf.avirisng import avirisng_srf_matrix
-from ..srf.batch_convolve import batch_convolve_lab_to_sensor
-from ..srf.enmap import enmap_srf_matrix
-from ..srf.registry import get_srf
+from alchemi.srf.avirisng import avirisng_srf_matrix
+from alchemi.srf.batch_convolve import batch_convolve_lab_to_sensor
+from alchemi.srf.enmap import enmap_srf_matrix
+from alchemi.srf.registry import get_srf
 
 
 @dataclass(slots=True)

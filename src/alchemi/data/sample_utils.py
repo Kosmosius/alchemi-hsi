@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict, is_dataclass
+
 import numpy as np
 
 from alchemi.data.cube import Cube
@@ -23,7 +25,13 @@ def cube_from_sample(sample: Sample) -> Cube:
     axis = np.asarray(sample.spectrum.wavelengths.nm, dtype=np.float64)
 
     sensor = None
-    attrs = dict(sample.meta)
+    meta = sample.meta
+    if is_dataclass(meta):
+        attrs = asdict(meta)
+    elif isinstance(meta, dict):
+        attrs = dict(meta)
+    else:
+        attrs = dict(meta)
     if "sensor" in attrs:
         sensor = str(attrs["sensor"])
 

@@ -8,7 +8,6 @@ produces the encoder shipped to downstream tasks.
 
 from __future__ import annotations
 
-# mypy: ignore-errors
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,18 +20,18 @@ from torch import nn
 from torch.cuda.amp import GradScaler
 from torch.nn.utils import clip_grad_norm_
 
-from ..align.batch_builders import NoiseConfig, build_emit_pairs
-from ..align.cycle import CycleConfig, CycleReconstructionHeads
-from ..align.losses import info_nce_symmetric
-from ..config import RuntimeConfig, resolve_amp_dtype, resolve_dtype, select_device
-from ..eval.retrieval import retrieval_at_k, spectral_angle_deltas
-from ..heads.banddepth import BandDepthHead, load_banddepth_config
-from ..models import build_set_encoder
-from ..tokens.band_tokenizer import BandTokConfig, BandTokenizer
-from ..tokens.registry import AxisUnit
-from ..training.amp import autocast
-from ..training.seed import seed_everything
-from ..utils.logging import ThroughputMeter, get_logger
+from alchemi.align.batch_builders import NoiseConfig, build_emit_pairs
+from alchemi.align.cycle import CycleConfig, CycleReconstructionHeads
+from alchemi.align.losses import info_nce_symmetric
+from alchemi.config import RuntimeConfig, resolve_amp_dtype, resolve_dtype, select_device
+from alchemi.eval.retrieval import retrieval_at_k, spectral_angle_deltas
+from alchemi.heads.banddepth import BandDepthHead, load_banddepth_config
+from alchemi.models import build_set_encoder
+from alchemi.tokens.band_tokenizer import BandTokConfig, BandTokenizer
+from alchemi.tokens.registry import AxisUnit
+from alchemi.training.amp import autocast
+from alchemi.training.seed import seed_everything
+from alchemi.utils.logging import ThroughputMeter, get_logger
 
 _LOG = get_logger(__name__)
 

@@ -23,17 +23,18 @@ class RuntimeConfig:
     def from_mapping(
         cls, data: Mapping[str, Any] | None, fallback: Mapping[str, Any] | None = None
     ) -> RuntimeConfig:
+        defaults = cls()
         raw: dict[str, Any] = {}
         if fallback:
             raw.update(fallback)
         if data:
             raw.update(data)
         return cls(
-            seed=int(raw.get("seed", cls.seed)),
-            device=str(raw.get("device", cls.device)),
-            dtype=str(raw.get("dtype", cls.dtype)),
+            seed=int(raw.get("seed", defaults.seed)),
+            device=str(raw.get("device", defaults.device)),
+            dtype=str(raw.get("dtype", defaults.dtype)),
             amp_dtype=str(raw["amp_dtype"]) if raw.get("amp_dtype") is not None else None,
-            deterministic=bool(raw.get("deterministic", cls.deterministic)),
+            deterministic=bool(raw.get("deterministic", defaults.deterministic)),
         )
 
     def with_seed(self, seed: int | None) -> RuntimeConfig:
