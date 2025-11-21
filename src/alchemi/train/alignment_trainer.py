@@ -1,4 +1,10 @@
-"""CLIP-style alignment trainer used for Phase-2 experiments."""
+"""Mainline CLIP-style alignment trainer used for Phase-2 experiments.
+
+This is the production-facing training path for the Alchemi encoder. The
+synthetic MAE harness under ``alchemi.training.trainer`` remains available for
+throughput and masking ablations, but this alignment trainer is the route that
+produces the encoder shipped to downstream tasks.
+"""
 
 from __future__ import annotations
 
@@ -18,12 +24,14 @@ from torch.nn.utils import clip_grad_norm_
 from ..align.batch_builders import NoiseConfig, build_emit_pairs
 from ..align.cycle import CycleConfig, CycleReconstructionHeads
 from ..align.losses import info_nce_symmetric
+from ..config import RuntimeConfig, resolve_amp_dtype, resolve_dtype, select_device
 from ..eval.retrieval import retrieval_at_k, spectral_angle_deltas
 from ..heads.banddepth import BandDepthHead, load_banddepth_config
-from ..models.set_encoder import SetEncoder
+from ..models import build_set_encoder
 from ..tokens.band_tokenizer import BandTokConfig, BandTokenizer
 from ..tokens.registry import AxisUnit
 from ..training.amp import autocast
+from ..training.seed import seed_everything
 from ..utils.logging import ThroughputMeter, get_logger
 
 _LOG = get_logger(__name__)
@@ -38,6 +46,7 @@ class TrainerConfig:
     device: str = "cpu"
     dtype: str = "float32"
     seed: int = 0
+    deterministic: bool = False
     grad_clip_norm: float | None = None
     use_amp: bool = False
     amp_dtype: str = "bfloat16"
@@ -113,6 +122,8 @@ class AlignmentExperimentConfig:
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> AlignmentExperimentConfig:
+        runtime_cfg = RuntimeConfig.from_mapping(data.get("global"), fallback=data.get("trainer"))
+
         def _build_trainer() -> TrainerConfig:
             cfg = data.get("trainer", {})
             return TrainerConfig(
@@ -120,12 +131,13 @@ class AlignmentExperimentConfig:
                 max_steps=int(cfg.get("max_steps", 10)),
                 log_every=int(cfg.get("log_every", 5)),
                 eval_every=int(cfg.get("eval_every", 5)),
-                device=str(cfg.get("device", "cpu")),
-                dtype=str(cfg.get("dtype", "float32")),
-                seed=int(cfg.get("seed", 0)),
+                device=str(cfg.get("device", runtime_cfg.device)),
+                dtype=str(cfg.get("dtype", runtime_cfg.dtype)),
+                seed=int(cfg.get("seed", runtime_cfg.seed)),
+                deterministic=bool(cfg.get("deterministic", runtime_cfg.deterministic)),
                 grad_clip_norm=(float(cfg["grad_clip_norm"]) if "grad_clip_norm" in cfg else None),
                 use_amp=bool(cfg.get("use_amp", False)),
-                amp_dtype=str(cfg.get("amp_dtype", "bfloat16")),
+                amp_dtype=cfg.get("amp_dtype", runtime_cfg.amp_dtype or "bfloat16"),
             )
 
         def _build_grid(raw: Mapping[str, Any] | Iterable[float] | None) -> LabGridConfig:
@@ -243,7 +255,7 @@ class _TokenTower(nn.Module):
     def __init__(self, token_dim: int, embed_dim: int, depth: int, heads: int) -> None:
         super().__init__()
         self.token_proj = nn.Linear(token_dim, embed_dim)
-        self.encoder = SetEncoder(dim=embed_dim, depth=depth, heads=heads)
+        self.encoder = build_set_encoder(embed_dim=embed_dim, depth=depth, heads=heads)
         self.norm = nn.LayerNorm(embed_dim)
 
     def forward(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -267,23 +279,42 @@ class _TensorBatch:
 class AlignmentTrainer:
     """Minimal CLIP-style trainer that couples lab and sensor embeddings."""
 
-    def __init__(self, config: AlignmentExperimentConfig):
+    def __init__(
+        self, config: AlignmentExperimentConfig, *, config_path: str | Path | None = None
+    ):
         self.cfg = config
+        self.config_path = Path(config_path) if config_path is not None else None
+
+        seed_everything(self.cfg.trainer.seed, self.cfg.trainer.deterministic)
         self._rng_lab = np.random.default_rng(self.cfg.trainer.seed)
         self._rng_sensor = np.random.default_rng(self.cfg.trainer.seed + 1)
-        torch.manual_seed(self.cfg.trainer.seed)
-        self.device = torch.device(self.cfg.trainer.device)
-        self.dtype = _dtype_from_str(self.cfg.trainer.dtype)
-        self._amp_dtype = _amp_dtype_from_str(self.cfg.trainer.amp_dtype)
+        self.device = select_device(self.cfg.trainer.device)
+        self.dtype = resolve_dtype(str(self.cfg.trainer.dtype))
+        self._amp_dtype = (
+            resolve_amp_dtype(str(self.cfg.trainer.amp_dtype))
+            if self.cfg.trainer.amp_dtype is not None
+            else torch.bfloat16
+        )
         self._amp_enabled = bool(self.cfg.trainer.use_amp and torch.cuda.is_available())
         self.grad_scaler = (
             GradScaler(enabled=True)
             if self._amp_enabled and self._amp_dtype == torch.float16
             else None
         )
+        torch.set_default_dtype(self.dtype)
         self._throughput = ThroughputMeter(self.device)
         if torch.cuda.is_available():
             torch.backends.cuda.matmul.allow_tf32 = True
+        _LOG.info(
+            "Starting alignment trainer config=%s seed=%s deterministic=%s "
+            "device=%s dtype=%s amp_dtype=%s",
+            self.config_path or "<in-memory>",
+            self.cfg.trainer.seed,
+            self.cfg.trainer.deterministic,
+            self.device,
+            self.dtype,
+            self._amp_dtype,
+        )
 
         self.lab_wavelengths = self.cfg.data.lab_grid_nm.to_array()
         if self.lab_wavelengths.ndim != 1 or self.lab_wavelengths.size < 2:
@@ -375,8 +406,13 @@ class AlignmentTrainer:
         )
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> AlignmentTrainer:
-        return cls(load_alignment_config(path))
+    def from_yaml(
+        cls, path: str | Path, *, seed_override: int | None = None
+    ) -> AlignmentTrainer:
+        cfg = load_alignment_config(path)
+        if seed_override is not None:
+            cfg.trainer.seed = int(seed_override)
+        return cls(cfg, config_path=path)
 
     def _count_tokens(self, batch: _TensorBatch) -> int:
         lab_tokens = int(batch.lab_mask.sum().item())
@@ -594,23 +630,3 @@ class AlignmentTrainer:
             width=self.lab_fwhm,
         )
         return int(dummy.bands.shape[-1])
-
-
-def _dtype_from_str(name: str) -> torch.dtype:
-    name = name.lower()
-    if name in {"float32", "fp32"}:
-        return torch.float32
-    if name in {"float64", "fp64", "double"}:
-        return torch.float64
-    if name in {"float16", "fp16", "half"}:
-        return torch.float16
-    raise ValueError(f"Unsupported dtype: {name}")
-
-
-def _amp_dtype_from_str(name: str) -> torch.dtype:
-    name = name.lower()
-    if name in {"bfloat16", "bf16"}:
-        return torch.bfloat16
-    if name in {"float16", "fp16", "half"}:
-        return torch.float16
-    raise ValueError(f"Unsupported amp dtype: {name}")

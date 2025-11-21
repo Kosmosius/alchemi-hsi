@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import wraps
+from importlib import metadata
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import typer
 import xarray as xr
 import yaml
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib  # type: ignore[import-not-found]
 
 from .data.cube import Cube
 from .data.io import load_avirisng_l1b, load_emit_l1b, load_enmap_l1b, load_hytes_l1b_bt
@@ -17,9 +25,23 @@ from .data.validators import validate_dataset, validate_srf_dir
 from .io.mako import open_mako_ace, open_mako_btemp, open_mako_l2s
 from .srf import SRFRegistry
 from .train.alignment_trainer import AlignmentTrainer
-from .training.seed import seed_everything
 from .training.trainer import run_eval, run_pretrain_mae
 from .utils.logging import get_logger
+
+_SUPPORTED_SENSORS = (
+    "EMIT L1B",
+    "EnMAP L1B",
+    "AVIRIS-NG L1B",
+    "HyTES L1B",
+    "Mako ACE",
+    "Mako BTEMP",
+    "Mako L2S",
+)
+_CANONICAL_DESC = (
+    "Canonical cubes store sensor-agnostic radiance values, wavelength coordinates, "
+    "band masks, and metadata in NPZ or Zarr format."
+)
+_DEBUG_ENV = "ALCHEMI_DEBUG"
 
 app = typer.Typer(add_completion=False)
 data_app = typer.Typer(add_completion=False)
@@ -29,7 +51,99 @@ app.add_typer(align_app, name="align")
 _LOG = get_logger(__name__)
 
 
+def _debug_enabled() -> bool:
+    return os.getenv(_DEBUG_ENV, "").lower() in {"1", "true", "yes", "on"}
+
+
+def _echo_error(message: str) -> None:
+    typer.echo(f"Error: {message}", err=True)
+
+
+def _log_cli_exception(exc: Exception, context: str) -> None:
+    if _debug_enabled():
+        _LOG.exception("%s", exc)
+    else:
+        _LOG.error("%s failed: %s", context, exc)
+
+
+def handle_cli_exceptions(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Provide consistent logging and user-friendly errors for CLI commands."""
+
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return func(*args, **kwargs)
+        except (typer.BadParameter, typer.Exit, KeyboardInterrupt):
+            raise
+        except (
+            FileNotFoundError,
+            OSError,
+            yaml.YAMLError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as exc:
+            _log_cli_exception(exc, func.__name__)
+            _echo_error(str(exc))
+        except Exception as exc:  # pragma: no cover - handled by debug path
+            if _debug_enabled():
+                raise
+            _LOG.exception("Unexpected error while running %s: %s", func.__name__, exc)
+            _echo_error(f"Unexpected error. Re-run with {_DEBUG_ENV}=1 for a traceback.")
+
+        raise typer.Exit(code=1)
+
+    return wrapper
+
+
+def _print_version() -> None:
+    try:
+        pkg_version = metadata.version("alchemi-hsi")
+    except metadata.PackageNotFoundError:
+        pkg_version = _read_local_version()
+
+    typer.echo(f"alchemi-hsi version: {pkg_version}")
+    typer.echo("Supported sensors:")
+    for sensor in _SUPPORTED_SENSORS:
+        typer.echo(f"  - {sensor}")
+    typer.echo(f"Canonical cubes: {_CANONICAL_DESC}")
+
+
+def _read_local_version() -> str:
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    if not pyproject.exists():
+        return "unknown"
+
+    try:
+        data = tomllib.loads(pyproject.read_text())
+    except Exception:  # pragma: no cover - defensive fallback
+        return "unknown"
+
+    return str(data.get("project", {}).get("version", "unknown"))
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        help="Show version information and exit.",
+        is_eager=True,
+    ),
+) -> None:
+    if version:
+        _print_version()
+        raise typer.Exit()
+
+
+@app.command("version")  # type: ignore[misc]
+def version_command() -> None:
+    """Print version and supported data details."""
+
+    _print_version()
+
+
 @app.command()  # type: ignore[misc]
+@handle_cli_exceptions
 def validate_srf(root: str = "data/srf", sensor: str = "emit") -> None:
     reg = SRFRegistry(root)
     srf = reg.get(sensor)
@@ -38,13 +152,17 @@ def validate_srf(root: str = "data/srf", sensor: str = "emit") -> None:
 
 
 @app.command()  # type: ignore[misc]
+@handle_cli_exceptions
 def validate_data(config: str = "configs/data.yaml") -> None:
     cfg = yaml.safe_load(Path(config).read_text())
     validate_dataset(cfg)
     validate_srf_dir(cfg.get("data", {}).get("srf_root", "data/srf"))
 
 
-@app.command()  # type: ignore[misc]
+@app.command(
+    help="Synthetic MAE sandbox for masking/throughput baselines."
+)  # type: ignore[misc]
+@handle_cli_exceptions
 def pretrain_mae(
     config: str = "configs/train.mae.yaml",
     no_spatial_mask: bool = typer.Option(
@@ -53,39 +171,74 @@ def pretrain_mae(
     no_posenc: bool = typer.Option(
         False, "--no-posenc", help="Disable wavelength positional encoding for MAE baseline"
     ),
+    seed: int | None = typer.Option(
+        None, "--seed", help="Override random seed configured in the YAML file"
+    ),
 ) -> None:
-    seed_everything(42)
-    run_pretrain_mae(config, no_spatial_mask=no_spatial_mask, no_posenc=no_posenc)
+    run_pretrain_mae(
+        config,
+        no_spatial_mask=no_spatial_mask,
+        no_posenc=no_posenc,
+        seed_override=seed,
+    )
 
 
 @align_app.command("train")  # type: ignore[misc]
+@handle_cli_exceptions
 def align_train(
     cfg: str = typer.Option("configs/phase2/alignment.yaml", "--cfg", "-c"),
     max_steps: int | None = typer.Option(None, "--max-steps", "-m"),
+    seed: int | None = typer.Option(
+        None, "--seed", help="Override random seed configured in the YAML file"
+    ),
 ) -> None:
-    """Run the Phase-2 alignment trainer."""
-    trainer = AlignmentTrainer.from_yaml(cfg)
+    """Run the mainline CLIP-style alignment trainer used for the encoder."""
+    trainer = AlignmentTrainer.from_yaml(cfg, seed_override=seed)
     trainer.train(max_steps=max_steps)
 
 
 @app.command()  # type: ignore[misc]
+@handle_cli_exceptions
 def evaluate(config: str = "configs/eval.yaml") -> None:
     run_eval(config)
 
 
+SensorLiteral = Literal["emit", "enmap", "avirisng", "hytes", "mako"]
+_SENSOR_CHOICES: tuple[SensorLiteral, ...] = (
+    "emit",
+    "enmap",
+    "avirisng",
+    "hytes",
+    "mako",
+)
+SensorChoice = typer.Option(  # type: ignore[misc]
+    None,
+    "--sensor",
+    case_sensitive=False,
+    help="Explicitly specify the sensor instead of sniffing from the path.",
+    show_default=False,
+)
+
+
 @data_app.command("info")  # type: ignore[misc]
-def data_info(path: Path) -> None:
+@handle_cli_exceptions
+def data_info(path: Path, sensor: SensorLiteral | None = SensorChoice) -> None:
     """Inspect a hyperspectral cube and print a short summary."""
 
-    cube = _load_cube(path)
+    cube = _load_cube(path, sensor)
     _print_cube_summary(cube)
 
 
 @data_app.command("to-canonical")  # type: ignore[misc]
-def data_to_canonical(path: Path, out: str = typer.Option("npz", "--out")) -> None:
+@handle_cli_exceptions
+def data_to_canonical(
+    path: Path,
+    out: str = typer.Option("npz", "--out"),
+    sensor: SensorLiteral | None = SensorChoice,
+) -> None:
     """Write the canonical representation of a hyperspectral cube."""
 
-    cube = _load_cube(path)
+    cube = _load_cube(path, sensor)
     fmt, destination = _resolve_output_path(path, out)
 
     if fmt == "npz":
@@ -104,11 +257,9 @@ class _SniffResult:
     description: str
 
 
-def _load_cube(path: Path) -> Cube:
+def _load_cube(path: Path, sensor: SensorLiteral | None = None) -> Cube:
     path = path.expanduser()
-    sniffed = _sniff_dataset(path)
-    if sniffed is None:
-        raise typer.BadParameter(f"Could not determine sensor for: {path}")
+    sniffed = _resolve_loader(path, sensor)
     dataset = sniffed.loader()
     return Cube.from_xarray(dataset)
 
@@ -124,6 +275,41 @@ def _resolve_output_path(source: Path, out: str) -> tuple[str, Path]:
     if suffix not in {"npz", "zarr"}:
         raise typer.BadParameter("Output must be a .npz or .zarr path or format keyword")
     return suffix, destination
+
+
+def _resolve_loader(path: Path, sensor: SensorLiteral | None) -> _SniffResult:
+    if sensor is not None:
+        return _loader_for_sensor(path, sensor)
+
+    sniffed = _sniff_dataset(path)
+    if sniffed is None:
+        valid = ", ".join(_SENSOR_CHOICES)
+        raise typer.BadParameter(
+            f"Could not determine sensor for: {path}. "
+            f"Specify --sensor to override. Valid sensors: {valid}"
+        )
+    return sniffed
+
+
+def _loader_for_sensor(path: Path, sensor: SensorLiteral) -> _SniffResult:
+    sensor_lower = sensor.lower()
+    if sensor_lower == "emit":
+        return _SniffResult(lambda: load_emit_l1b(str(path)), "EMIT L1B")
+    if sensor_lower == "avirisng":
+        return _SniffResult(lambda: load_avirisng_l1b(str(path)), "AVIRIS-NG L1B")
+    if sensor_lower == "hytes":
+        return _SniffResult(lambda: load_hytes_l1b_bt(str(path)), "HyTES L1B")
+    if sensor_lower == "enmap":
+        result = _sniff_enmap(path)
+    elif sensor_lower == "mako":
+        result = _sniff_mako(path)
+    else:  # pragma: no cover - guarded by typer Choice
+        valid = ", ".join(_SENSOR_CHOICES)
+        raise typer.BadParameter(f"Unknown sensor '{sensor}'. Valid sensors: {valid}")
+
+    if result is None:
+        raise typer.BadParameter(f"Could not load sensor '{sensor}' for: {path}")
+    return result
 
 
 def _sniff_dataset(path: Path) -> _SniffResult | None:

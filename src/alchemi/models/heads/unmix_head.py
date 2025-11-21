@@ -11,7 +11,15 @@ class LinearUnmixHead(nn.Module):
         self.fc = nn.Linear(embed_dim, k)
 
     def forward(self, z: Tensor, basis_emb: Tensor) -> dict[str, Tensor]:
-        logits = self.fc(z)
+        is_batched = z.dim() > 1
+        z_in = z if is_batched else z.unsqueeze(0)
+
+        logits = self.fc(z_in)
         frac = F.softmax(logits, dim=-1)
-        recon = (frac.unsqueeze(-1) * basis_emb).sum(dim=0)
+        recon = (frac.unsqueeze(-1) * basis_emb.unsqueeze(0)).sum(dim=1)
+
+        if not is_batched:
+            frac = frac.squeeze(0)
+            recon = recon.squeeze(0)
+
         return {"frac": frac, "recon": recon}
