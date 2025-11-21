@@ -8,6 +8,7 @@ import yaml
 from torch import Tensor
 from torch.utils.data import DataLoader
 
+from ..config import RuntimeConfig
 from ..heads import BandDepthHead, load_banddepth_config
 from ..losses import InfoNCELoss, ReconstructionLoss, SpectralSmoothnessLoss
 from ..models import (
@@ -136,10 +137,21 @@ def _aggregate_stats(stats_list: list[ThroughputStats]) -> ThroughputStats:
 
 
 def run_pretrain_mae(
-    config_path: str, *, no_spatial_mask: bool = False, no_posenc: bool = False
+    config_path: str,
+    *,
+    no_spatial_mask: bool = False,
+    no_posenc: bool = False,
+    seed_override: int | None = None,
 ) -> ThroughputStats:
     """Toy MAE pretraining loop with spatial+spectral masking and throughput measurement."""
-    cfg = TrainCfg(**yaml.safe_load(Path(config_path).read_text())["train"])
+    payload = yaml.safe_load(Path(config_path).read_text())
+    train_payload = payload.get("train", {}) if isinstance(payload, dict) else {}
+    runtime_cfg = RuntimeConfig.from_mapping(
+        payload.get("global") if isinstance(payload, dict) else None,
+        fallback=train_payload,
+    )
+    runtime_cfg = runtime_cfg.with_seed(seed_override)
+    cfg = TrainCfg(**train_payload)
 
     # Fold CLI toggles into config so baselines are properly recorded.
     cfg = cfg.copy(
@@ -149,9 +161,20 @@ def run_pretrain_mae(
         }
     )
 
+    cfg = cfg.copy(update={"seed": runtime_cfg.seed, "deterministic": runtime_cfg.deterministic})
+
     # Seed / determinism config.
-    seed_everything(cfg.seed, cfg.deterministic)
-    _LOG.info("Using seed=%s deterministic=%s", cfg.seed, cfg.deterministic)
+    torch.set_default_dtype(runtime_cfg.torch_dtype)
+    seed_everything(runtime_cfg.seed, runtime_cfg.deterministic)
+    device = runtime_cfg.torch_device
+    _LOG.info(
+        "Starting MAE pretrain config=%s seed=%s deterministic=%s device=%s dtype=%s",
+        config_path,
+        runtime_cfg.seed,
+        runtime_cfg.deterministic,
+        device,
+        runtime_cfg.torch_dtype,
+    )
 
     # Optional mask persistence path, if present in the config.
     mask_path: Path | None = None
@@ -159,8 +182,6 @@ def run_pretrain_mae(
         mask_str = cfg.mask_path
         if mask_str:
             mask_path = Path(mask_str)
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     basis, setenc = _build_embedder(cfg)
 
@@ -210,10 +231,14 @@ def run_pretrain_mae(
         embed_dim = cfg.embed_dim
 
         # Fake token grid: (B, T, D)
-        tokens = torch.randn(batch_size, num_tokens, embed_dim, device=device)
+        tokens = torch.randn(
+            batch_size, num_tokens, embed_dim, device=device, dtype=runtime_cfg.torch_dtype
+        )
 
         # Spectral mask over feature dimension.
-        spectral_values = torch.arange(embed_dim, dtype=torch.float32, device=device)
+        spectral_values = torch.arange(
+            embed_dim, dtype=runtime_cfg.torch_dtype, device=device
+        )
         base_band_mask = torch.ones(embed_dim, dtype=torch.bool, device=device)
         persist_target = (
             mask_path if (mask_path and not mask_persisted and _is_main_process()) else None
@@ -284,14 +309,30 @@ def run_pretrain_mae(
     return _aggregate_stats(step_stats)
 
 
-def run_align(config_path: str) -> ThroughputStats:
+def run_align(config_path: str, *, seed_override: int | None = None) -> ThroughputStats:
     """Toy alignment loop with throughput measurement."""
-    cfg = TrainCfg(**yaml.safe_load(Path(config_path).read_text())["train"])
+    payload = yaml.safe_load(Path(config_path).read_text())
+    train_payload = payload.get("train", {}) if isinstance(payload, dict) else {}
+    runtime_cfg = RuntimeConfig.from_mapping(
+        payload.get("global") if isinstance(payload, dict) else None,
+        fallback=train_payload,
+    )
+    runtime_cfg = runtime_cfg.with_seed(seed_override)
+    cfg = TrainCfg(**train_payload)
 
-    seed_everything(cfg.seed, cfg.deterministic)
-    _LOG.info("Using seed=%s deterministic=%s", cfg.seed, cfg.deterministic)
+    cfg = cfg.copy(update={"seed": runtime_cfg.seed, "deterministic": runtime_cfg.deterministic})
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    seed_everything(runtime_cfg.seed, runtime_cfg.deterministic)
+    torch.set_default_dtype(runtime_cfg.torch_dtype)
+    device = runtime_cfg.torch_device
+    _LOG.info(
+        "Starting ALIGN config=%s seed=%s deterministic=%s device=%s dtype=%s",
+        config_path,
+        runtime_cfg.seed,
+        runtime_cfg.deterministic,
+        device,
+        runtime_cfg.torch_dtype,
+    )
 
     basis, setenc = _build_embedder(cfg)
     enc = MAEEncoder(embed_dim=cfg.embed_dim, depth=cfg.depth, n_heads=cfg.n_heads)

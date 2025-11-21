@@ -1,6 +1,11 @@
-train:
+global:
   seed: 42
+  device: auto
+  dtype: float32
+  amp_dtype: null
   deterministic: false
+
+train:
   mask_path: checkpoints/mask.json
   mode: mae
   batch_size: 64

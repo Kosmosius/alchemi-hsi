@@ -17,7 +17,6 @@ from .data.validators import validate_dataset, validate_srf_dir
 from .io.mako import open_mako_ace, open_mako_btemp, open_mako_l2s
 from .srf import SRFRegistry
 from .train.alignment_trainer import AlignmentTrainer
-from .training.seed import seed_everything
 from .training.trainer import run_eval, run_pretrain_mae
 from .utils.logging import get_logger
 
@@ -53,18 +52,28 @@ def pretrain_mae(
     no_posenc: bool = typer.Option(
         False, "--no-posenc", help="Disable wavelength positional encoding for MAE baseline"
     ),
+    seed: int | None = typer.Option(
+        None, "--seed", help="Override random seed configured in the YAML file"
+    ),
 ) -> None:
-    seed_everything(42)
-    run_pretrain_mae(config, no_spatial_mask=no_spatial_mask, no_posenc=no_posenc)
+    run_pretrain_mae(
+        config,
+        no_spatial_mask=no_spatial_mask,
+        no_posenc=no_posenc,
+        seed_override=seed,
+    )
 
 
 @align_app.command("train")  # type: ignore[misc]
 def align_train(
     cfg: str = typer.Option("configs/phase2/alignment.yaml", "--cfg", "-c"),
     max_steps: int | None = typer.Option(None, "--max-steps", "-m"),
+    seed: int | None = typer.Option(
+        None, "--seed", help="Override random seed configured in the YAML file"
+    ),
 ) -> None:
     """Run the Phase-2 alignment trainer."""
-    trainer = AlignmentTrainer.from_yaml(cfg)
+    trainer = AlignmentTrainer.from_yaml(cfg, seed_override=seed)
     trainer.train(max_steps=max_steps)
 
 

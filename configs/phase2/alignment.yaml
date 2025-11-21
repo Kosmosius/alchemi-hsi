@@ -1,11 +1,15 @@
+global:
+  seed: 1337
+  device: cpu
+  dtype: float32
+  amp_dtype: bfloat16
+  deterministic: false
+
 trainer:
   batch_size: 8
   max_steps: 10
   log_every: 2
   eval_every: 5
-  device: cpu
-  dtype: float32
-  seed: 1337
   grad_clip_norm: 1.0
   use_amp: false
   amp_dtype: bfloat16
