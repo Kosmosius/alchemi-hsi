@@ -151,8 +151,12 @@ def load_hytes_l1b_bt(path: str | Path) -> xr.Dataset:
         },
         coords=coords,
     )
-    ds.attrs["sensor"] = "HyTES"
-    ds.attrs["brightness_temp_units"] = "K"
+    ds.attrs.update(
+        sensor="HyTES",
+        quantity="brightness_temp",
+        brightness_temp_units="K",
+        units="K",
+    )
 
     ds.coords["wavelength_nm"].attrs["units"] = "nm"
     return ds

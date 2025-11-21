@@ -14,6 +14,8 @@ python -m alchemi.cli --help
 
 See docs/ for PRD, ARCH, DATA_SPEC, EVAL, ROADMAP, DECISIONS, APPENDIX. Phase‑1 quickstarts are collected under [`docs/quickstarts/`](docs/quickstarts/)—start with the [CLI walkthrough](docs/quickstarts/cli.md) to explore dataset validation and canonical cube exports end-to-end.
 
+For an overview of the public CLI surface, see [`docs/CLI.md`](docs/CLI.md) or run `alchemi about` to print the installed version and supported sensors.
+
 ## Pretraining ablations
 
 A lightweight synthetic harness in `scripts/ablate_pretrain.py` sweeps masking ratios, grouping modes/sizes, and any-sensor ingest. It emits one CSV per run plus reconstruction-MSE and throughput plots under `outputs/ablations/`, and reports a retrieval@1 sanity check over a toy probe set.
