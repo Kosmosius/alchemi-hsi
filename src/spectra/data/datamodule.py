@@ -12,26 +12,30 @@ try:  # pragma: no cover - optional dependency
     from lightning import LightningDataModule
 except Exception:  # pragma: no cover - fallback
     try:
-        from pytorch_lightning import LightningDataModule  # type: ignore[import]
+        from pytorch_lightning import LightningDataModule
     except Exception:  # pragma: no cover - last resort stub
 
-        class LightningDataModule:  # type: ignore[misc]
+        class LightningDataModule:  # type: ignore[no-redef]
             """Minimal stub to allow import without Lightning installed."""
 
             def __init__(self, *args: Any, **kwargs: Any) -> None:
-                super().__init__()
+                pass
 
             def setup(self, stage: str | None = None) -> None:
                 """Placeholder setup."""
+                return None
 
             def train_dataloader(self) -> Iterable[Any]:
                 """Placeholder train loader."""
+                return []
 
             def val_dataloader(self) -> Iterable[Any]:
                 """Placeholder val loader."""
+                return []
 
             def test_dataloader(self) -> Iterable[Any]:
                 """Placeholder test loader."""
+                return []
 
 
 from spectra.utils.seed import seed_everything

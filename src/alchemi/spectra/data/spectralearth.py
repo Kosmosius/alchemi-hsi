@@ -12,6 +12,7 @@ from collections.abc import Mapping, MutableMapping, Sequence
 from pathlib import Path
 
 import numpy as np
+from numpy.typing import NDArray
 
 from alchemi.types import Spectrum, SpectrumKind, WavelengthGrid
 
@@ -97,7 +98,7 @@ def load_spectralearth(sample: str | Path | Mapping[str, object]) -> Spectrum:
     return spectrum
 
 
-def _extract_wavelengths(payload: Mapping[str, object]) -> np.ndarray:
+def _extract_wavelengths(payload: Mapping[str, object]) -> NDArray[np.float64]:
     """Locate and normalise the wavelength axis in *payload*."""
 
     # Prefer explicit / canonical field names.
@@ -108,7 +109,7 @@ def _extract_wavelengths(payload: Mapping[str, object]) -> np.ndarray:
         "wavelength",
     )
 
-    wavelengths: np.ndarray | None = None
+    wavelengths: NDArray[np.float64] | None = None
     unit: str | None = None
 
     for key in candidates:
@@ -157,11 +158,11 @@ def _guess_unit(key: str, payload: Mapping[str, object]) -> str | None:
     return None
 
 
-def _ensure_nanometers(wavelengths: np.ndarray, unit: str | None) -> np.ndarray:
+def _ensure_nanometers(wavelengths: np.ndarray, unit: str | None) -> NDArray[np.float64]:
     """Return a 1-D, strictly increasing nanometre wavelength grid."""
     global _WARNED_WAVELENGTH_UNITS
 
-    arr = np.asarray(wavelengths, dtype=np.float64)
+    arr: NDArray[np.float64] = np.asarray(wavelengths, dtype=np.float64)
 
     unit_norm = ""
     if isinstance(unit, str):
