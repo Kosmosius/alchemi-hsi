@@ -1,4 +1,10 @@
-"""Canonical hyperspectral cube representation and helpers."""
+"""Canonical hyperspectral cube representation and helpers.
+
+This module defines the :class:`Cube` type that holds spatial hyperspectral
+data. Individual pixel spectra can be extracted as :class:`alchemi.types.Sample`
+instances via :meth:`Cube.sample_at`, preserving wavelength grids, quantity
+kinds, and relevant sensor metadata.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +19,7 @@ import numpy as np
 
 from ..tokens.band_tokenizer import AxisUnit, BandTokenizer, Tokens
 from ..tokens.registry import get_default_tokenizer
+from ..types import Sample, SampleMeta, Spectrum, SpectrumKind, WavelengthGrid
 
 __all__ = ["Cube", "GeoInfo", "geo_from_attrs"]
 
@@ -35,7 +42,14 @@ class GeoInfo:
 
 @dataclass(slots=True, init=False)
 class Cube:
-    """Typed wrapper around an (H, W, C) hyperspectral cube."""
+    """Typed wrapper around an (H, W, C) hyperspectral cube.
+
+    A ``Cube`` carries a spectral axis (``axis`` / ``axis_unit``), a quantity
+    kind (``value_kind``), and optional sensor / unit metadata. When converting
+    individual pixels to :class:`alchemi.types.Sample` objects these fields must
+    be preserved so that downstream lab-style processing sees a consistent
+    wavelength grid and :class:`alchemi.types.SpectrumKind`.
+    """
 
     data: np.ndarray
     axis: np.ndarray
@@ -200,6 +214,68 @@ class Cube:
         """Number of spectral bands represented by the cube."""
 
         return int(self.data.shape[-1])
+
+    def _axis_wavelength_nm(self) -> np.ndarray:
+        """Return the spectral axis expressed in nanometres.
+
+        ``Sample`` uses :class:`~alchemi.types.WavelengthGrid`, which is always
+        expressed in nanometres. When the cube is parameterised in wavenumbers
+        the axis is converted on the fly.
+        """
+
+        if self.axis_unit == "wavelength_nm":
+            return np.asarray(self.axis, dtype=np.float64)
+        if self.axis_unit == "wavenumber_cm1":
+            return (1.0e7 / np.asarray(self.axis, dtype=np.float64)).astype(np.float64, copy=False)
+
+        msg = f"Cannot convert axis_unit {self.axis_unit!r} to wavelengths"
+        raise ValueError(msg)
+
+    def sample_at(self, row: int, col: int) -> Sample:
+        """Extract a :class:`~alchemi.types.Sample` for the pixel at ``(row, col)``.
+
+        The returned sample shares the cube's spectral axis (converted to
+        nanometres) and :class:`~alchemi.types.SpectrumKind`. Sensor identifiers
+        are sourced from :attr:`sensor`, ``srf_id``, or ``attrs['sensor']`` in
+        that order. Band masks (if present) are propagated into the sample
+        spectrum.
+        """
+
+        height, width, _ = self.shape
+        if not (0 <= row < height and 0 <= col < width):
+            raise IndexError(f"Pixel indices out of bounds for cube shape {self.shape}: {(row, col)}")
+
+        kind_map = {
+            "radiance": SpectrumKind.RADIANCE,
+            "reflectance": SpectrumKind.REFLECTANCE,
+            "brightness_temp": SpectrumKind.BT,
+        }
+        spectrum_kind = kind_map.get(self.value_kind)
+        if spectrum_kind is None:
+            msg = f"Unsupported value_kind {self.value_kind!r} for Sample conversion"
+            raise ValueError(msg)
+
+        wavelengths_nm = WavelengthGrid(self._axis_wavelength_nm().copy())
+        values = np.asarray(self.data[row, col, :], dtype=np.float64)
+        units = self.units or self.attrs.get("units", "")
+
+        sensor_id = self.sensor or self.srf_id or self.attrs.get("sensor")
+        if sensor_id is None:
+            sensor_id = "unknown"
+
+        extras = {k: v for k, v in self.attrs.items() if k not in {"sensor"}}
+
+        spectrum = Spectrum(
+            wavelengths=wavelengths_nm,
+            values=values,
+            kind=spectrum_kind,
+            units=str(units),
+            mask=self.band_mask,
+            meta={"cube_attrs": extras} if extras else {},
+        )
+
+        meta = SampleMeta(sensor_id=str(sensor_id), row=int(row), col=int(col), extras=extras)
+        return Sample(spectrum=spectrum, meta=meta)
 
     @property
     def axes(self) -> tuple[str, ...]:
