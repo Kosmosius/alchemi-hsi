@@ -10,7 +10,6 @@ from torch.utils.data import DataLoader
 
 from ..heads import BandDepthHead, load_banddepth_config
 from ..losses import InfoNCELoss, ReconstructionLoss, SpectralSmoothnessLoss
-from ..masking import MaskingConfig
 from ..models import (
     DomainDiscriminator,
     MAEDecoder,
@@ -18,6 +17,7 @@ from ..models import (
     SetEncoder,
     SpectralBasisProjector,
 )
+from ..models.masking import MaskingConfig
 from ..utils.ckpt import save_checkpoint
 from ..utils.logging import ThroughputMeter, ThroughputStats, get_logger
 from .amp import autocast
@@ -31,7 +31,7 @@ _LOG = get_logger(__name__)
 def _is_main_process() -> bool:
     if torch.distributed.is_available() and torch.distributed.is_initialized():
         try:
-            return torch.distributed.get_rank() == 0
+            return bool(torch.distributed.get_rank() == 0)
         except RuntimeError:
             pass
 
@@ -39,7 +39,7 @@ def _is_main_process() -> bool:
         raw = os.environ.get(env_key)
         if raw is not None:
             try:
-                return int(raw) == 0
+                return bool(int(raw) == 0)
             except ValueError:
                 continue
 
@@ -164,18 +164,18 @@ def run_pretrain_mae(
 
     basis, setenc = _build_embedder(cfg)
 
+    no_spatial_mask = getattr(cfg, "no_spatial_mask", False)
+    no_posenc = getattr(cfg, "no_posenc", False)
     mask_cfg = MaskingConfig(
         spatial_mask_ratio=cfg.spatial_mask_ratio,
         spectral_mask_ratio=cfg.spectral_mask_ratio,
-        no_spatial_mask=cfg.no_spatial_mask,
-        no_posenc=cfg.no_posenc,
     )
 
     enc = MAEEncoder(
         embed_dim=cfg.embed_dim,
         depth=cfg.depth,
         n_heads=cfg.n_heads,
-        use_posenc=not mask_cfg.no_posenc,
+        use_posenc=not no_posenc,
         max_tokens=cfg.embed_dim * 2,
     )
     dec = MAEDecoder(
@@ -231,7 +231,7 @@ def run_pretrain_mae(
         spatial_mask = _mask_spatial(
             (num_tokens,),
             mask_cfg.spatial_mask_ratio,
-            disabled=mask_cfg.no_spatial_mask,
+            disabled=no_spatial_mask,
         ).to(device)
 
         # Encoder key padding mask: True = pad (i.e. masked-out tokens).

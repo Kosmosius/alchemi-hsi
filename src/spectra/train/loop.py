@@ -11,8 +11,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
-import numpy as np
 import torch
 import torch.distributed as dist
 from torch import nn
@@ -50,7 +50,7 @@ class ToyModel(nn.Module):
         self.norm = nn.LayerNorm(hidden_dim, elementwise_affine=False)
         self.head = nn.Linear(hidden_dim, 1)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         def _forward(inp: torch.Tensor) -> torch.Tensor:
             act = torch.relu(self.proj(inp))
             normed = self.norm(act.float()).to(act.dtype)
@@ -62,9 +62,8 @@ class ToyModel(nn.Module):
 
 
 def _seed_all(seed: int, rank: int) -> None:
-    """Seed Python, NumPy, and PyTorch RNGs in a rank-dependent way."""
+    """Seed Python and PyTorch RNGs in a rank-dependent way."""
     torch.manual_seed(seed + rank)
-    np.random.seed(seed + rank)
     random.seed(seed + rank)
 
 
@@ -87,12 +86,12 @@ def _build_optimizer(model: nn.Module, cfg: TrainingConfig) -> torch.optim.Optim
 
 @dataclass
 class CheckpointState:
-    model: dict
-    optimizer: dict
-    scheduler: dict | None
-    scaler: dict | None
+    model: dict[str, Any]
+    optimizer: dict[str, Any]
+    scheduler: dict[str, Any] | None
+    scaler: dict[str, Any] | None
     step: int
-    config: dict
+    config: dict[str, Any]
 
 
 def save_checkpoint(

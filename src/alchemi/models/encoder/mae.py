@@ -147,10 +147,10 @@ class MaskedAutoencoder(nn.Module):
         # --- persist mask config if requested ---
         if persist_dir is not None:
             run_dir = Path(persist_dir)
-            run_dir = (
-                run_dir
-                / f"run-{self.mask_cfg.mask_seed if self.mask_cfg.mask_seed is not None else 'default'}"
+            seed_str = (
+                str(self.mask_cfg.mask_seed) if self.mask_cfg.mask_seed is not None else "default"
             )
+            run_dir = run_dir / f"run-{seed_str}"
             self.mask_cfg.persist(run_dir)
 
         # --- apply spatial masking on tokens ---

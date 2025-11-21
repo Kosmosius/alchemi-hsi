@@ -71,16 +71,20 @@ class SpectralMAE(nn.Module):
         self.band_query_proj = nn.Linear(self.config.encoder_dim, self.config.encoder_dim)
         self.reconstruction_head = nn.Linear(self.config.encoder_dim, 1)
 
-    def forward(self, x: torch.Tensor, wavelengths_nm: torch.Tensor) -> dict:
+    def forward(
+        self,
+        x: torch.Tensor,
+        wavelengths_nm: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
         tokens, info = self.tokenizer(x, wavelengths_nm)
-        band_mask = ~info["band_pad_mask"]  # type: ignore[index]
-        attn_mask = info["attn_mask"].to(dtype=torch.bool)  # type: ignore[index]
+        band_mask = ~info["band_pad_mask"]
+        attn_mask = info["attn_mask"].to(dtype=torch.bool)
 
         # Reshape raw tokens into [B, tokens, bands, per_band_feature_dim]
         context_area = self.tokenizer.config.context_size * self.tokenizer.config.context_size
         batch, num_tokens, _ = tokens.shape
         bands = band_mask.shape[1]
-        per_band_dim = int(info["meta"]["feature_dim_per_band"])  # type: ignore[index]
+        per_band_dim = int(info["meta"]["feature_dim_per_band"])
         tokens_view = tokens.view(batch, num_tokens, bands, per_band_dim)
 
         pos_enc = self.posenc(wavelengths_nm, band_mask)

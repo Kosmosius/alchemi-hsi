@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Literal
@@ -8,6 +8,13 @@ from typing import Literal
 import torch
 
 PrecisionType = Literal["fp8", "bf16", "fp16", "fp32"]
+
+_PRECISION_ALIASES: dict[str, PrecisionType] = {
+    "fp8": "fp8",
+    "bf16": "bf16",
+    "fp16": "fp16",
+    "fp32": "fp32",
+}
 
 
 def _has_transformer_engine() -> bool:
@@ -71,13 +78,17 @@ def autocast(precision: PrecisionConfig) -> Iterator[None]:
 
 
 @contextmanager
-def autocast_from_config(config: dict | None) -> Iterator[None]:
+def autocast_from_config(
+    config: Mapping[str, object] | PrecisionConfig | None,
+) -> Iterator[None]:
     if config is None:
         cfg = PrecisionConfig()
     elif isinstance(config, PrecisionConfig):
         cfg = config
     else:
-        cfg = PrecisionConfig(target=str(config.get("precision", "bf16")))
+        raw = str(config.get("precision", "bf16"))
+        precision = _PRECISION_ALIASES.get(raw, "bf16")
+        cfg = PrecisionConfig(target=precision)
     with autocast(cfg):
         yield
 

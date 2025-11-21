@@ -66,6 +66,9 @@ target-version = "py310"
 select = ["E", "F", "I", "B", "UP", "NPY", "RUF", "W"]
 ignore = ["E203"]
 
+[tool.ruff.per-file-ignores]
+"scripts/ablate_pretrain.py" = ["B008"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]

@@ -20,10 +20,29 @@ class TokenizerConfig:
 class SpectralTokenizer(nn.Module):
     """Tokenize per-pixel spectra with optional spatial context and wavelength encodings."""
 
-    def __init__(self, config: TokenizerConfig | None = None, **legacy_kwargs: object) -> None:
+    def __init__(
+        self,
+        config: TokenizerConfig | None = None,
+        *,
+        context_size: int | None = None,
+        num_pos_frequencies: int | None = None,
+        include_log_lambda: bool | None = None,
+        include_normalized_wavelength: bool | None = None,
+    ) -> None:
         super().__init__()
         if config is None:
-            config = TokenizerConfig(**legacy_kwargs)
+            config = TokenizerConfig(
+                context_size=context_size if context_size is not None else 1,
+                num_pos_frequencies=(num_pos_frequencies if num_pos_frequencies is not None else 4),
+                include_log_lambda=(
+                    include_log_lambda if include_log_lambda is not None else False
+                ),
+                include_normalized_wavelength=(
+                    include_normalized_wavelength
+                    if include_normalized_wavelength is not None
+                    else False
+                ),
+            )
         if config.context_size not in (1, 3, 5):
             raise ValueError("context_size must be one of {1, 3, 5}")
 

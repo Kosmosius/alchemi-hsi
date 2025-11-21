@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Benchmark training throughput and record run-to-run variance."""
+
+from __future__ import annotations
 
 import argparse
 import csv
@@ -18,8 +18,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from alchemi.training.trainer import run_align, run_pretrain_mae
-from alchemi.utils.logging import ThroughputStats, get_logger
+from alchemi.training.trainer import run_align, run_pretrain_mae  # noqa: E402
+from alchemi.utils.logging import ThroughputStats, get_logger  # noqa: E402
 
 _LOG = get_logger(__name__)
 

@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import typer
+
 from spectra.utils.plotting import plot_metric_bars
 
 # Search space

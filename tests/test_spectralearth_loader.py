@@ -12,7 +12,8 @@ from spectra.data.spectralearth import SpectralEarthDataset
 
 
 def _write_sample(root: Path, idx: int, bands: int, sensor: str = "EnMAP") -> None:
-    cube = np.random.random((4, 4, bands)).astype("float32")
+    rng = np.random.default_rng()
+    cube = rng.random((4, 4, bands), dtype="float32")
     wavelengths = np.linspace(400.0, 800.0, bands, dtype="float32")
     mask = np.ones(bands, dtype=bool)
     scene_id = f"scene_{idx}"
