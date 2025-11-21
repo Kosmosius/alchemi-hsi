@@ -69,6 +69,24 @@ def test_data_to_canonical_npz(monkeypatch, tmp_path):
     assert attrs["units"] == cube.units
 
 
+def test_data_to_canonical_destination_path(monkeypatch, tmp_path):
+    cube = _synthetic_cube()
+    runner = CliRunner()
+
+    monkeypatch.setattr("alchemi.cli._load_cube", lambda _path, _sensor=None: cube)
+
+    src = tmp_path / "sample3.h5"
+    src.write_text("")
+    dest = tmp_path / "explicit_output.npz"
+
+    result = runner.invoke(app, ["data", "to-canonical", str(src), "--out", str(dest)])
+    assert result.exit_code == 0
+
+    data = np.load(dest, allow_pickle=False)
+    np.testing.assert_allclose(data["values"], cube.values)
+    assert json.loads(str(data["attrs_json"]))["sensor"] == "synthetic"
+
+
 def test_data_to_canonical_zarr(monkeypatch, tmp_path):
     zarr = pytest.importorskip("zarr")
     cube = _synthetic_cube()
@@ -133,3 +151,27 @@ def test_data_info_sniff_failure_message(monkeypatch, tmp_path):
     output = (result.stderr or "") + (result.stdout or "")
     assert "--sensor" in output
     assert "emit, enmap, avirisng, hytes, mako" in output
+
+
+def test_data_info_missing_file(tmp_path):
+    runner = CliRunner()
+    missing = tmp_path / "does_not_exist.tif"
+
+    result = runner.invoke(app, ["data", "info", str(missing)])
+    assert result.exit_code != 0
+    output = (result.stderr or "") + (result.stdout or "")
+    assert "Could not determine sensor" in output
+
+
+def test_data_to_canonical_invalid_out(monkeypatch, tmp_path):
+    cube = _synthetic_cube()
+    monkeypatch.setattr("alchemi.cli._load_cube", lambda _path, _sensor=None: cube)
+
+    runner = CliRunner()
+    src = tmp_path / "sample4.h5"
+    src.write_text("")
+
+    result = runner.invoke(app, ["data", "to-canonical", str(src), "--out", "unknown"])
+    assert result.exit_code != 0
+    output = (result.stderr or "") + (result.stdout or "")
+    assert "Output must be a .npz or .zarr" in output
