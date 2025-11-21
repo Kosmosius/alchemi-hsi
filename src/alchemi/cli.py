@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import wraps
+from importlib import metadata
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import typer
 import xarray as xr
+import tomllib
 import yaml
 
 from .data.cube import Cube
@@ -21,6 +25,21 @@ from .training.seed import seed_everything
 from .training.trainer import run_eval, run_pretrain_mae
 from .utils.logging import get_logger
 
+_SUPPORTED_SENSORS = (
+    "EMIT L1B",
+    "EnMAP L1B",
+    "AVIRIS-NG L1B",
+    "HyTES L1B",
+    "Mako ACE",
+    "Mako BTEMP",
+    "Mako L2S",
+)
+_CANONICAL_DESC = (
+    "Canonical cubes store sensor-agnostic radiance values, wavelength coordinates, "
+    "band masks, and metadata in NPZ or Zarr format."
+)
+_DEBUG_ENV = "ALCHEMI_DEBUG"
+
 app = typer.Typer(add_completion=False)
 data_app = typer.Typer(add_completion=False)
 align_app = typer.Typer(add_completion=False)
@@ -29,7 +48,93 @@ app.add_typer(align_app, name="align")
 _LOG = get_logger(__name__)
 
 
+def _debug_enabled() -> bool:
+    return os.getenv(_DEBUG_ENV, "").lower() in {"1", "true", "yes", "on"}
+
+
+def _echo_error(message: str) -> None:
+    typer.echo(f"Error: {message}", err=True)
+
+
+def _log_cli_exception(exc: Exception, context: str) -> None:
+    if _debug_enabled():
+        _LOG.exception("%s", exc)
+    else:
+        _LOG.error("%s failed: %s", context, exc)
+
+
+def handle_cli_exceptions(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Provide consistent logging and user-friendly errors for CLI commands."""
+
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return func(*args, **kwargs)
+        except (typer.BadParameter, typer.Exit, KeyboardInterrupt):
+            raise
+        except (FileNotFoundError, OSError, yaml.YAMLError, json.JSONDecodeError, ValueError) as exc:
+            _log_cli_exception(exc, func.__name__)
+            _echo_error(str(exc))
+        except Exception as exc:  # pragma: no cover - handled by debug path
+            if _debug_enabled():
+                raise
+            _LOG.exception("Unexpected error while running %s", func.__name__)
+            _echo_error(f"Unexpected error. Re-run with {_DEBUG_ENV}=1 for a traceback.")
+
+        raise typer.Exit(code=1)
+
+    return wrapper
+
+
+def _print_version() -> None:
+    try:
+        pkg_version = metadata.version("alchemi-hsi")
+    except metadata.PackageNotFoundError:
+        pkg_version = _read_local_version()
+
+    typer.echo(f"alchemi-hsi version: {pkg_version}")
+    typer.echo("Supported sensors:")
+    for sensor in _SUPPORTED_SENSORS:
+        typer.echo(f"  - {sensor}")
+    typer.echo(f"Canonical cubes: {_CANONICAL_DESC}")
+
+
+def _read_local_version() -> str:
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    if not pyproject.exists():
+        return "unknown"
+
+    try:
+        data = tomllib.loads(pyproject.read_text())
+    except Exception:  # pragma: no cover - defensive fallback
+        return "unknown"
+
+    return str(data.get("project", {}).get("version", "unknown"))
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        help="Show version information and exit.",
+        is_eager=True,
+    ),
+) -> None:
+    if version:
+        _print_version()
+        raise typer.Exit()
+
+
+@app.command("version")  # type: ignore[misc]
+def version_command() -> None:
+    """Print version and supported data details."""
+
+    _print_version()
+
+
 @app.command()  # type: ignore[misc]
+@handle_cli_exceptions
 def validate_srf(root: str = "data/srf", sensor: str = "emit") -> None:
     reg = SRFRegistry(root)
     srf = reg.get(sensor)
@@ -38,6 +143,7 @@ def validate_srf(root: str = "data/srf", sensor: str = "emit") -> None:
 
 
 @app.command()  # type: ignore[misc]
+@handle_cli_exceptions
 def validate_data(config: str = "configs/data.yaml") -> None:
     cfg = yaml.safe_load(Path(config).read_text())
     validate_dataset(cfg)
@@ -45,6 +151,7 @@ def validate_data(config: str = "configs/data.yaml") -> None:
 
 
 @app.command()  # type: ignore[misc]
+@handle_cli_exceptions
 def pretrain_mae(
     config: str = "configs/train.mae.yaml",
     no_spatial_mask: bool = typer.Option(
@@ -59,6 +166,7 @@ def pretrain_mae(
 
 
 @align_app.command("train")  # type: ignore[misc]
+@handle_cli_exceptions
 def align_train(
     cfg: str = typer.Option("configs/phase2/alignment.yaml", "--cfg", "-c"),
     max_steps: int | None = typer.Option(None, "--max-steps", "-m"),
@@ -69,11 +177,13 @@ def align_train(
 
 
 @app.command()  # type: ignore[misc]
+@handle_cli_exceptions
 def evaluate(config: str = "configs/eval.yaml") -> None:
     run_eval(config)
 
 
 @data_app.command("info")  # type: ignore[misc]
+@handle_cli_exceptions
 def data_info(path: Path) -> None:
     """Inspect a hyperspectral cube and print a short summary."""
 
@@ -82,6 +192,7 @@ def data_info(path: Path) -> None:
 
 
 @data_app.command("to-canonical")  # type: ignore[misc]
+@handle_cli_exceptions
 def data_to_canonical(path: Path, out: str = typer.Option("npz", "--out")) -> None:
     """Write the canonical representation of a hyperspectral cube."""
 
