@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
+import logging
 from typing import Any
 
 import numpy as np
@@ -11,10 +12,27 @@ from numpy.typing import NDArray
 from alchemi.utils.integrate import np_integrate as _np_integrate
 
 
+logger = logging.getLogger(__name__)
+
+
 class SpectrumKind(str, Enum):
     RADIANCE = "radiance"  # W·m^-2·sr^-1·nm^-1
     REFLECTANCE = "reflectance"  # [0,1]
     BT = "brightness_temp"  # Kelvin
+
+
+REFLECTANCE_MAX_EPS = 1e-3
+BT_PLAUSIBLE_MIN_K = 150.0
+BT_PLAUSIBLE_MAX_K = 400.0
+EXPECTED_UNITS: dict[SpectrumKind, set[str]] = {
+    SpectrumKind.RADIANCE: {
+        "w·m^-2·sr^-1·nm^-1",
+        "w m-2 sr-1 nm-1",
+        "w/m^2/sr/nm",
+    },
+    SpectrumKind.REFLECTANCE: {"", "unitless", "dimensionless", "reflectance", "1"},
+    SpectrumKind.BT: {"k", "kelvin"},
+}
 
 
 @dataclass
@@ -48,6 +66,41 @@ class Spectrum:
                 raise ValueError("mask shape mismatch")
             self.mask = m
 
+        self._validate_values()
+        self._warn_on_units()
+
+    def _validate_values(self) -> None:
+        if self.kind == SpectrumKind.REFLECTANCE:
+            if np.any(self.values < 0) or np.any(self.values > 1.0 + REFLECTANCE_MAX_EPS):
+                msg = "Reflectance values must be within [0, 1 + eps]"
+                raise ValueError(msg)
+        elif self.kind == SpectrumKind.BT:
+            if np.any(self.values <= 0):
+                msg = "Brightness temperature values must be > 0 K"
+                raise ValueError(msg)
+            finite_values = self.values[np.isfinite(self.values)]
+            if finite_values.size > 0:
+                min_val = float(np.nanmin(finite_values))
+                max_val = float(np.nanmax(finite_values))
+                if min_val < BT_PLAUSIBLE_MIN_K or max_val > BT_PLAUSIBLE_MAX_K:
+                    logger.warning(
+                        "Brightness temperature values fall outside plausible range [%s, %s] K",
+                        BT_PLAUSIBLE_MIN_K,
+                        BT_PLAUSIBLE_MAX_K,
+                    )
+        elif self.kind == SpectrumKind.RADIANCE:
+            if np.any(self.values < 0):
+                msg = "Radiance values must be non-negative"
+                raise ValueError(msg)
+
+    def _warn_on_units(self) -> None:
+        expected = EXPECTED_UNITS.get(self.kind)
+        if expected is None:
+            return
+        normalized_units = self.units.strip().lower()
+        if normalized_units not in expected:
+            logger.warning("Unexpected units '%s' for spectrum kind '%s'", self.units, self.kind.value)
+
     def masked(self) -> Spectrum:
         if self.mask is None:
             return self
@@ -72,6 +125,40 @@ class SRFMatrix:
     cache_key: str | None = None
     bad_band_mask: NDArray[np.bool_] | None = None
     bad_band_windows_nm: Sequence[tuple[float, float]] | None = None
+
+    def __post_init__(self) -> None:
+        num_bands = len(self.bands_nm)
+        if len(self.bands_resp) != num_bands:
+            msg = "bands_resp length must match bands_nm"
+            raise ValueError(msg)
+        if len(self.centers_nm) != num_bands:
+            msg = "centers_nm length must match number of bands"
+            raise ValueError(msg)
+
+        centers_nm = np.asarray(self.centers_nm, dtype=np.float64)
+        bands_nm: list[np.ndarray] = []
+        bands_resp: list[np.ndarray] = []
+
+        for idx, (nm, resp) in enumerate(zip(self.bands_nm, self.bands_resp, strict=True)):
+            nm_arr = np.asarray(nm, dtype=np.float64)
+            resp_arr = np.asarray(resp, dtype=np.float64)
+
+            if nm_arr.ndim != 1:
+                msg = f"bands_nm[{idx}] must be 1-D"
+                raise ValueError(msg)
+            if resp_arr.ndim != 1:
+                msg = f"bands_resp[{idx}] must be 1-D"
+                raise ValueError(msg)
+            if nm_arr.shape[0] != resp_arr.shape[0]:
+                msg = f"bands_nm[{idx}] and bands_resp[{idx}] must have the same length"
+                raise ValueError(msg)
+
+            bands_nm.append(nm_arr)
+            bands_resp.append(resp_arr)
+
+        self.centers_nm = centers_nm
+        self.bands_nm = bands_nm
+        self.bands_resp = bands_resp
 
     def row_integrals(self) -> NDArray[np.float64]:
         integrals = [
