@@ -12,7 +12,6 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-import numpy as np
 import torch
 import torch.distributed as dist
 from torch import nn
@@ -62,9 +61,8 @@ class ToyModel(nn.Module):
 
 
 def _seed_all(seed: int, rank: int) -> None:
-    """Seed Python, NumPy, and PyTorch RNGs in a rank-dependent way."""
+    """Seed Python and PyTorch RNGs in a rank-dependent way."""
     torch.manual_seed(seed + rank)
-    np.random.seed(seed + rank)
     random.seed(seed + rank)
 
 

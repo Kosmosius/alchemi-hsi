@@ -6,5 +6,8 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "B", "UP", "NPY", "RUF", "W"]
 ignore = ["E203"]
 
+[lint.per-file-ignores]
+"scripts/ablate_pretrain.py" = ["B008"]
+
 [lint.isort]
 known-first-party = ["alchemi"]
