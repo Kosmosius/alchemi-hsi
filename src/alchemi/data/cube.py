@@ -10,7 +10,7 @@ from __future__ import annotations
 
 # mypy: ignore-errors
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -312,6 +312,69 @@ class Cube:
             converted = (1.0e7 / self.axis).astype(np.float64, copy=False)
             return cast(np.ndarray, converted)
         return None
+
+    def iter_tiles(
+        self,
+        tile_h: int,
+        tile_w: int,
+        step_h: int | None = None,
+        step_w: int | None = None,
+    ) -> Iterator[tuple[slice, slice, "Cube"]]:
+        """Iterate over spatial tiles of the cube.
+
+        Parameters
+        ----------
+        tile_h, tile_w:
+            Height and width of each tile.
+        step_h, step_w:
+            Stride between tile starts. Defaults to non-overlapping tiles
+            (``tile_h``/``tile_w``).
+
+        Yields
+        ------
+        tuple
+            ``(row_slice, col_slice, subcube)`` for each tile. The ``subcube``
+            shares the underlying data array where possible.
+        """
+
+        if tile_h <= 0 or tile_w <= 0:
+            msg = "tile_h and tile_w must be positive"
+            raise ValueError(msg)
+
+        step_h = tile_h if step_h is None else step_h
+        step_w = tile_w if step_w is None else step_w
+        if step_h <= 0 or step_w <= 0:
+            msg = "step_h and step_w must be positive"
+            raise ValueError(msg)
+
+        height, width, _ = self.shape
+
+        for row_start in range(0, height, step_h):
+            row_end = min(row_start + tile_h, height)
+            row_slice = slice(row_start, row_end)
+            for col_start in range(0, width, step_w):
+                col_end = min(col_start + tile_w, width)
+                col_slice = slice(col_start, col_end)
+
+                metadata = dict(self.attrs)
+                if self.sensor is not None:
+                    metadata.setdefault("sensor", self.sensor)
+                if self.units is not None:
+                    metadata.setdefault("units", self.units)
+                metadata.setdefault("axes", self.axis_names)
+                if self.axis_coords is not None:
+                    metadata.setdefault("axis_coords", self.axis_coords)
+
+                subcube = Cube(
+                    data=self.data[row_slice, col_slice, :],
+                    axis=self.axis,
+                    axis_unit=self.axis_unit,
+                    value_kind=self.value_kind,
+                    srf_id=self.srf_id,
+                    geo=self.geo,
+                    attrs=metadata,
+                )
+                yield row_slice, col_slice, subcube
 
     # ---------- Tokenisation ----------
 
