@@ -1,4 +1,10 @@
-"""CLIP-style alignment trainer used for Phase-2 experiments."""
+"""Mainline CLIP-style alignment trainer used for Phase-2 experiments.
+
+This is the production-facing training path for the Alchemi encoder. The
+synthetic MAE harness under ``alchemi.training.trainer`` remains available for
+throughput and masking ablations, but this alignment trainer is the route that
+produces the encoder shipped to downstream tasks.
+"""
 
 from __future__ import annotations
 
@@ -21,7 +27,7 @@ from ..align.losses import info_nce_symmetric
 from ..config import RuntimeConfig, resolve_amp_dtype, resolve_dtype, select_device
 from ..eval.retrieval import retrieval_at_k, spectral_angle_deltas
 from ..heads.banddepth import BandDepthHead, load_banddepth_config
-from ..models.set_encoder import SetEncoder
+from ..models import build_set_encoder
 from ..tokens.band_tokenizer import BandTokConfig, BandTokenizer
 from ..tokens.registry import AxisUnit
 from ..training.amp import autocast
@@ -249,7 +255,7 @@ class _TokenTower(nn.Module):
     def __init__(self, token_dim: int, embed_dim: int, depth: int, heads: int) -> None:
         super().__init__()
         self.token_proj = nn.Linear(token_dim, embed_dim)
-        self.encoder = SetEncoder(dim=embed_dim, depth=depth, heads=heads)
+        self.encoder = build_set_encoder(embed_dim=embed_dim, depth=depth, heads=heads)
         self.norm = nn.LayerNorm(embed_dim)
 
     def forward(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:

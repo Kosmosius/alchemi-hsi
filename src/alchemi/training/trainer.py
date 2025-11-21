@@ -1,3 +1,12 @@
+"""Synthetic MAE pretraining and toy alignment harness.
+
+This module is primarily a lightweight throughput/ablation playground that
+trains on random tokens. The CLIP-style alignment trainer in
+``alchemi.train.alignment_trainer`` is the mainline path used for producing
+deployable encoders. Keeping this module documented makes it clear that its
+scope is experimental and synthetic.
+"""
+
 from __future__ import annotations
 
 import os
@@ -17,6 +26,7 @@ from ..models import (
     MAEEncoder,
     SetEncoder,
     SpectralBasisProjector,
+    build_set_encoder,
 )
 from ..models.masking import MaskingConfig
 from ..utils.ckpt import save_checkpoint
@@ -88,7 +98,7 @@ def _mask_spatial(shape: tuple[int, ...], spatial_mask_ratio: float, *, disabled
 
 def _build_embedder(cfg: TrainCfg) -> tuple[SpectralBasisProjector, SetEncoder]:
     basis = SpectralBasisProjector(K=cfg.basis_K)
-    setenc = SetEncoder(dim=cfg.embed_dim, depth=2, heads=cfg.n_heads)
+    setenc = build_set_encoder(embed_dim=cfg.embed_dim, depth=2, heads=cfg.n_heads)
     return basis, setenc
 
 
@@ -143,7 +153,11 @@ def run_pretrain_mae(
     no_posenc: bool = False,
     seed_override: int | None = None,
 ) -> ThroughputStats:
-    """Toy MAE pretraining loop with spatial+spectral masking and throughput measurement."""
+    """Toy MAE pretraining loop with spatial+spectral masking and throughput measurement.
+
+    This harness runs on synthetic tokens and is intended for ablations rather
+    than producing the deployment encoder.
+    """
     payload = yaml.safe_load(Path(config_path).read_text())
     train_payload = payload.get("train", {}) if isinstance(payload, dict) else {}
     runtime_cfg = RuntimeConfig.from_mapping(
@@ -310,7 +324,11 @@ def run_pretrain_mae(
 
 
 def run_align(config_path: str, *, seed_override: int | None = None) -> ThroughputStats:
-    """Toy alignment loop with throughput measurement."""
+    """Toy alignment loop with throughput measurement.
+
+    This synthetic loop mirrors the main alignment trainer at a high level but
+    runs on random tensors for fast instrumentation.
+    """
     payload = yaml.safe_load(Path(config_path).read_text())
     train_payload = payload.get("train", {}) if isinstance(payload, dict) else {}
     runtime_cfg = RuntimeConfig.from_mapping(
