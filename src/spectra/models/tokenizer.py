@@ -56,7 +56,7 @@ class SpectralTokenizer(nn.Module):
             raise ValueError("wavelengths_nm must be 1-D or 2-D")
 
         if band_valid_mask is None:
-            mask = (w > 0) | torch.isfinite(w)
+            mask = torch.isfinite(w) & (w > 0)
         else:
             mask = band_valid_mask
             if mask.ndim == 1:

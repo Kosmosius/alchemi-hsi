@@ -70,7 +70,7 @@ class SpectralMAE(nn.Module):
     def forward(self, x: torch.Tensor, wavelengths_nm: torch.Tensor) -> dict:
         tokens, info = self.tokenizer(x, wavelengths_nm)
         band_mask = ~info["band_pad_mask"]  # type: ignore[index]
-        attn_mask = info["attn_mask"]  # type: ignore[index]
+        attn_mask = info["attn_mask"].to(dtype=torch.bool)  # type: ignore[index]
 
         # Reshape raw tokens into [B, tokens, bands, per_band_feature_dim]
         context_area = self.tokenizer.config.context_size * self.tokenizer.config.context_size
@@ -98,10 +98,19 @@ class SpectralMAE(nn.Module):
         token_summary = (tokens_emb * band_mask_expanded).sum(dim=2) / band_counts
 
         visible = token_summary.masked_fill(spatial_mask.unsqueeze(-1), 0.0)
+        key_padding_mask = ~attn_mask
         with select_sdp_backend("flash" if self.config.flash_attn else "mem_efficient"):
             with autocast_from_config({"precision": self.config.precision}):
-                encoded = self.encoder(self.encoder_input(visible))
-        decoded = self.decoder(encoded, memory=encoded)
+                encoded = self.encoder(
+                    self.encoder_input(visible),
+                    src_key_padding_mask=key_padding_mask,
+                )
+        decoded = self.decoder(
+            encoded,
+            memory=encoded,
+            tgt_key_padding_mask=key_padding_mask,
+            memory_key_padding_mask=key_padding_mask,
+        )
 
         # Condition reconstruction on per-band positional embeddings.
         band_queries = self.band_query_proj(pos_tokens).expand(-1, num_tokens, -1, -1)
