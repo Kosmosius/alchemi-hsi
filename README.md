@@ -33,6 +33,8 @@ For experiment knobs and YAML shapes, the canonical schemas live in
 [`docs/CONFIG.md`](docs/CONFIG.md); both training entrypoints share the
 ``global`` block defined in `src/alchemi/config.py`.
 
+For an overview of the public CLI surface, see [`docs/CLI.md`](docs/CLI.md) or run `alchemi about` to print the installed version and supported sensors.
+
 ## Pretraining ablations
 
 A lightweight synthetic harness in `scripts/ablate_pretrain.py` sweeps masking ratios, grouping modes/sizes, and any-sensor ingest. It emits one CSV per run plus reconstruction-MSE and throughput plots under `outputs/ablations/`, and reports a retrieval@1 sanity check over a toy probe set.

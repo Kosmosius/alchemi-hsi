@@ -28,19 +28,59 @@ from .train.alignment_trainer import AlignmentTrainer
 from .training.trainer import run_eval, run_pretrain_mae
 from .utils.logging import get_logger
 
-_SUPPORTED_SENSORS = (
-    "EMIT L1B",
-    "EnMAP L1B",
-    "AVIRIS-NG L1B",
-    "HyTES L1B",
-    "Mako ACE",
-    "Mako BTEMP",
-    "Mako L2S",
+@dataclass(frozen=True)
+class SensorInfo:
+    name: str
+    id: str
+    quantity: str
+    canonical: str
+
+
+_SUPPORTED_SENSORS: tuple[SensorInfo, ...] = (
+    SensorInfo(
+        name="EMIT L1B",
+        id="emit",
+        quantity="Radiance (W·m⁻²·sr⁻¹·nm⁻¹)",
+        canonical="Canonically stored as Cube(value_kind='radiance', band_mask for water-vapour windows).",
+    ),
+    SensorInfo(
+        name="EnMAP L1B",
+        id="enmap",
+        quantity="Radiance (W·m⁻²·sr⁻¹·nm⁻¹)",
+        canonical="VNIR+SWIR radiance merged into Cube(value_kind='radiance').",
+    ),
+    SensorInfo(
+        name="AVIRIS-NG L1B",
+        id="avirisng",
+        quantity="Radiance (W·m⁻²·sr⁻¹·nm⁻¹)",
+        canonical="Native radiance translated to Cube(value_kind='radiance').",
+    ),
+    SensorInfo(
+        name="HyTES L1B",
+        id="hytes",
+        quantity="Brightness temperature (K)",
+        canonical="BT cubes become Cube(value_kind='brightness_temp', wavelength_nm spectral grid).",
+    ),
+    SensorInfo(
+        name="Mako L2S",
+        id="mako",
+        quantity="Radiance (W·m⁻²·sr⁻¹·nm⁻¹)",
+        canonical="ENVI radiance converted from microflick to Cube(value_kind='radiance').",
+    ),
+    SensorInfo(
+        name="Mako BTEMP",
+        id="mako",
+        quantity="Brightness temperature (K)",
+        canonical="Kelvin-adjusted BT stacks stored as Cube(value_kind='brightness_temp').",
+    ),
+    SensorInfo(
+        name="Mako ACE",
+        id="mako",
+        quantity="Gas ACE scores (dimensionless)",
+        canonical="ACE scores exposed with gas names for downstream statistics.",
+    ),
 )
-_CANONICAL_DESC = (
-    "Canonical cubes store sensor-agnostic radiance values, wavelength coordinates, "
-    "band masks, and metadata in NPZ or Zarr format."
-)
+_CANONICAL_DESC = "Canonical cubes store sensor-agnostic values, wavelength coordinates, band masks, and metadata in NPZ or Zarr format."
 _DEBUG_ENV = "ALCHEMI_DEBUG"
 
 app = typer.Typer(add_completion=False)
@@ -102,9 +142,16 @@ def _print_version() -> None:
         pkg_version = _read_local_version()
 
     typer.echo(f"alchemi-hsi version: {pkg_version}")
-    typer.echo("Supported sensors:")
+    typer.echo(
+        "Physics-aware, SRF-aware, sensor-agnostic hyperspectral foundation library and CLI."
+    )
+    typer.echo("")
+    typer.echo("Supported sensors and canonical ingestion:")
     for sensor in _SUPPORTED_SENSORS:
-        typer.echo(f"  - {sensor}")
+        typer.echo(f"  - {sensor.name} ({sensor.id})")
+        typer.echo(f"      Quantity: {sensor.quantity}")
+        typer.echo(f"      Canonical: {sensor.canonical}")
+    typer.echo("")
     typer.echo(f"Canonical cubes: {_CANONICAL_DESC}")
 
 
@@ -138,6 +185,13 @@ def main(
 @app.command("version")  # type: ignore[misc]
 def version_command() -> None:
     """Print version and supported data details."""
+
+    _print_version()
+
+
+@app.command("about")  # type: ignore[misc]
+def about_command() -> None:
+    """Show version, project description, and supported sensors."""
 
     _print_version()
 
