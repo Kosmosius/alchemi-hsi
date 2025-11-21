@@ -5,6 +5,7 @@ from .heads.domain import DomainDiscriminator
 from .heads.gas_head import GasHead
 from .heads.id_head import IDHead
 from .heads.unmix_head import LinearUnmixHead
+from .factory import build_set_encoder
 from .masking import MaskingConfig
 from .posenc import WavelengthPosEnc
 from .retrieval import cosine_topk
@@ -22,6 +23,7 @@ __all__ = [
     "MaskedAutoencoder",
     "MaskingConfig",
     "SetEncoder",
+    "build_set_encoder",
     "SpectralBasisProjector",
     "WavelengthPosEnc",
     "cosine_topk",
