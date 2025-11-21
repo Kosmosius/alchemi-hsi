@@ -1,6 +1,7 @@
 from .basis import SpectralBasisProjector
 from .blocks import MLP
 from .encoder.mae import MAEDecoder, MAEEncoder, MAEOutput, MaskedAutoencoder
+from .factory import build_set_encoder
 from .heads.domain import DomainDiscriminator
 from .heads.gas_head import GasHead
 from .heads.id_head import IDHead
@@ -24,5 +25,6 @@ __all__ = [
     "SetEncoder",
     "SpectralBasisProjector",
     "WavelengthPosEnc",
+    "build_set_encoder",
     "cosine_topk",
 ]
