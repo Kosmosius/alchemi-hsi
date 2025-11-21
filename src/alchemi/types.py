@@ -112,6 +112,14 @@ class SRFMatrix:
 
 @dataclass
 class SampleMeta:
+    """Metadata describing a per-pixel measurement.
+
+    ``Sample`` instances created from a :class:`~alchemi.data.cube.Cube` should
+    carry the originating sensor identifier (or SRF id), the source row/column
+    indices, and any additional cube attributes that are meaningful at the
+    pixel level.
+    """
+
     sensor_id: str
     row: int
     col: int
@@ -128,6 +136,16 @@ class SampleMeta:
 
 @dataclass
 class Sample:
+    """A single measured spectrum (e.g. a pixel extracted from a cube).
+
+    ``Sample`` is intentionally lightweight to accommodate lab-style spectra
+    that may not originate from an image. When a ``Sample`` is derived from a
+    :class:`~alchemi.data.cube.Cube` the spectrum's wavelength grid and
+    :class:`SpectrumKind` **must** match the cube's spectral axis and
+    value_kind. Spatial provenance (``row``/``col``) and sensor identifiers are
+    captured in :class:`SampleMeta`.
+    """
+
     spectrum: Spectrum
     meta: SampleMeta | dict[str, Any]
 
