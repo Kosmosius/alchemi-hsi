@@ -40,6 +40,7 @@ class SpectralMAE(nn.Module):
         self.config = config or MAEConfig()
         self.tokenizer = SpectralTokenizer(tokenizer_config or TokenizerConfig(context_size=self.config.context_size))
         self.posenc = WavelengthPositionalEncoding(posenc_config or PosEncConfig(dim=self.config.encoder_dim))
+        posenc_dim = self.posenc.config.dim
         self.masker = MaskingHelper(
             MaskingConfig(
                 spatial_mask_ratio=self.config.mask_ratio_spatial,
@@ -54,7 +55,7 @@ class SpectralMAE(nn.Module):
         )
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=self.config.encoder_layers)
         self.proj_in = nn.Linear(1, self.config.encoder_dim)
-        self.pos_projection = nn.Linear(self.config.encoder_dim, self.config.encoder_dim)
+        self.pos_projection = nn.Linear(posenc_dim, self.config.encoder_dim)
         self.encoder_input = nn.Linear(self.config.encoder_dim, self.config.encoder_dim, bias=True)
         self.decoder = nn.TransformerDecoder(
             nn.TransformerDecoderLayer(
@@ -93,7 +94,8 @@ class SpectralMAE(nn.Module):
         spectral_mask = masking["spectral_mask"]
 
         # Aggregate bands into per-token summaries to keep encoder input shape fixed.
-        band_mask_expanded = band_mask.unsqueeze(1).unsqueeze(-1)
+        band_keep = band_mask & ~spectral_mask
+        band_mask_expanded = band_keep.unsqueeze(1).unsqueeze(-1)
         band_counts = band_mask_expanded.sum(dim=2).clamp(min=1)
         token_summary = (tokens_emb * band_mask_expanded).sum(dim=2) / band_counts
 
