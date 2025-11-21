@@ -78,4 +78,4 @@ print(f"Band depth at 2165 nm: {depth:.4f}")
 
 - Browse the [Definition of Done](../DEFINITION_OF_DONE.md) to understand the quality bar for CLI features.
 - Add new demos under `docs/quickstarts/` whenever you introduce a new command.
-- Try the `notebooks/quickstart.ipynb` notebook for an interactive variant of these workflows.
+- Try the `notebooks/quickstart.ipynb` notebook for an interactive variant that builds a synthetic cube, inspects spectra, and tokenises bands without external data.
