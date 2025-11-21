@@ -10,4 +10,4 @@ ignore = ["E203"]
 "scripts/ablate_pretrain.py" = ["B008"]
 
 [lint.isort]
-known-first-party = ["alchemi"]
+known-first-party = ["alchemi", "spectra"]
