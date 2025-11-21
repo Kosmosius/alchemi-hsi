@@ -17,14 +17,46 @@ class SpectrumKind(str, Enum):
     BT = "brightness_temp"  # Kelvin
 
 
+WAVELENGTH_GRID_MONOTONICITY_EPS = 1e-9
+"""Absolute tolerance (in nm) for wavelength monotonicity checks."""
+
+
+WAVELENGTH_GRID_DUPLICATE_EPS = 1e-12
+"""Absolute tolerance (in nm) for detecting repeated wavelengths."""
+
+
 @dataclass
 class WavelengthGrid:
     nm: NDArray[np.float64]  # [B]
 
     def __post_init__(self) -> None:
+        """
+        Validate a 1-D, strictly increasing wavelength grid with tolerance.
+
+        The grid is considered valid when the finite differences are larger than
+        ``-WAVELENGTH_GRID_MONOTONICITY_EPS`` (allowing tiny floating-point
+        jitters) and at least one step is positive. Exact or near-duplicate
+        bands (within ``WAVELENGTH_GRID_DUPLICATE_EPS``) are rejected to avoid
+        zero-width intervals.
+        """
+
         a = np.asarray(self.nm, dtype=np.float64)
-        if a.ndim != 1 or np.any(np.diff(a) <= 0):
-            raise ValueError("Wavelength grid must be strictly increasing 1-D array (nm)")
+        if a.ndim != 1:
+            raise ValueError("Wavelength grid must be a 1-D array (nm)")
+
+        diffs = np.diff(a)
+        if diffs.size == 0:
+            raise ValueError("Wavelength grid must contain at least two entries")
+
+        if np.any(diffs < -WAVELENGTH_GRID_MONOTONICITY_EPS):
+            raise ValueError(
+                "Wavelength grid must be monotonically increasing within tolerance"
+            )
+        if np.any(np.isclose(diffs, 0.0, atol=WAVELENGTH_GRID_DUPLICATE_EPS)):
+            raise ValueError("Wavelength grid must not contain repeated bands")
+        if not np.any(diffs > 0):
+            raise ValueError("Wavelength grid must increase")
+
         self.nm = a
 
 

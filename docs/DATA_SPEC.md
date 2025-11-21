@@ -15,11 +15,16 @@ stable schema.
 | ``y`` | Along-track row index | ``int32`` | index or metres | Required.
 | ``x`` | Cross-track column index | ``int32`` | index or metres | Required.
 | ``band`` | Spectral sample index | ``int32`` | – | Required, aligns with spectroscopic order.
-| ``wavelength_nm`` | Spectral axis in wavelength | ``float64`` | nm | Monotonic increasing; required for SWIR and LWIR radiance products.
+| ``wavelength_nm`` | Spectral axis in wavelength | ``float64`` | nm | Monotonic increasing within a small numerical tolerance; required for SWIR and LWIR radiance products.
 | ``wavenumber_cm_1`` | Spectral axis in wavenumber | ``float64`` | cm⁻¹ | Optional convenience coordinate for LWIR BT; strictly decreasing.
 
 Both spectral coordinates may coexist. When both are present, they must describe
 the same spectral grid (``wavenumber_cm_1 = 1e7 / wavelength_nm``).
+
+The monotonic check for ``wavelength_nm`` follows
+``alchemi.types.WAVELENGTH_GRID_MONOTONICITY_EPS`` (default ``1e-9`` nm) to
+ignore sub-nanometer floating-point jitter while still rejecting repeated bands
+or genuine decreases.
 
 ### Data variables
 
