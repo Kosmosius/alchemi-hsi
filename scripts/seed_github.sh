@@ -20,7 +20,8 @@ echo "=== Seeding GitHub from $TASKS into $REPO ==="
 echo ">>> Seeding labels..."
 yq -r '.labels[]' "$TASKS" | while read -r L; do
   [[ -z "$L" ]] && continue
-  COLOR=$(printf '%06x' $((RANDOM % 0xFFFFFF)))
+  # Deterministic color: first 6 hex chars of SHA1(label name)
+  COLOR=$(echo -n "$L" | sha1sum | head -c 6 | tr '[:lower:]' '[:upper:]')
   echo "  label: $L (color #$COLOR)"
   gh label create "$L" --repo "$REPO" --color "$COLOR" --force >/dev/null
 done

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -24,11 +25,24 @@ class Label:
 
     @classmethod
     def from_dict(cls, data: dict[str, str]) -> Label:
+        color = data.get("color") or label_color_from_name(data["name"])
         return cls(
             name=data["name"],
-            color=data["color"].upper(),
+            color=color.upper(),
             description=data.get("description") or None,
         )
+
+
+def label_color_from_name(name: str) -> str:
+    """Derive a deterministic hex color for a label name.
+
+    GitHub label colors are six-character hex strings. We take the first
+    six characters of a SHA1 digest of the label name to keep the mapping
+    stable across runs while avoiding a hard-coded palette.
+    """
+
+    digest = hashlib.sha1(name.encode("utf-8")).hexdigest()
+    return digest[:6].upper()
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
