@@ -68,6 +68,7 @@ def load_emit_l1b(path: str, *, band_mask: bool = True) -> xr.Dataset:
 
         ds.attrs.update(
             sensor="EMIT",
+            quantity="radiance",
             radiance_units=TARGET_RADIANCE_UNITS,
             source_radiance_units=source_units or TARGET_RADIANCE_UNITS,
             driver=src.driver,

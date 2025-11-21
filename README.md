@@ -12,7 +12,28 @@ pytest -q                   # CPU-fast tests
 python -m alchemi.cli --help
 ```
 
-See docs/ for PRD, ARCH, DATA_SPEC, EVAL, ROADMAP, DECISIONS, APPENDIX. Phase‑1 quickstarts are collected under [`docs/quickstarts/`](docs/quickstarts/)—start with the [CLI walkthrough](docs/quickstarts/cli.md) to explore dataset validation and canonical cube exports end-to-end.
+See docs/ for PRD, ARCH, DATA_SPEC, EVAL, ROADMAP, DECISIONS, APPENDIX. Phase‑1 quickstarts are collected under [`docs/quickstarts/`](docs/quickstarts/)—start with the [CLI walkthrough](docs/quickstarts/cli.md) to explore dataset validation and canonical cube exports end-to-end. For an interactive Python version, open [`notebooks/quickstart.ipynb`](notebooks/quickstart.ipynb) to build a synthetic cube, inspect spectra, and tokenise bands.
+
+## Tiling large cubes
+
+Process large scenes without loading the full raster into GPU/CPU memory by iterating over tiles:
+
+```python
+from alchemi.data.cube import Cube
+
+cube = Cube(...)
+for row_slice, col_slice, tile in cube.iter_tiles(tile_h=64, tile_w=64):
+    logits = model(tile.data)  # run your model on a 64×64×C chip
+    output[row_slice, col_slice] = logits
+```
+
+Edges are handled automatically, so partial tiles at the borders are yielded with the correct shape.
+
+For experiment knobs and YAML shapes, the canonical schemas live in
+[`docs/CONFIG.md`](docs/CONFIG.md); both training entrypoints share the
+``global`` block defined in `src/alchemi/config.py`.
+
+For an overview of the public CLI surface, see [`docs/CLI.md`](docs/CLI.md) or run `alchemi about` to print the installed version and supported sensors.
 
 ## Pretraining ablations
 

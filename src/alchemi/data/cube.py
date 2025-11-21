@@ -10,7 +10,7 @@ from __future__ import annotations
 
 # mypy: ignore-errors
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -313,6 +313,69 @@ class Cube:
             return cast(np.ndarray, converted)
         return None
 
+    def iter_tiles(
+        self,
+        tile_h: int,
+        tile_w: int,
+        step_h: int | None = None,
+        step_w: int | None = None,
+    ) -> Iterator[tuple[slice, slice, "Cube"]]:
+        """Iterate over spatial tiles of the cube.
+
+        Parameters
+        ----------
+        tile_h, tile_w:
+            Height and width of each tile.
+        step_h, step_w:
+            Stride between tile starts. Defaults to non-overlapping tiles
+            (``tile_h``/``tile_w``).
+
+        Yields
+        ------
+        tuple
+            ``(row_slice, col_slice, subcube)`` for each tile. The ``subcube``
+            shares the underlying data array where possible.
+        """
+
+        if tile_h <= 0 or tile_w <= 0:
+            msg = "tile_h and tile_w must be positive"
+            raise ValueError(msg)
+
+        step_h = tile_h if step_h is None else step_h
+        step_w = tile_w if step_w is None else step_w
+        if step_h <= 0 or step_w <= 0:
+            msg = "step_h and step_w must be positive"
+            raise ValueError(msg)
+
+        height, width, _ = self.shape
+
+        for row_start in range(0, height, step_h):
+            row_end = min(row_start + tile_h, height)
+            row_slice = slice(row_start, row_end)
+            for col_start in range(0, width, step_w):
+                col_end = min(col_start + tile_w, width)
+                col_slice = slice(col_start, col_end)
+
+                metadata = dict(self.attrs)
+                if self.sensor is not None:
+                    metadata.setdefault("sensor", self.sensor)
+                if self.units is not None:
+                    metadata.setdefault("units", self.units)
+                metadata.setdefault("axes", self.axis_names)
+                if self.axis_coords is not None:
+                    metadata.setdefault("axis_coords", self.axis_coords)
+
+                subcube = Cube(
+                    data=self.data[row_slice, col_slice, :],
+                    axis=self.axis,
+                    axis_unit=self.axis_unit,
+                    value_kind=self.value_kind,
+                    srf_id=self.srf_id,
+                    geo=self.geo,
+                    attrs=metadata,
+                )
+                yield row_slice, col_slice, subcube
+
     # ---------- Tokenisation ----------
 
     def to_tokens(
@@ -327,15 +390,25 @@ class Cube:
         Parameters
         ----------
         tokenizer:
-            :class:`BandTokenizer` instance. When ``None`` a default preset is
-            selected based on :attr:`axis_unit` and :attr:`srf_id`.
+            :class:`BandTokenizer` instance. When ``None`` a preset from
+            :func:`alchemi.tokens.registry.get_default_tokenizer` is selected
+            based on the cube's resolved sensor id (``srf_id`` / ``sensor``) and
+            axis units (``axis_unit`` translated to ``"nm"`` or ``"cm-1"``).
         reducer:
             Callable used to collapse the spatial dimensions into a single
             spectrum. Defaults to a ``nanmean`` across all pixels.
         width:
             Optional full-width-at-half-maximum metadata aligned with the
             spectral axis. When omitted the method attempts to source the data
-            from cube attributes before delegating to tokenizer heuristics.
+            from cube attributes before delegating to tokenizer heuristics (for
+            example, synthetic widths via :func:`alchemi.srf.utils.default_band_widths`).
+
+        Notes
+        -----
+        If the chosen tokenizer includes SRF embeddings, SRF features are
+        lazily loaded using the resolved sensor id. When the SRF centres match
+        the cube axis (or its nanometre conversion) within tolerance,
+        ``srf_row`` is passed to the tokenizer; otherwise SRF data is ignored.
         """
 
         axis_unit: AxisUnit = "nm" if self.axis_unit == "wavelength_nm" else "cm-1"

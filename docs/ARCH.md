@@ -1,5 +1,3 @@
-# ARCH
-
 This repository is organised around a single canonical cube representation that
 feeds both training stacks (alignment and synthetic MAE) and downstream
 evaluation utilities. The current dev branch implements the following flow:
@@ -78,6 +76,10 @@ Sensor products → ingest (sensor-specific) → Cube/Sample → physics helpers
 Training entrypoints consume YAML configs in `configs/` and share a small
 central schema defined in `src/alchemi/config.py`. Each config can include a
 `global` block to standardise runtime settings:
+Training entrypoints consume YAML configs in ``configs/`` and share a small,
+central schema defined in ``src/alchemi/config.py`` (see ``docs/CONFIG.md`` for
+the full guide). Each config can include a ``global`` block to standardize
+runtime settings:
 
 ```yaml
 global:

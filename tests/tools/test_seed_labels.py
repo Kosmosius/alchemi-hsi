@@ -48,6 +48,14 @@ def test_dry_run_prints_intended_changes(monkeypatch, tmp_path, capsys):
     assert "Would create label 'area:new'" in captured.out
 
 
+def test_label_color_is_deterministic_and_fills_default():
+    color = seed_labels.label_color_from_name("priority:P1")
+    assert color == "8DC8F9"
+
+    label = seed_labels.Label.from_dict({"name": "priority:P1"})
+    assert label.color == color
+
+
 def test_skips_when_no_token(monkeypatch, tmp_path, capsys):
     labels_path = write_labels(
         tmp_path,

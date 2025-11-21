@@ -88,8 +88,10 @@ def open_mako_l2s(path: Path | str) -> xr.Dataset:
 
     ds.attrs.update(
         sensor=MAKO_SENSOR_ID,
+        quantity="radiance",
         radiance_units=_TARGET_RADIANCE_UNITS,
         source_radiance_units=_SOURCE_RADIANCE_UNITS,
+        units=_TARGET_RADIANCE_UNITS,
     )
     ds.coords["wavelength_nm"].attrs["units"] = "nm"
     return ds
@@ -143,8 +145,10 @@ def open_mako_btemp(path: Path | str) -> xr.Dataset:
 
     ds.attrs.update(
         sensor=MAKO_SENSOR_ID,
+        quantity="brightness_temp",
         bt_units="K",
         source_bt_units="°C",
+        units="K",
     )
     ds.coords["wavelength_nm"].attrs["units"] = "nm"
     return ds
