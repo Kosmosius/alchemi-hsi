@@ -1,27 +1,60 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Optional
 
 import torch
 from torch import nn
 
 
+@dataclass
+class PosEncConfig:
+    dim: int = 64
+    max_freq_log2: int = 4
+
+
+class WavelengthPositionalEncoding(nn.Module):
+    """Fourier features computed over wavelengths expressed in nanometers."""
+
+    def __init__(self, config: Optional[PosEncConfig] = None) -> None:
+        super().__init__()
+        self.config = config or PosEncConfig()
+        freq_bands = 2.0 ** torch.linspace(0, self.config.max_freq_log2, self.config.dim // 4)
+        self.register_buffer("freq_bands", freq_bands, persistent=False)
+
+    def forward(self, wavelengths_nm: torch.Tensor, pad_mask: torch.Tensor) -> torch.Tensor:
+        if wavelengths_nm.ndim != 2:
+            raise ValueError("wavelengths_nm must be (batch, bands)")
+        if pad_mask.shape != wavelengths_nm.shape:
+            raise ValueError("pad_mask must match wavelengths")
+
+        eps = 1e-6
+        valid_waves = torch.where(pad_mask, wavelengths_nm, torch.tensor(float("inf"), device=wavelengths_nm.device))
+        min_w = torch.where(valid_waves.isfinite().any(dim=1, keepdim=True), valid_waves.min(dim=1, keepdim=True).values, torch.zeros_like(valid_waves[:, :1]))
+        valid_waves = torch.where(pad_mask, wavelengths_nm, torch.tensor(float("-inf"), device=wavelengths_nm.device))
+        max_w = torch.where(valid_waves.isfinite().any(dim=1, keepdim=True), valid_waves.max(dim=1, keepdim=True).values, torch.ones_like(valid_waves[:, :1]))
+
+        norm = (wavelengths_nm - min_w) / (max_w - min_w + eps)
+        norm = norm.clamp(0, 1)
+
+        angles = norm.unsqueeze(-1) * self.freq_bands.to(norm.device) * 2 * math.pi
+        sin_feat = torch.sin(angles)
+        cos_feat = torch.cos(angles)
+        enc = torch.cat([sin_feat, cos_feat], dim=-1)
+
+        if enc.shape[-1] < self.config.dim:
+            enc = nn.functional.pad(enc, (0, self.config.dim - enc.shape[-1]))
+        elif enc.shape[-1] > self.config.dim:
+            enc = enc[..., : self.config.dim]
+
+        return enc * pad_mask.unsqueeze(-1)
+
+
 class WavelengthPosEnc(nn.Module):
     """Fourier-style positional encodings for spectral wavelengths.
 
-    Wavelengths are normalized to ``[0, 1]`` per sample over the valid bands and
-    encoded with sine/cosine features at powers-of-two frequencies. Invalid bands
-    are zeroed. Optionally, a normalized wavelength coordinate and a normalized
-    log-wavelength channel are appended.
-
-    Args:
-        num_frequencies:
-            Number of Fourier frequency bands. Each band contributes a sin/cos pair.
-        include_log_lambda:
-            If True, append a min-max normalized log-wavelength channel.
-        include_normalized_wavelength:
-            If True, append the normalized wavelength coordinate itself.
+    This class remains backward compatible with the original API used in tests.
     """
 
     def __init__(
@@ -38,7 +71,6 @@ class WavelengthPosEnc(nn.Module):
         self.include_log_lambda = bool(include_log_lambda)
         self.include_normalized_wavelength = bool(include_normalized_wavelength)
 
-        # sin + cos per frequency, plus optional log and/or normalized coord
         self.output_dim = (
             2 * self.num_frequencies
             + (1 if self.include_log_lambda else 0)
@@ -50,19 +82,6 @@ class WavelengthPosEnc(nn.Module):
         wavelengths_nm: torch.Tensor,
         valid_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Encode wavelengths with mask-aware normalized Fourier features.
-
-        Args:
-            wavelengths_nm:
-                Wavelengths in nanometers. Shape ``[B, Bands]`` or ``[Bands]``.
-            valid_mask:
-                Boolean mask of valid bands, same shape as ``wavelengths_nm`` (or
-                1-D and broadcastable to it). If None, all bands are treated as valid.
-
-        Returns:
-            Tensor of shape ``[B, Bands, D]``, where ``D = output_dim``.
-            Invalid bands are zeroed.
-        """
         w = wavelengths_nm
         if w.ndim == 1:
             w = w.unsqueeze(0)
@@ -79,7 +98,6 @@ class WavelengthPosEnc(nn.Module):
                 raise ValueError("valid_mask must be 1-D or 2-D to match wavelengths_nm")
             valid_mask = m
 
-        # Broadcast batch dimension if one of them is singleton.
         if w.shape[0] == 1 and valid_mask.shape[0] > 1:
             w = w.expand(valid_mask.shape[0], -1)
         if valid_mask.shape[0] == 1 and w.shape[0] > 1:
@@ -95,7 +113,6 @@ class WavelengthPosEnc(nn.Module):
         eps = torch.finfo(w.dtype).eps
         mask_any = valid_mask.any(dim=1, keepdim=True)
 
-        # Normalize wavelengths to [0, 1] per sample using only valid entries.
         masked_min = torch.where(
             valid_mask, w, torch.full_like(w, float("inf"))
         ).amin(dim=1, keepdim=True)
@@ -116,23 +133,20 @@ class WavelengthPosEnc(nn.Module):
         feature_chunks = []
 
         if self.include_normalized_wavelength:
-            # [B, Bands, 1]
             feature_chunks.append(norm.unsqueeze(-1))
 
         if self.num_frequencies > 0:
-            # Powers-of-two frequency bands, scaled to [0, 2π · 2^(K-1)]
             freq_exponents = torch.arange(
                 self.num_frequencies, device=w.device, dtype=w.dtype
             )
             freq_scales = (2.0 ** freq_exponents) * (2.0 * math.pi)
-            angles = norm.unsqueeze(-1) * freq_scales  # [B, Bands, F]
+            angles = norm.unsqueeze(-1) * freq_scales
 
             sin = torch.sin(angles)
             cos = torch.cos(angles)
             feature_chunks.extend((sin, cos))
 
         if self.include_log_lambda:
-            # Min-max normalized log-wavelength, per sample over valid bands.
             log_w = torch.log(torch.clamp(w, min=eps))
 
             masked_log_min = torch.where(
@@ -158,6 +172,8 @@ class WavelengthPosEnc(nn.Module):
             return torch.zeros((*w.shape, 0), device=w.device, dtype=w.dtype)
 
         out = torch.cat(feature_chunks, dim=-1)
-        # Extra safety: zero invalid bands in case of any numerical leakage.
         out = out * valid_mask.unsqueeze(-1)
         return out
+
+
+__all__ = ["PosEncConfig", "WavelengthPositionalEncoding", "WavelengthPosEnc"]

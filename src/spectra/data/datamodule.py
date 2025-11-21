@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Iterator, Sequence
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset, IterableDataset
 
 try:  # pragma: no cover - optional dependency
     from lightning import LightningDataModule
@@ -33,8 +34,12 @@ except Exception:  # pragma: no cover - fallback
 
 
 from .spectralearth import SpectralEarthDataset
+from spectra.utils.seed import seed_everything
 
 
+# ---------------------------------------------------------------------------
+# Collate utilities for variable-band cubes
+# ---------------------------------------------------------------------------
 def pad_collate(batch: list[dict[str, Any]]) -> dict[str, Any]:
     """Pad variable band dimension to the per-batch maximum and emit masks.
 
@@ -96,6 +101,9 @@ def pad_collate(batch: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# SpectralEarth data module (used by tests)
+# ---------------------------------------------------------------------------
 class SpectralEarthDataModule(LightningDataModule):
     """Lightning DataModule wrapping :class:`SpectralEarthDataset`."""
 
@@ -197,3 +205,68 @@ class SpectralEarthDataModule(LightningDataModule):
         if self.train_set is None:
             return []
         return list(self.train_set.iter_probe_pairs())
+
+
+# ---------------------------------------------------------------------------
+# Synthetic variable-band data for MAE smoke tests
+# ---------------------------------------------------------------------------
+@dataclass
+class DataConfig:
+    batch_size: int = 2
+    num_workers: int = 0
+    dataset_path: str = "/path/to/dataset"
+    height: int = 8
+    width: int = 8
+    bands: tuple[int, ...] = (224, 285)
+
+
+class RandomCubeDataset(IterableDataset[tuple[torch.Tensor, torch.Tensor]]):
+    """Produces synthetic hyperspectral cubes with per-sample band counts."""
+
+    def __init__(self, config: DataConfig) -> None:
+        super().__init__()
+        self.config = config
+        self.step = 0
+
+    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+        seed_everything(0)
+        while True:
+            bands = self.config.bands[self.step % len(self.config.bands)]
+            self.step += 1
+            cube = torch.randn(
+                self.config.batch_size,
+                self.config.height,
+                self.config.width,
+                bands,
+            )
+            wavelengths = torch.rand(self.config.batch_size, bands) * (2500 - 400) + 400
+            wavelengths, _ = torch.sort(wavelengths, dim=-1)
+            yield cube, wavelengths
+
+
+class SyntheticInfiniteDataModule(LightningDataModule):
+    """Endless synthetic data iterator used for throughput tests."""
+
+    def __init__(self, config: DataConfig | None = None) -> None:
+        super().__init__()
+        self.config = config or DataConfig()
+        self.dataset = RandomCubeDataset(self.config)
+
+    def setup(self, stage: str | None = None) -> None:  # pragma: no cover - nothing to do
+        seed_everything(0)
+
+    def train_dataloader(self) -> DataLoader[tuple[torch.Tensor, torch.Tensor]]:
+        return DataLoader(
+            self.dataset,
+            batch_size=None,
+            num_workers=self.config.num_workers,
+        )
+
+
+__all__ = [
+    "pad_collate",
+    "SpectralEarthDataModule",
+    "DataConfig",
+    "RandomCubeDataset",
+    "SyntheticInfiniteDataModule",
+]

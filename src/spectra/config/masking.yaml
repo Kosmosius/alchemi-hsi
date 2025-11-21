@@ -1,0 +1,6 @@
+mask_seed: 1234
+mask_ratio_spatial: 0.5
+mask_ratio_spectral: 0.5
+grouping:
+  mode: contiguous
+  G: 4

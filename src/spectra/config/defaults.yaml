@@ -1,12 +1,31 @@
-# Default configuration for spectra experiments.
-# Extend this file with experiment-specific overrides or use it as a base
-# for Hydra-style composition.
+# Default configuration for spectral MAE pretraining.
+data:
+  dataset_root: /path/to/data
+  batch_size: 8
+  num_workers: 4
 
-seed: 42
+model:
+  size: base
+  context_size: 1
+  encoder_dim: 768
+  encoder_layers: 12
+  decoder_dim: 512
+  decoder_layers: 4
+  num_heads: 12
+  sam_loss: false
 
-# When true, torch will prefer deterministic kernels and disable cuDNN
-# benchmarking to improve reproducibility across runs and GPUs.
-deterministic: false
+masking:
+  mask_ratio_spatial: 0.5
+  mask_ratio_spectral: 0.5
+  grouping:
+    mode: contiguous
+    G: 4
 
-# Optional path where the first sampled mask for a run will be persisted.
-mask_path: checkpoints/mask.json
+precision:
+  precision: bf16
+  flash_attn: false
+
+train:
+  max_steps: 1000
+  log_every: 10
+  checkpoint_dir: ./checkpoints
