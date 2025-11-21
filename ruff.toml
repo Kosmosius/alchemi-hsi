@@ -1,6 +1,7 @@
 line-length = 100
 target-version = "py311"
 src = ["src", "tests"]
+extend-exclude = ["notebooks/*.ipynb"]
 
 [lint]
 select = ["E", "F", "I", "B", "UP", "NPY", "RUF", "W"]

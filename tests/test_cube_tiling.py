@@ -10,7 +10,12 @@ from alchemi.data.cube import Cube
 def test_iter_tiles_covers_image_without_overlap() -> None:
     height, width, bands = 10, 10, 3
     data = np.arange(height * width * bands, dtype=np.float32).reshape(height, width, bands)
-    cube = Cube(data=data, axis=np.linspace(400.0, 800.0, bands), axis_unit="wavelength_nm", value_kind="radiance")
+    cube = Cube(
+        data=data,
+        axis=np.linspace(400.0, 800.0, bands),
+        axis_unit="wavelength_nm",
+        value_kind="radiance",
+    )
 
     coverage = np.zeros((height, width), dtype=np.int32)
     tile_shapes: set[tuple[int, int]] = set()

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
@@ -15,9 +14,9 @@ import typer
 import xarray as xr
 import yaml
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover - Python <3.11 fallback
+try:
+    import tomllib  # type: ignore[import-not-found]
+except ModuleNotFoundError:  # pragma: no cover - Python <3.11 fallback
     import tomli as tomllib  # type: ignore[import-not-found]
 
 from .data.cube import Cube
@@ -28,6 +27,7 @@ from .srf import SRFRegistry
 from .train.alignment_trainer import AlignmentTrainer
 from .training.trainer import run_eval, run_pretrain_mae
 from .utils.logging import get_logger
+
 
 @dataclass(frozen=True)
 class SensorInfo:
@@ -42,7 +42,9 @@ _SUPPORTED_SENSORS: tuple[SensorInfo, ...] = (
         name="EMIT L1B",
         id="emit",
         quantity="Radiance (W·m⁻²·sr⁻¹·nm⁻¹)",
-        canonical="Canonically stored as Cube(value_kind='radiance', band_mask for water-vapour windows).",
+        canonical=(
+            "Canonically stored as Cube(value_kind='radiance', band_mask for water-vapour windows)."
+        ),
     ),
     SensorInfo(
         name="EnMAP L1B",
@@ -60,7 +62,9 @@ _SUPPORTED_SENSORS: tuple[SensorInfo, ...] = (
         name="HyTES L1B",
         id="hytes",
         quantity="Brightness temperature (K)",
-        canonical="BT cubes become Cube(value_kind='brightness_temp', wavelength_nm spectral grid).",
+        canonical=(
+            "BT cubes become Cube(value_kind='brightness_temp', wavelength_nm spectral grid)."
+        ),
     ),
     SensorInfo(
         name="Mako L2S",
@@ -81,7 +85,10 @@ _SUPPORTED_SENSORS: tuple[SensorInfo, ...] = (
         canonical="ACE scores exposed with gas names for downstream statistics.",
     ),
 )
-_CANONICAL_DESC = "Canonical cubes store sensor-agnostic values, wavelength coordinates, band masks, and metadata in NPZ or Zarr format."
+_CANONICAL_DESC = (
+    "Canonical cubes store sensor-agnostic values, wavelength coordinates, band masks, and "
+    "metadata in NPZ or Zarr format."
+)
 _DEBUG_ENV = "ALCHEMI_DEBUG"
 
 app = typer.Typer(add_completion=False)
