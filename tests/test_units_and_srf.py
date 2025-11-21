@@ -5,7 +5,7 @@ import pytest
 
 from alchemi.spectra.data.spectralearth import load_spectralearth
 from alchemi.srf.convolve import convolve_lab_to_sensor
-from alchemi.types import SRFMatrix, Spectrum, SpectrumKind, WavelengthGrid
+from alchemi.types import Spectrum, SpectrumKind, SRFMatrix, WavelengthGrid
 
 
 def test_wavelength_conversion_and_validation():

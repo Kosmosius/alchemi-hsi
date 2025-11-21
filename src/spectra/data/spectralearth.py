@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
 
 import numpy as np
 import torch
@@ -114,7 +114,7 @@ class SpectralEarthDataset(Dataset[dict[str, torch.Tensor | str]]):
         rng.shuffle(indices)
 
         n_total = len(dataset)
-        train_frac, val_frac, test_frac = self.split_fracs
+        train_frac, val_frac, _test_frac = self.split_fracs
         n_train = int(train_frac * n_total)
         n_val = int(val_frac * n_total)
         n_test = n_total - n_train - n_val

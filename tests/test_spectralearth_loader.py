@@ -12,7 +12,8 @@ from spectra.data.spectralearth import SpectralEarthDataset
 
 
 def _write_sample(root: Path, idx: int, bands: int, sensor: str = "EnMAP") -> None:
-    cube = np.random.random((4, 4, bands)).astype("float32")
+    rng = np.random.default_rng(0)
+    cube = rng.random((4, 4, bands), dtype="float32")
     wavelengths = np.linspace(400.0, 800.0, bands, dtype="float32")
     mask = np.ones(bands, dtype=bool)
     scene_id = f"scene_{idx}"
@@ -107,7 +108,9 @@ def spectraleart_loader_smoketest(tmp_path: Path) -> None:
     )
     dm_again.setup()
     assert dm.train_set is not None and dm_again.train_set is not None
-    assert [s.scene_id for s in dm.train_set.samples] == [s.scene_id for s in dm_again.train_set.samples]
+    train_ids = [s.scene_id for s in dm.train_set.samples]
+    train_ids_again = [s.scene_id for s in dm_again.train_set.samples]
+    assert train_ids == train_ids_again
 
     images_seen = 0
     start = time.perf_counter()
