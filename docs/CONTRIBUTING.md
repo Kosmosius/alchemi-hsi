@@ -61,7 +61,7 @@ We welcome contributions that strengthen the hyperspectral ingestion, physics, a
 ## Local CLI and notebooks
 
 - The Typer CLI entry point lives at `alchemi.cli` and can be invoked with `python -m alchemi.cli` or the future console script `alchemi` once packaging is configured.
-- Explore `notebooks/quickstart.ipynb` for an executable walkthrough. Add new exploratory notebooks under `notebooks/` and keep them deterministic by seeding randomness via `alchemi.training.seed.seed_everything`.
+- Explore `notebooks/quickstart.ipynb` for an executable walkthrough built from seeded synthetic data. Add new exploratory notebooks under `notebooks/` and keep them deterministic by seeding randomness via `alchemi.training.seed.seed_everything`.
 
 ## Getting help
 
