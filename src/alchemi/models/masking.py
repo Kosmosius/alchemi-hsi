@@ -78,12 +78,20 @@ def make_spectral_mask(
     gen = _get_generator(seed)
     group_size = grouping if grouping and grouping > 0 else B
 
+    masked_count = 0
     for start in range(0, B, group_size):
         end = min(B, start + group_size)
         n = end - start
-        k = max(1, round(n * mask_ratio_spectral))
+        k = max(0, min(n, round(n * mask_ratio_spectral)))
+        if k == 0:
+            continue
         local_idx = torch.randperm(n, generator=gen)[:k]
         idx = local_idx + start
         keep[idx] = False
+        masked_count += k
+
+    if masked_count == 0 and mask_ratio_spectral > 0:
+        fallback_idx = torch.randperm(B, generator=gen)[:1]
+        keep[fallback_idx] = False
 
     return keep

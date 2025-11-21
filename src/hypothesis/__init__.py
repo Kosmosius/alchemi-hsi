@@ -12,7 +12,7 @@ import numpy as _np
 from . import strategies  # re-exported module
 from .strategies import Strategy
 
-__all__ = ["HealthCheck", "given", "settings", "strategies"]
+__all__ = ["HealthCheck", "given", "is_hypothesis_test", "settings", "strategies"]
 
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -80,3 +80,14 @@ def _wrap_with_strategies(fn: F, strategies: tuple[Strategy, ...]) -> F:
 
     wrapper.__name__ = getattr(fn, "__name__", getattr(wrapper, "__name__", "wrapper"))
     return cast(F, wrapper)
+
+
+def is_hypothesis_test(obj: object) -> bool:
+    """Minimal helper for pytest plugin compatibility.
+
+    The real Hypothesis plugin inspects test callables using this helper. For our
+    lightweight stub, we treat any callable decorated via ``@given``/``@settings``
+    (which attach ``__hypothesis_settings__``) as a Hypothesis-like test.
+    """
+
+    return callable(obj) and hasattr(obj, "__hypothesis_settings__")
