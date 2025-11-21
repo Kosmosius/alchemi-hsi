@@ -115,7 +115,7 @@ def test_data_info_sensor_override(monkeypatch, tmp_path):
 
     result = runner.invoke(app, ["data", "info", str(src), "--sensor", "emit"])
     assert result.exit_code == 0
-    assert getattr(fake_load_emit, "called") == str(src)
+    assert fake_load_emit.called == str(src)
     assert "Sensor: synthetic" in result.stdout
 
 
