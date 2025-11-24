@@ -28,7 +28,7 @@ from ..models import (
     SpectralBasisProjector,
     build_set_encoder,
 )
-from ..models.masking import MaskingConfig
+from ..models import MaskingConfig
 from ..utils.ckpt import save_checkpoint
 from ..utils.logging import ThroughputMeter, ThroughputStats, get_logger
 from .amp import autocast
@@ -293,9 +293,10 @@ def run_pretrain_mae(
             # Reconstruction over masked region.
             loss = weights.recon * recon_loss(y, tokens, mask=combined_mask)
 
-            # Spectral smoothness: first batch element, shape (bands, tokens)
-            values_for_smooth = tokens[0].transpose(0, 1)  # (D, T)
-            smooth = smooth_loss(values_for_smooth, spectral_mask)
+            # Spectral smoothness: first batch element with spectra in last dim
+            values_for_smooth = tokens[0]  # (T, D)
+            smooth_mask = spectral_mask.unsqueeze(0)
+            smooth = smooth_loss(values_for_smooth, smooth_mask)
             loss = loss + weights.smooth * smooth
 
         opt.zero_grad(set_to_none=True)
