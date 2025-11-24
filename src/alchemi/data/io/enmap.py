@@ -8,11 +8,11 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from alchemi.types import Spectrum, SpectrumKind, WavelengthGrid
+from alchemi.types import QuantityKind, RadianceUnits, Spectrum, WavelengthGrid
 
 __all__ = ["enmap_pixel", "load_enmap_l1b"]
 
-_RAD_UNITS = "W·m^-2·sr^-1·nm^-1"
+_RAD_UNITS = RadianceUnits.W_M2_SR_NM
 
 
 @dataclass
@@ -57,8 +57,8 @@ def load_enmap_l1b(path_vnir: str | Path, path_swir: str | Path) -> xr.Dataset:
         dims=("y", "x", "band"),
         coords=coords,
     )
-    radiance.attrs["units"] = _RAD_UNITS
-    radiance.attrs["quantity"] = "radiance"
+    radiance.attrs["units"] = _RAD_UNITS.value
+    radiance.attrs["quantity"] = QuantityKind.RADIANCE.value
 
     if fwhm_all is not None:
         fwhm_all = fwhm_all[order]
@@ -77,7 +77,7 @@ def load_enmap_l1b(path_vnir: str | Path, path_swir: str | Path) -> xr.Dataset:
     if mask_all is not None:
         dataset["band_mask"] = ("band", mask_all.astype(bool))
 
-    dataset.attrs.update(quantity="radiance", sensor="enmap", units=_RAD_UNITS)
+    dataset.attrs.update(quantity=QuantityKind.RADIANCE.value, sensor="enmap", units=_RAD_UNITS.value)
 
     return dataset
 
@@ -97,7 +97,7 @@ def enmap_pixel(ds: xr.Dataset, y: int, x: int) -> Spectrum:
     return Spectrum(
         wavelengths=WavelengthGrid(np.asarray(wavelengths, dtype=np.float64)),
         values=np.asarray(radiance.values, dtype=np.float64),
-        kind=SpectrumKind.RADIANCE,
+        kind=QuantityKind.RADIANCE,
         units=ds.attrs.get("units", _RAD_UNITS),
         mask=np.asarray(mask.values, dtype=bool) if mask is not None else None,
         meta=meta,

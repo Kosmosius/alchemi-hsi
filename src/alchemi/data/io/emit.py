@@ -8,9 +8,9 @@ import numpy as np
 import rasterio
 import xarray as xr
 
-from alchemi.types import Spectrum, SpectrumKind, WavelengthGrid
+from alchemi.types import QuantityKind, RadianceUnits, Spectrum, WavelengthGrid
 
-TARGET_RADIANCE_UNITS = "W·m⁻²·sr⁻¹·nm⁻¹"
+TARGET_RADIANCE_UNITS = RadianceUnits.W_M2_SR_NM
 WATER_VAPOR_WINDOWS_NM: tuple[tuple[float, float], ...] = (
     (1340.0, 1450.0),
     (1800.0, 1970.0),
@@ -53,7 +53,7 @@ def load_emit_l1b(path: str, *, band_mask: bool = True) -> xr.Dataset:
             np.moveaxis(data, 0, -1),
             dims=("y", "x", "band"),
             coords={**coords, "wavelength_nm": ("band", wavelengths_nm)},
-            attrs={"units": TARGET_RADIANCE_UNITS},
+            attrs={"units": TARGET_RADIANCE_UNITS.value},
         )
         ds["radiance"] = radiance
 
@@ -66,9 +66,9 @@ def load_emit_l1b(path: str, *, band_mask: bool = True) -> xr.Dataset:
 
         ds.attrs.update(
             sensor="EMIT",
-            quantity="radiance",
-            radiance_units=TARGET_RADIANCE_UNITS,
-            source_radiance_units=source_units or TARGET_RADIANCE_UNITS,
+            quantity=QuantityKind.RADIANCE.value,
+            radiance_units=TARGET_RADIANCE_UNITS.value,
+            source_radiance_units=source_units or TARGET_RADIANCE_UNITS.value,
             driver=src.driver,
         )
 
@@ -83,7 +83,7 @@ def emit_pixel(ds: xr.Dataset, y: int, x: int) -> Spectrum:
         raise KeyError("Dataset must contain 'radiance' variable and 'wavelength_nm' coordinate")
 
     radiance = ds["radiance"].sel(y=y, x=x)
-    units = radiance.attrs.get("units") or ds.attrs.get("radiance_units") or TARGET_RADIANCE_UNITS
+    units = radiance.attrs.get("units") or ds.attrs.get("radiance_units") or TARGET_RADIANCE_UNITS.value
     values = np.asarray(radiance.values, dtype=np.float64)
     values *= _radiance_scale(units)
 
@@ -95,7 +95,7 @@ def emit_pixel(ds: xr.Dataset, y: int, x: int) -> Spectrum:
     spectrum = Spectrum(
         wavelengths=WavelengthGrid(wavelengths_nm),
         values=values,
-        kind=SpectrumKind.RADIANCE,
+        kind=QuantityKind.RADIANCE,
         units=TARGET_RADIANCE_UNITS,
         mask=mask,
         meta={

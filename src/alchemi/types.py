@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Iterable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -14,10 +15,35 @@ from alchemi.utils.integrate import np_integrate as _np_integrate
 logger = logging.getLogger(__name__)
 
 
-class SpectrumKind(str, Enum):
-    RADIANCE = "radiance"  # W·m^-2·sr^-1·nm^-1
-    REFLECTANCE = "reflectance"  # [0,1]
-    BT = "brightness_temp"  # Kelvin
+class QuantityKind(str, Enum):
+    RADIANCE = "radiance"
+    REFLECTANCE = "reflectance"
+    BRIGHTNESS_T = "brightness_temperature"
+    BT = "brightness_temperature"  # Alias for backwards compatibility
+
+
+class RadianceUnits(str, Enum):
+    W_M2_SR_NM = "W·m⁻²·sr⁻¹·nm⁻¹"
+
+
+class ReflectanceUnits(str, Enum):
+    FRACTION = "fraction"
+
+
+class TemperatureUnits(str, Enum):
+    KELVIN = "K"
+
+
+class ValueUnits(str, Enum):
+    """Canonical value units across supported quantity kinds."""
+
+    RADIANCE_W_M2_SR_NM = RadianceUnits.W_M2_SR_NM.value
+    REFLECTANCE_FRACTION = ReflectanceUnits.FRACTION.value
+    TEMPERATURE_K = TemperatureUnits.KELVIN.value
+
+
+# Backwards-compatible alias; prefer QuantityKind going forward.
+SpectrumKind = QuantityKind
 
 
 # Wavelength grid validation tolerances
@@ -27,19 +53,112 @@ WAVELENGTH_GRID_MONOTONICITY_EPS = 1e-9
 WAVELENGTH_GRID_DUPLICATE_EPS = 1e-12
 """Absolute tolerance (in nm) for detecting repeated wavelengths."""
 
-# Spectrum value / unit validation constants
 REFLECTANCE_MAX_EPS = 1e-3
 BT_PLAUSIBLE_MIN_K = 150.0
 BT_PLAUSIBLE_MAX_K = 400.0
-EXPECTED_UNITS: dict[SpectrumKind, set[str]] = {
-    SpectrumKind.RADIANCE: {
-        "w·m^-2·sr^-1·nm^-1",
+
+_QUANTITY_ALIASES = {
+    "radiance": QuantityKind.RADIANCE,
+    "reflectance": QuantityKind.REFLECTANCE,
+    "brightness_temperature": QuantityKind.BRIGHTNESS_T,
+    "brightness_temp": QuantityKind.BRIGHTNESS_T,
+    "bt": QuantityKind.BRIGHTNESS_T,
+}
+
+_UNIT_ALIASES: dict[ValueUnits, Iterable[str]] = {
+    ValueUnits.RADIANCE_W_M2_SR_NM: (
+        RadianceUnits.W_M2_SR_NM.value,
+        "W·m^-2·sr^-1·nm^-1",
         "w m-2 sr-1 nm-1",
         "w/m^2/sr/nm",
-    },
-    SpectrumKind.REFLECTANCE: {"", "unitless", "dimensionless", "reflectance", "1"},
-    SpectrumKind.BT: {"k", "kelvin"},
+        "w·m⁻²·sr⁻¹·nm⁻¹",
+    ),
+    ValueUnits.REFLECTANCE_FRACTION: (
+        ReflectanceUnits.FRACTION.value,
+        "unitless",
+        "dimensionless",
+        "reflectance",
+        "",
+        "1",
+    ),
+    ValueUnits.TEMPERATURE_K: (
+        TemperatureUnits.KELVIN.value,
+        "kelvin",
+        "k",
+    ),
 }
+
+_EXPECTED_UNITS: dict[QuantityKind, set[ValueUnits]] = {
+    QuantityKind.RADIANCE: {ValueUnits.RADIANCE_W_M2_SR_NM},
+    QuantityKind.REFLECTANCE: {ValueUnits.REFLECTANCE_FRACTION},
+    QuantityKind.BRIGHTNESS_T: {ValueUnits.TEMPERATURE_K},
+}
+
+
+def _normalize_quantity_kind(kind: QuantityKind | SpectrumKind | str) -> QuantityKind:
+    if isinstance(kind, QuantityKind):
+        return kind
+    if isinstance(kind, Enum):
+        return _normalize_quantity_kind(kind.value)
+
+    key = str(kind).strip().lower()
+    normalized = key.replace(" ", "_")
+    if normalized in _QUANTITY_ALIASES:
+        if not isinstance(kind, QuantityKind):
+            warnings.warn(
+                "Quantity kind strings are deprecated; use QuantityKind enum values instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return _QUANTITY_ALIASES[normalized]
+    msg = f"Unsupported quantity kind: {kind!r}"
+    raise ValueError(msg)
+
+
+def _unit_token(unit: str) -> str:
+    token = unit.strip().lower()
+    token = token.replace("·", "").replace(" ", "")
+    token = token.replace("⁻", "-")
+    token = token.replace("^", "")
+    return token
+
+
+def _normalize_value_units(units: ValueUnits | RadianceUnits | ReflectanceUnits | TemperatureUnits | str, kind: QuantityKind) -> ValueUnits:
+    if isinstance(units, Enum):
+        try:
+            normalized_units = ValueUnits(getattr(units, "value", units))
+        except ValueError as exc:
+            msg = f"Unrecognised units: {units!r}"
+            raise ValueError(msg) from exc
+    else:
+        if units is None:
+            msg = "Units must be provided"
+            raise ValueError(msg)
+        unit_str = str(units)
+        matched = None
+        token = _unit_token(unit_str)
+        for value_unit, aliases in _UNIT_ALIASES.items():
+            alias_tokens = {_unit_token(alias) for alias in aliases}
+            if token in alias_tokens:
+                matched = value_unit
+                break
+        if matched is None:
+            msg = f"Unrecognised units: {unit_str!r}"
+            raise ValueError(msg)
+        warnings.warn(
+            "Unit strings are deprecated; use ValueUnits / RadianceUnits / ReflectanceUnits / TemperatureUnits enums instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        normalized_units = matched
+
+    expected = _EXPECTED_UNITS.get(kind)
+    if expected is None:
+        return normalized_units
+    if normalized_units not in expected:
+        msg = f"Units {normalized_units.value!r} are incompatible with quantity {kind.value!r}"
+        raise ValueError(msg)
+    return normalized_units
 
 
 @dataclass
@@ -81,8 +200,8 @@ class WavelengthGrid:
 class Spectrum:
     wavelengths: WavelengthGrid
     values: NDArray[np.float64]  # [B]
-    kind: SpectrumKind
-    units: str
+    kind: QuantityKind
+    units: ValueUnits | RadianceUnits | ReflectanceUnits | TemperatureUnits | str
     mask: NDArray[np.bool_] | None = None  # [B] boolean
     meta: dict[str, Any] = field(default_factory=dict)
 
@@ -97,15 +216,17 @@ class Spectrum:
                 raise ValueError("mask shape mismatch")
             self.mask = m
 
+        self.kind = _normalize_quantity_kind(self.kind)
+        self.units = _normalize_value_units(self.units, self.kind)
+
         self._validate_values()
-        self._warn_on_units()
 
     def _validate_values(self) -> None:
-        if self.kind == SpectrumKind.REFLECTANCE:
+        if self.kind == QuantityKind.REFLECTANCE:
             if np.any(self.values < 0) or np.any(self.values > 1.0 + REFLECTANCE_MAX_EPS):
                 msg = "Reflectance values must be within [0, 1 + eps]"
                 raise ValueError(msg)
-        elif self.kind == SpectrumKind.BT:
+        elif self.kind == QuantityKind.BRIGHTNESS_T:
             if np.any(self.values <= 0):
                 msg = "Brightness temperature values must be > 0 K"
                 raise ValueError(msg)
@@ -119,22 +240,67 @@ class Spectrum:
                         BT_PLAUSIBLE_MIN_K,
                         BT_PLAUSIBLE_MAX_K,
                     )
-        elif self.kind == SpectrumKind.RADIANCE:
+        elif self.kind == QuantityKind.RADIANCE:
             if np.any(self.values < 0):
                 msg = "Radiance values must be non-negative"
                 raise ValueError(msg)
 
-    def _warn_on_units(self) -> None:
-        expected = EXPECTED_UNITS.get(self.kind)
-        if expected is None:
-            return
-        normalized_units = self.units.strip().lower()
-        if normalized_units not in expected:
-            logger.warning(
-                "Unexpected units '%s' for spectrum kind '%s'",
-                self.units,
-                self.kind.value,
-            )
+    @classmethod
+    def from_radiance(
+        cls,
+        wavelengths: WavelengthGrid,
+        values: NDArray[np.float64],
+        *,
+        units: RadianceUnits | ValueUnits | str = RadianceUnits.W_M2_SR_NM,
+        mask: NDArray[np.bool_] | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Spectrum:
+        return cls(
+            wavelengths=wavelengths,
+            values=values,
+            kind=QuantityKind.RADIANCE,
+            units=units,
+            mask=mask,
+            meta=meta or {},
+        )
+
+    @classmethod
+    def from_reflectance(
+        cls,
+        wavelengths: WavelengthGrid,
+        values: NDArray[np.float64],
+        *,
+        units: ReflectanceUnits | ValueUnits | str = ReflectanceUnits.FRACTION,
+        mask: NDArray[np.bool_] | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Spectrum:
+        return cls(
+            wavelengths=wavelengths,
+            values=values,
+            kind=QuantityKind.REFLECTANCE,
+            units=units,
+            mask=mask,
+            meta=meta or {},
+        )
+
+    @classmethod
+    def from_brightness_temperature(
+        cls,
+        wavelengths: WavelengthGrid,
+        values: NDArray[np.float64],
+        *,
+        units: TemperatureUnits | ValueUnits | str = TemperatureUnits.KELVIN,
+        mask: NDArray[np.bool_] | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Spectrum:
+        return cls(
+            wavelengths=wavelengths,
+            values=values,
+            kind=QuantityKind.BRIGHTNESS_T,
+            units=units,
+            mask=mask,
+            meta=meta or {},
+        )
 
     def masked(self) -> Spectrum:
         if self.mask is None:

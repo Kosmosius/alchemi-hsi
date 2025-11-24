@@ -39,7 +39,7 @@ def cube_from_sample(sample: Sample) -> Cube:
         data=values,
         axis=axis,
         axis_unit="wavelength_nm",
-        value_kind=sample.spectrum.kind.value,
+        value_kind=sample.spectrum.kind,
         attrs=attrs,
     )
     if sensor is not None:

@@ -18,12 +18,21 @@ import numpy as np
 
 from alchemi.tokens.band_tokenizer import AxisUnit, BandTokenizer, Tokens
 from alchemi.tokens.registry import get_default_tokenizer
-from alchemi.types import Sample, SampleMeta, Spectrum, SpectrumKind, WavelengthGrid
+from alchemi.types import (
+    QuantityKind,
+    Sample,
+    SampleMeta,
+    Spectrum,
+    ValueUnits,
+    WavelengthGrid,
+    _normalize_quantity_kind,
+    _normalize_value_units,
+)
 
 __all__ = ["Cube", "GeoInfo", "geo_from_attrs"]
 
 _ALLOWED_AXIS_UNITS = {"wavelength_nm", "wavenumber_cm1"}
-_ALLOWED_VALUE_KINDS = {"radiance", "reflectance", "brightness_temp"}
+_ALLOWED_VALUE_KINDS = {QuantityKind.RADIANCE, QuantityKind.REFLECTANCE, QuantityKind.BRIGHTNESS_T}
 
 
 @dataclass(slots=True)
@@ -53,7 +62,7 @@ class Cube:
     data: np.ndarray
     axis: np.ndarray
     axis_unit: str
-    value_kind: str
+    value_kind: QuantityKind
     srf_id: str | None = None
     geo: GeoInfo | None = None
     attrs: dict[str, Any] = field(default_factory=dict)
@@ -61,14 +70,14 @@ class Cube:
     axis_coords: Mapping[str, np.ndarray] | None = None
     band_mask: np.ndarray | None = None
     sensor: str | None = None
-    units: str | None = None
+    units: ValueUnits | None = None
 
     def __init__(
         self,
         data: np.ndarray | None = None,
         axis: np.ndarray | None = None,
         axis_unit: str | None = None,
-        value_kind: str | None = None,
+        value_kind: QuantityKind | str | None = None,
         *,
         srf_id: str | None = None,
         geo: GeoInfo | None = None,
@@ -105,7 +114,7 @@ class Cube:
         self.data = data
         self.axis = axis
         self.axis_unit = axis_unit
-        self.value_kind = value_kind
+        self.value_kind = _normalize_quantity_kind(value_kind)
         self.srf_id = srf_id
         self.geo = geo
         self.attrs = metadata
@@ -138,7 +147,7 @@ class Cube:
             raise ValueError(msg)
 
         if self.value_kind not in _ALLOWED_VALUE_KINDS:
-            msg = f"value_kind must be one of {_ALLOWED_VALUE_KINDS!r}"
+            msg = f"value_kind must be one of {[kind.value for kind in _ALLOWED_VALUE_KINDS]!r}"
             raise ValueError(msg)
 
         if self.geo is not None and not isinstance(self.geo, GeoInfo):
@@ -191,7 +200,7 @@ class Cube:
                 self.sensor = self.srf_id
 
         if self.units is None and "units" in self.attrs:
-            self.units = str(self.attrs["units"])
+            self.units = _normalize_value_units(self.attrs["units"], self.value_kind)
 
     # ---------- Basic properties ----------
 
@@ -246,19 +255,11 @@ class Cube:
                 f"Pixel indices out of bounds for cube shape {self.shape}: {(row, col)}"
             )
 
-        kind_map = {
-            "radiance": SpectrumKind.RADIANCE,
-            "reflectance": SpectrumKind.REFLECTANCE,
-            "brightness_temp": SpectrumKind.BT,
-        }
-        spectrum_kind = kind_map.get(self.value_kind)
-        if spectrum_kind is None:
-            msg = f"Unsupported value_kind {self.value_kind!r} for Sample conversion"
-            raise ValueError(msg)
-
+        spectrum_kind = self.value_kind
         wavelengths_nm = WavelengthGrid(self._axis_wavelength_nm().copy())
         values = np.asarray(self.data[row, col, :], dtype=np.float64)
-        units = self.units or self.attrs.get("units", "")
+        units_src = self.units if self.units is not None else self.attrs.get("units", "")
+        units = _normalize_value_units(units_src, spectrum_kind)
 
         sensor_id = self.sensor or self.srf_id or self.attrs.get("sensor")
         if sensor_id is None:
@@ -270,7 +271,7 @@ class Cube:
             wavelengths=wavelengths_nm,
             values=values,
             kind=spectrum_kind,
-            units=str(units),
+            units=units,
             mask=self.band_mask,
             meta={"cube_attrs": extras} if extras else {},
         )
@@ -301,7 +302,7 @@ class Cube:
     def quantity(self) -> str:
         """Legacy alias for :attr:`value_kind`."""
 
-        return self.value_kind
+        return self.value_kind.value
 
     @property
     def wavelength_nm(self) -> np.ndarray | None:
@@ -473,7 +474,7 @@ class Cube:
             "axis": self.axis,
             # Legacy scalar metadata as arrays
             "axis_unit": np.asarray(self.axis_unit),
-            "value_kind": np.asarray(self.value_kind),
+            "value_kind": np.asarray(self.value_kind.value),
         }
 
         # Optional band mask
@@ -517,7 +518,7 @@ class Cube:
 
         # Backwards-compatible metadata blob
         root.attrs["axis_unit"] = self.axis_unit
-        root.attrs["value_kind"] = self.value_kind
+        root.attrs["value_kind"] = self.value_kind.value
         root.attrs["metadata"] = _encode_metadata(self.attrs)
 
         # Core datasets
@@ -548,9 +549,9 @@ class Cube:
         if self.sensor is not None:
             attrs.setdefault("sensor", self.sensor)
         if self.units is not None:
-            attrs.setdefault("units", self.units)
+            attrs.setdefault("units", self.units.value)
         attrs.setdefault("axis_unit", self.axis_unit)
-        attrs.setdefault("value_kind", self.value_kind)
+        attrs.setdefault("value_kind", self.value_kind.value)
         attrs.setdefault("axis_names", self.axis_names)
         if self.axis_coords is not None:
             attrs.setdefault("axis_coords", self.axis_coords)

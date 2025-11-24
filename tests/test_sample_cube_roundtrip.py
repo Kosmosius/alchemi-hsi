@@ -3,7 +3,7 @@ import pytest
 
 from alchemi.data.cube import Cube
 from alchemi.data.sample_utils import cube_from_sample
-from alchemi.types import SpectrumKind
+from alchemi.types import QuantityKind, RadianceUnits, ValueUnits
 
 
 def test_sample_from_cube_roundtrip():
@@ -20,16 +20,16 @@ def test_sample_from_cube_roundtrip():
         data=data,
         axis=axis,
         axis_unit="wavelength_nm",
-        value_kind="radiance",
-        attrs={"sensor": "test-sensor", "units": "W"},
+        value_kind=QuantityKind.RADIANCE,
+        attrs={"sensor": "test-sensor", "units": RadianceUnits.W_M2_SR_NM.value},
     )
 
     sample = cube.sample_at(1, 0)
 
     np.testing.assert_array_equal(sample.spectrum.values, data[1, 0, :])
     np.testing.assert_array_equal(sample.spectrum.wavelengths.nm, axis)
-    assert sample.spectrum.kind is SpectrumKind.RADIANCE
-    assert sample.spectrum.units == "W"
+    assert sample.spectrum.kind is QuantityKind.RADIANCE
+    assert sample.spectrum.units is ValueUnits.RADIANCE_W_M2_SR_NM
     assert sample.meta["sensor"] == "test-sensor"
     assert sample.meta["row"] == 1
     assert sample.meta["col"] == 0
@@ -38,9 +38,9 @@ def test_sample_from_cube_roundtrip():
     assert rebuilt_cube.shape == (1, 1, 3)
     np.testing.assert_array_equal(rebuilt_cube.data[0, 0, :], data[1, 0, :])
     np.testing.assert_array_equal(rebuilt_cube.axis, axis)
-    assert rebuilt_cube.value_kind == "radiance"
+    assert rebuilt_cube.value_kind is QuantityKind.RADIANCE
     assert rebuilt_cube.sensor == "test-sensor"
-    assert rebuilt_cube.units == "W"
+    assert rebuilt_cube.units is ValueUnits.RADIANCE_W_M2_SR_NM
 
 
 def test_sample_at_out_of_bounds():
@@ -48,7 +48,7 @@ def test_sample_at_out_of_bounds():
         data=np.ones((2, 2, 2)),
         axis=np.array([1.0, 2.0]),
         axis_unit="wavelength_nm",
-        value_kind="radiance",
+        value_kind=QuantityKind.RADIANCE,
     )
 
     with pytest.raises(IndexError):

@@ -5,13 +5,24 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
-from .types import Sample, SampleMeta, Spectrum, SpectrumKind, SRFMatrix, WavelengthGrid
+from .types import (
+    QuantityKind,
+    Sample,
+    SampleMeta,
+    Spectrum,
+    SpectrumKind,
+    SRFMatrix,
+    ValueUnits,
+    WavelengthGrid,
+)
 
 __all__ = [
     "SRFMatrix",
     "Sample",
     "SampleMeta",
     "Spectrum",
+    "QuantityKind",
+    "ValueUnits",
     "SpectrumKind",
     "WavelengthGrid",
     "align",
@@ -35,6 +46,8 @@ _SUBMODULES = {
         "Sample",
         "SampleMeta",
         "Spectrum",
+        "QuantityKind",
+        "ValueUnits",
         "SpectrumKind",
         "WavelengthGrid",
     }

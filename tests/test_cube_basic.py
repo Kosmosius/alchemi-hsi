@@ -5,6 +5,7 @@ import pytest
 import xarray as xr
 
 from alchemi.data.cube import Cube, GeoInfo, geo_from_attrs
+from alchemi.types import QuantityKind, RadianceUnits, TemperatureUnits
 from alchemi.ingest import (
     from_avirisng_l1b,
     from_emit_l1b,
@@ -102,16 +103,16 @@ def test_cube_accepts_geo_and_attrs() -> None:
 @pytest.mark.parametrize(
     "adapter, var_name, units, value_kind, sensor",
     [
-        (from_emit_l1b, "radiance", "W·m⁻²·sr⁻¹·nm⁻¹", "radiance", "emit"),
-        (from_enmap_l1b, "radiance", "W·m⁻²·sr⁻¹·nm⁻¹", "radiance", "enmap"),
-        (from_avirisng_l1b, "radiance", "W·m⁻²·sr⁻¹·nm⁻¹", "radiance", "avirisng"),
-        (from_hytes_bt, "brightness_temp", "K", "brightness_temp", "hytes"),
-        (from_mako_l2s, "radiance", "W·m⁻²·sr⁻¹·nm⁻¹", "radiance", "mako"),
-        (from_mako_l3, "bt", "K", "brightness_temp", "mako"),
+        (from_emit_l1b, "radiance", RadianceUnits.W_M2_SR_NM.value, QuantityKind.RADIANCE, "emit"),
+        (from_enmap_l1b, "radiance", RadianceUnits.W_M2_SR_NM.value, QuantityKind.RADIANCE, "enmap"),
+        (from_avirisng_l1b, "radiance", RadianceUnits.W_M2_SR_NM.value, QuantityKind.RADIANCE, "avirisng"),
+        (from_hytes_bt, "brightness_temp", TemperatureUnits.KELVIN.value, QuantityKind.BRIGHTNESS_T, "hytes"),
+        (from_mako_l2s, "radiance", RadianceUnits.W_M2_SR_NM.value, QuantityKind.RADIANCE, "mako"),
+        (from_mako_l3, "bt", TemperatureUnits.KELVIN.value, QuantityKind.BRIGHTNESS_T, "mako"),
     ],
 )
 def test_adapter_round_trip(
-    adapter, var_name: str, units: str, value_kind: str, sensor: str
+    adapter, var_name: str, units: str, value_kind: QuantityKind, sensor: str
 ) -> None:
     ds = _make_dataset(var_name, units=units, sensor=sensor)
     cube = adapter(ds)
@@ -119,7 +120,7 @@ def test_adapter_round_trip(
     np.testing.assert_allclose(cube.data, ds[var_name].values)
     np.testing.assert_allclose(cube.axis, ds["wavelength_nm"].values)
     assert cube.axis_unit == "wavelength_nm"
-    assert cube.value_kind == value_kind
+    assert cube.value_kind is value_kind
     assert cube.attrs["sensor"] == sensor
     assert cube.geo is not None
     assert cube.geo.crs == "EPSG:4326"
