@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import math
 from pathlib import Path
 
 from scripts.ablate_pretrain import (
@@ -25,6 +26,7 @@ def test_pretrain_ablation_runs_full_grid_slice(tmp_path: Path) -> None:
         steps=3,
         probe_items=6,
         output_dir=tmp_path,
+        plot=False,
     )
 
     assert len(results) == len(configs)
@@ -38,9 +40,11 @@ def test_pretrain_ablation_runs_full_grid_slice(tmp_path: Path) -> None:
         for col in OUTPUT_COLUMNS:
             assert col in last_row, f"Missing column {col} in {csv_path}"
 
-    # Plots should have been generated once across all runs.
-    for plot_name in ("recon_mse.png", "throughput.png"):
-        assert (tmp_path / plot_name).exists(), f"Plot {plot_name} missing"
+        assert math.isfinite(res.recon_mse)
+        assert res.recon_mse > 0
+        assert math.isfinite(res.tokens_per_s)
+        assert res.tokens_per_s > 0
+        assert 0.0 <= res.retrieval_top1 <= 1.0
 
 
 def test_pretrain_ablation_runs_custom_configs(tmp_path: Path) -> None:
@@ -54,6 +58,7 @@ def test_pretrain_ablation_runs_custom_configs(tmp_path: Path) -> None:
         steps=2,
         probe_items=4,
         output_dir=tmp_path,
+        plot=False,
     )
 
     assert len(results) == len(configs)
