@@ -159,6 +159,7 @@ def run_ablation(
     steps: int = 24,
     probe_items: int = 16,
     output_dir: Path | str = Path("outputs/ablations"),
+    plot: bool = True,
 ) -> list[AblationResult]:
     """Execute a sweep of synthetic pretraining ablations.
 
@@ -167,6 +168,7 @@ def run_ablation(
         steps: Synthetic training steps per config.
         probe_items: Size of the retrieval sanity probe set.
         output_dir: Base directory for CSVs and plots.
+        plot: Whether to generate summary plots for the sweep.
 
     Returns:
         A list of AblationResult objects, one per evaluated config.
@@ -209,7 +211,7 @@ def run_ablation(
             f"tokens_per_s={tokens_per_s:.1f}"
         )
 
-    if results:
+    if results and plot:
         # Highlight the best config by recon_mse (ties broken by throughput).
         best = min(results, key=lambda r: (r.recon_mse, -r.tokens_per_s))
         plot_metric_bars(
@@ -253,6 +255,10 @@ def run(
         16,
         help="Probe samples for the retrieval@1 sanity check",
     ),
+    plot: bool = typer.Option(
+        True,
+        help="Generate matplotlib summary plots (disable in headless CI with --no-plot)",
+    ),
 ) -> None:
     """CLI entrypoint to execute a sweep of pretraining ablations."""
     configs = build_ablation_configs()[:max_runs]
@@ -261,6 +267,7 @@ def run(
         steps=steps,
         probe_items=probe_items,
         output_dir=output_dir,
+        plot=plot,
     )
     if results:
         best = min(results, key=lambda r: (r.recon_mse, -r.tokens_per_s))
