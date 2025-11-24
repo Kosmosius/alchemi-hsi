@@ -10,11 +10,11 @@ from typing import Any
 import numpy as np
 import xarray as xr
 
-from alchemi.types import Spectrum, SpectrumKind, WavelengthGrid
+from alchemi.types import QuantityKind, RadianceUnits, Spectrum, WavelengthGrid
 
 __all__ = ["avirisng_pixel", "load_avirisng_l1b"]
 
-_RAD_UNITS = "W·m^-2·sr^-1·nm^-1"
+_RAD_UNITS = RadianceUnits.W_M2_SR_NM
 _WATER_VAPOR_WINDOWS_NM: Sequence[tuple[float, float]] = (
     (1340.0, 1460.0),
     (1790.0, 1960.0),
@@ -50,7 +50,7 @@ def load_avirisng_l1b(path: str | Path) -> xr.Dataset:
         radiance,
         dims=("y", "x", "band"),
         coords=coords,
-        attrs={"units": _RAD_UNITS, "quantity": "radiance"},
+        attrs={"units": _RAD_UNITS.value, "quantity": QuantityKind.RADIANCE.value},
     )
     dataset = dataset.assign_coords(wavelength_nm=("band", wavelengths.astype(np.float64)))
 
@@ -64,7 +64,7 @@ def load_avirisng_l1b(path: str | Path) -> xr.Dataset:
             raise ValueError("Band mask length must match number of bands")
         dataset["band_mask"] = ("band", mask[order])
 
-    dataset.attrs.update(quantity="radiance", sensor="avirisng", units=_RAD_UNITS)
+    dataset.attrs.update(quantity=QuantityKind.RADIANCE.value, sensor="avirisng", units=_RAD_UNITS.value)
 
     if np.any(np.diff(wavelengths) <= 0):
         raise ValueError("Wavelengths must be strictly increasing")
@@ -87,7 +87,7 @@ def avirisng_pixel(ds: xr.Dataset, y: int, x: int) -> Spectrum:
     return Spectrum(
         wavelengths=WavelengthGrid(wavelengths),
         values=np.asarray(radiance.values, dtype=np.float64),
-        kind=SpectrumKind.RADIANCE,
+        kind=QuantityKind.RADIANCE,
         units=ds.attrs.get("units", _RAD_UNITS),
         mask=np.asarray(mask.values, dtype=bool) if mask is not None else None,
         meta=meta,

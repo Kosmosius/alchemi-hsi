@@ -4,6 +4,7 @@ import numpy as np
 
 from alchemi.data.cube import Cube
 from alchemi.srf.utils import load_sensor_srf
+from alchemi.types import QuantityKind
 
 SENSORS = ("emit", "enmap", "avirisng", "hytes")
 
@@ -13,7 +14,7 @@ def _cube_for_sensor(sensor_id: str) -> Cube:
     assert srf is not None
     axis = srf.centers_nm.copy()
     data = np.random.default_rng(hash(sensor_id) & 0xFFFF).standard_normal((4, 3, axis.shape[0]))
-    value_kind = "brightness_temp" if sensor_id == "hytes" else "radiance"
+    value_kind = QuantityKind.BRIGHTNESS_T if sensor_id == "hytes" else QuantityKind.RADIANCE
     return Cube(
         data=data,
         axis=axis,

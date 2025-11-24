@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from alchemi.types import Spectrum, SpectrumKind, WavelengthGrid
+from alchemi.types import QuantityKind, Spectrum, TemperatureUnits, WavelengthGrid
 
 HYTES_BAND_COUNT = 256
 HYTES_WAVELENGTH_MIN_NM = 7_500.0
@@ -133,7 +133,7 @@ def load_hytes_l1b_bt(path: str | Path) -> xr.Dataset:
         bt_values,
         dims=("y", "x", "band"),
         coords=coords,
-        attrs={"units": "K"},
+        attrs={"units": TemperatureUnits.KELVIN.value},
     )
 
     band_mask = xr.DataArray(
@@ -151,9 +151,9 @@ def load_hytes_l1b_bt(path: str | Path) -> xr.Dataset:
     )
     ds.attrs.update(
         sensor="HyTES",
-        quantity="brightness_temp",
-        brightness_temp_units="K",
-        units="K",
+        quantity=QuantityKind.BRIGHTNESS_T.value,
+        brightness_temp_units=TemperatureUnits.KELVIN.value,
+        units=TemperatureUnits.KELVIN.value,
     )
 
     ds.coords["wavelength_nm"].attrs["units"] = "nm"
@@ -183,8 +183,8 @@ def hytes_pixel_bt(ds: xr.Dataset, y: int, x: int) -> Spectrum:
     spectrum = Spectrum(
         wavelengths=WavelengthGrid(wavelengths),
         values=values,
-        kind=SpectrumKind.BT,
-        units="K",
+        kind=QuantityKind.BRIGHTNESS_T,
+        units=TemperatureUnits.KELVIN,
         mask=mask,
         meta={
             "sensor": ds.attrs.get("sensor", "HyTES"),
