@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any, Mapping
 
 import torch
 import yaml
@@ -146,26 +147,66 @@ def _aggregate_stats(stats_list: list[ThroughputStats]) -> ThroughputStats:
     )
 
 
+def _normalise_train_config(
+    config: str | Path | Mapping[str, Any] | TrainCfg,
+    *,
+    seed_override: int | None,
+) -> tuple[RuntimeConfig, TrainCfg, str]:
+    """Load a training configuration from various formats.
+
+    Returns the runtime config, train config, and a human readable config label
+    for logging/metadata.
+    """
+    config_label = "<in-memory-config>"
+    if isinstance(config, TrainCfg):
+        train_payload: Mapping[str, Any] = config.model_dump()
+        payload: Mapping[str, Any] = {"train": train_payload}
+    elif isinstance(config, Mapping):
+        payload = config
+        if "train" in payload:
+            train_payload = payload.get("train", {}) or {}
+        else:
+            train_payload = payload
+    else:
+        config_path = Path(config)
+        payload = yaml.safe_load(config_path.read_text())
+        config_label = str(config_path)
+        train_payload = payload.get("train", {}) if isinstance(payload, dict) else {}
+
+    runtime_cfg = RuntimeConfig.from_mapping(
+        payload.get("global") if isinstance(payload, Mapping) else None,
+        fallback=train_payload,
+    )
+    runtime_cfg = runtime_cfg.with_seed(seed_override)
+    cfg = TrainCfg(**train_payload) if not isinstance(config, TrainCfg) else config
+    return runtime_cfg, cfg, config_label
+
+
 def run_pretrain_mae(
-    config_path: str,
+    config: str | Path | Mapping[str, Any] | TrainCfg,
     *,
     no_spatial_mask: bool = False,
     no_posenc: bool = False,
     seed_override: int | None = None,
-) -> ThroughputStats:
+    return_loss: bool = False,
+) -> ThroughputStats | tuple[ThroughputStats, float]:
     """Toy MAE pretraining loop with spatial+spectral masking and throughput measurement.
+
+    Args:
+        config: Path to a YAML config, a mapping containing ``global``/``train``
+            sections, or an in-memory ``TrainCfg`` instance.
+        no_spatial_mask: Disable spatial masking regardless of config value.
+        no_posenc: Disable positional encoding regardless of config value.
+        seed_override: Optional seed to override the config.
+        return_loss: When ``True``, also return the final reconstruction loss
+            from training (useful for ablations).
 
     This harness runs on synthetic tokens and is intended for ablations rather
     than producing the deployment encoder.
     """
-    payload = yaml.safe_load(Path(config_path).read_text())
-    train_payload = payload.get("train", {}) if isinstance(payload, dict) else {}
-    runtime_cfg = RuntimeConfig.from_mapping(
-        payload.get("global") if isinstance(payload, dict) else None,
-        fallback=train_payload,
+    runtime_cfg, cfg, config_label = _normalise_train_config(
+        config, seed_override=seed_override
     )
-    runtime_cfg = runtime_cfg.with_seed(seed_override)
-    cfg = TrainCfg(**train_payload)
 
     # Fold CLI toggles into config so baselines are properly recorded.
     cfg = cfg.copy(
@@ -183,7 +224,7 @@ def run_pretrain_mae(
     device = runtime_cfg.torch_device
     _LOG.info(
         "Starting MAE pretrain config=%s seed=%s deterministic=%s device=%s dtype=%s",
-        config_path,
+        config_label,
         runtime_cfg.seed,
         runtime_cfg.deterministic,
         device,
@@ -237,6 +278,7 @@ def run_pretrain_mae(
     meter = ThroughputMeter(device)
     step_stats: list[ThroughputStats] = []
     mask_persisted = False
+    final_loss = 0.0
 
     # Simple synthetic MAE loop: random tokens with spatial+spectral masking.
     for step in range(1, cfg.max_steps + 1):
@@ -305,6 +347,7 @@ def run_pretrain_mae(
 
         stats = meter.stop(tokens=active_tokens, num_bytes=num_bytes)
         step_stats.append(stats)
+        final_loss = float(loss)
 
         if step % cfg.log_every == 0:
             _LOG.info(
@@ -321,7 +364,10 @@ def run_pretrain_mae(
         {"basis": basis.state_dict(), "enc": enc.state_dict(), "dec": dec.state_dict()},
     )
 
-    return _aggregate_stats(step_stats)
+    aggregated = _aggregate_stats(step_stats)
+    if return_loss:
+        return aggregated, final_loss
+    return aggregated
 
 
 def run_align(config_path: str, *, seed_override: int | None = None) -> ThroughputStats:
