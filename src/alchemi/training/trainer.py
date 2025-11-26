@@ -11,14 +11,17 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from collections.abc import Iterator
 from typing import Any, Mapping
 
 import torch
+import torch.nn as nn
 import yaml
 from torch import Tensor
 from torch.utils.data import DataLoader
 
 from ..config import RuntimeConfig
+from ..data.datasets import RealMAEDataset
 from ..heads import BandDepthHead, load_banddepth_config
 from ..losses import InfoNCELoss, ReconstructionLoss, SpectralSmoothnessLoss
 from ..models import (
@@ -33,7 +36,7 @@ from ..models import MaskingConfig
 from ..utils.ckpt import save_checkpoint
 from ..utils.logging import ThroughputMeter, ThroughputStats, get_logger
 from .amp import autocast
-from .config import TrainCfg
+from .config import DataCfg, TrainCfg
 from .loss_mixer import Weights
 from .seed import seed_everything
 
@@ -204,9 +207,10 @@ def run_pretrain_mae(
     This harness runs on synthetic tokens and is intended for ablations rather
     than producing the deployment encoder.
     """
-    runtime_cfg, cfg, config_label = _normalise_train_config(
-        config, seed_override=seed_override
-    )
+
+    runtime_cfg = runtime_cfg.with_seed(seed_override)
+    cfg = TrainCfg(**train_payload)
+    data_cfg = DataCfg(**payload.get("data", {}) if isinstance(payload, dict) else {})
 
     # Fold CLI toggles into config so baselines are properly recorded.
     cfg = cfg.copy(
@@ -247,6 +251,28 @@ def run_pretrain_mae(
         spectral_mask_ratio=cfg.spectral_mask_ratio,
     )
 
+    real_loader: DataLoader[dict[str, Tensor]] | None = None
+    real_iter: Iterator[dict[str, Tensor]] | None = None
+    decoder_out_dim = cfg.embed_dim
+    if data_cfg.mode == "real":
+        if data_cfg.dataset_name is None:
+            raise ValueError("data.dataset_name must be set for real MAE runs")
+
+        dataset_path = data_cfg.paths.get(data_cfg.dataset_name)
+        if dataset_path is None:
+            msg = f"Missing dataset path for {data_cfg.dataset_name!r}"
+            raise ValueError(msg)
+
+        real_dataset = RealMAEDataset(
+            data_cfg.dataset_name,
+            dataset_path,
+            patch_size=2,
+            max_patches=max(cfg.batch_size * 2, 4),
+        )
+        decoder_out_dim = real_dataset.data.shape[-1]
+        real_loader = DataLoader(real_dataset, batch_size=cfg.batch_size, shuffle=True)
+        real_iter = iter(real_loader)
+
     enc = MAEEncoder(
         embed_dim=cfg.embed_dim,
         depth=cfg.depth,
@@ -258,11 +284,17 @@ def run_pretrain_mae(
         embed_dim=cfg.embed_dim,
         depth=max(1, cfg.depth // 2),
         n_heads=cfg.n_heads,
-        out_dim=cfg.embed_dim,
+        out_dim=decoder_out_dim,
     )
+
+    input_proj: nn.Linear | None = None
+    if decoder_out_dim != cfg.embed_dim:
+        input_proj = nn.Linear(decoder_out_dim, cfg.embed_dim)
 
     for module in (basis, setenc, enc, dec):
         module.to(device)
+    if input_proj is not None:
+        input_proj.to(device)
 
     recon_loss = ReconstructionLoss()
     smooth_loss = SpectralSmoothnessLoss()
@@ -273,6 +305,8 @@ def run_pretrain_mae(
         + list(dec.parameters()),
         lr=cfg.lr,
     )
+    if input_proj is not None:
+        opt.add_param_group({"params": input_proj.parameters()})
     weights = Weights(recon=1.0, nce=0.0, sam=0.0, smooth=1e-4)
 
     meter = ThroughputMeter(device)
@@ -282,20 +316,38 @@ def run_pretrain_mae(
 
     # Simple synthetic MAE loop: random tokens with spatial+spectral masking.
     for step in range(1, cfg.max_steps + 1):
-        batch_size = cfg.batch_size
-        num_tokens = cfg.embed_dim
-        embed_dim = cfg.embed_dim
+        if data_cfg.mode == "synthetic":
+            batch_size = cfg.batch_size
+            num_tokens = cfg.embed_dim
+            token_dim = cfg.embed_dim
 
-        # Fake token grid: (B, T, D)
-        tokens = torch.randn(
-            batch_size, num_tokens, embed_dim, device=device, dtype=runtime_cfg.torch_dtype
-        )
+            # Fake token grid: (B, T, D)
+            tokens = torch.randn(
+                batch_size, num_tokens, token_dim, device=device, dtype=runtime_cfg.torch_dtype
+            )
 
-        # Spectral mask over feature dimension.
-        spectral_values = torch.arange(
-            embed_dim, dtype=runtime_cfg.torch_dtype, device=device
-        )
-        base_band_mask = torch.ones(embed_dim, dtype=torch.bool, device=device)
+            # Spectral mask over feature dimension.
+            spectral_values = torch.arange(
+                token_dim, dtype=runtime_cfg.torch_dtype, device=device
+            )
+            base_band_mask = torch.ones(token_dim, dtype=torch.bool, device=device)
+        else:
+            assert real_loader is not None and real_iter is not None
+            try:
+                batch = next(real_iter)
+            except StopIteration:
+                real_iter = iter(real_loader)
+                batch = next(real_iter)
+
+            tokens = batch["tokens"].to(device=device, dtype=runtime_cfg.torch_dtype)
+            wavelengths = batch["wavelengths"].to(device=device, dtype=runtime_cfg.torch_dtype)
+            band_mask = batch["band_mask"].to(device=device)
+
+            batch_size = tokens.shape[0]
+            num_tokens = tokens.shape[1]
+            token_dim = tokens.shape[2]
+            spectral_values = wavelengths[0]
+            base_band_mask = band_mask[0].to(torch.bool)
         persist_target = (
             mask_path if (mask_path and not mask_persisted and _is_main_process()) else None
         )
@@ -329,7 +381,8 @@ def run_pretrain_mae(
 
         meter.start()
         with autocast(enabled=False):
-            z = enc(tokens, key_padding_mask=key_padding_mask)
+            model_tokens = tokens if input_proj is None else input_proj(tokens)
+            z = enc(model_tokens, key_padding_mask=key_padding_mask)
             y = dec(z)
 
             # Reconstruction over masked region.
