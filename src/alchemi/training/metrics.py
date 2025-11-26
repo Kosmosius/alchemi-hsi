@@ -3,10 +3,27 @@ from sklearn.metrics import average_precision_score
 
 
 def spectral_angle(x: np.ndarray, y: np.ndarray) -> float:
-    x = x.astype(np.float64)
-    y = y.astype(np.float64)
-    num = float(np.dot(x, y))
-    den = float(np.linalg.norm(x) * np.linalg.norm(y))
+    """Compute the spectral angle mapper (SAM) between two spectra.
+
+    Invalid bands (NaN or inf) are ignored, mirroring common masked-band
+    handling in hyperspectral processing. If no valid bands remain or either
+    spectrum is empty, the function returns 0.0.
+    """
+
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+
+    valid = np.isfinite(x) & np.isfinite(y)
+    if not np.any(valid):
+        return 0.0
+
+    x_valid = x[valid]
+    y_valid = y[valid]
+    if x_valid.size == 0 or y_valid.size == 0:
+        return 0.0
+
+    num = float(np.dot(x_valid, y_valid))
+    den = float(np.linalg.norm(x_valid) * np.linalg.norm(y_valid))
     if den <= 0.0:
         return 0.0
     cosine = np.clip(num / den, -1.0, 1.0)
