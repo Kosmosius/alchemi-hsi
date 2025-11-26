@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -31,6 +31,8 @@ class TrainCfg(BaseModel):
 
 
 class DataCfg(BaseModel):
+    mode: Literal["synthetic", "real"] = "synthetic"
+    dataset_name: Optional[str] = None
     sensors: list[str] = ["emit", "enmap", "avirisng", "hytes"]
     srf_root: str = "data/srf"
     paths: dict[str, Any] = {}
