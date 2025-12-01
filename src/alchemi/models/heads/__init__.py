@@ -1,6 +1,19 @@
+from .aux import AuxHead
 from .domain import DomainDiscriminator
-from .gas_head import GasHead
+from .gas import GasHead, GasOutput
+from .gas_head import GasHead as LegacyGasHead
 from .id_head import IDHead
+from .solids import SolidsHead, SolidsOutput
 from .unmix_head import LinearUnmixHead
 
-__all__ = ["DomainDiscriminator", "GasHead", "IDHead", "LinearUnmixHead"]
+__all__ = [
+    "AuxHead",
+    "DomainDiscriminator",
+    "GasHead",
+    "GasOutput",
+    "IDHead",
+    "LinearUnmixHead",
+    "LegacyGasHead",
+    "SolidsHead",
+    "SolidsOutput",
+]
