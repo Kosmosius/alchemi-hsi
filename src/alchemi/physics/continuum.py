@@ -61,7 +61,7 @@ def compute_convex_hull_continuum(spectrum: Spectrum) -> Spectrum:
     return Spectrum.from_reflectance(
         WavelengthGrid(wl),
         continuum,
-        spectrum.units,
+        units=spectrum.units,
         mask=spectrum.mask,
         meta=spectrum.meta.copy(),
     )
