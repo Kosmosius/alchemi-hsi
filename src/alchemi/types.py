@@ -197,6 +197,7 @@ class WavelengthGrid:
         self.nm = a
 
 
+# TODO: Legacy Spectrum retained for compatibility; prefer alchemi.spectral.Spectrum.
 @dataclass
 class Spectrum:
     wavelengths: WavelengthGrid
@@ -317,6 +318,7 @@ class Spectrum:
         )
 
 
+# TODO: Legacy SRFMatrix retained for compatibility; prefer alchemi.spectral.SRFMatrix.
 @dataclass
 class SRFMatrix:
     sensor: str
@@ -399,6 +401,7 @@ class SRFMatrix:
         )
 
 
+# TODO: Legacy SampleMeta retained for compatibility; prefer alchemi.spectral.Sample.
 @dataclass
 class SampleMeta:
     """Metadata describing a per-pixel measurement.
@@ -423,6 +426,7 @@ class SampleMeta:
         return data
 
 
+# TODO: Legacy Sample retained for compatibility; prefer alchemi.spectral.Sample.
 @dataclass
 class Sample:
     """A single measured spectrum (e.g. a pixel extracted from a cube).
