@@ -1,3 +1,4 @@
+# TODO: migrated from legacy structure – reconcile with new design.
 """Shared configuration helpers for runtime settings."""
 
 from __future__ import annotations
@@ -106,4 +107,3 @@ def resolve_amp_dtype(name: str) -> torch.dtype:
     if normalized not in mapping:
         raise ValueError(f"Unsupported amp dtype: {name}")
     return mapping[normalized]
-
