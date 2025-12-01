@@ -1,0 +1,9 @@
+# Representation evaluation (retrieval quality, linear probe).
+
+solids: false
+gas: false
+representation: true
+srf_robustness: false
+heavy_atmosphere: false
+teacher_noise: false
+coverage: true

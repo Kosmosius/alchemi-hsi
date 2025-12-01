@@ -1,0 +1,9 @@
+# Default gas evaluation suite (ROC, plume metrics).
+
+solids: false
+gas: true
+representation: true
+srf_robustness: false
+heavy_atmosphere: false
+teacher_noise: true
+coverage: true

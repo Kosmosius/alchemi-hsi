@@ -1,0 +1,10 @@
+# Larger MAE backbone for high-capacity finetuning.
+
+variant: mae_large
+embed_dim: 1024
+depth: 24
+num_heads: 16
+grouping: 1
+masking_ratio: 0.8
+decoder_dim: 768
+decoder_depth: 12

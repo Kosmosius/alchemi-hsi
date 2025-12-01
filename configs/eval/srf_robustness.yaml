@@ -1,0 +1,9 @@
+# SRF robustness sweep with jittered bandpasses.
+
+solids: true
+gas: true
+representation: false
+srf_robustness: true
+heavy_atmosphere: false
+teacher_noise: false
+coverage: true

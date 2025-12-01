@@ -1,0 +1,35 @@
+# Solids-focused training pipeline using EMIT solids chips.
+
+experiment_name: alchemi_solids_emit_v1
+run_id:
+data: emit_solids
+model:
+  ingest: any_sensor_default
+  backbone: mae_base
+  alignment: lab_overhead_default
+  heads:
+    solids: solids_default
+    gas: gas_default
+    aux: aux_default
+  uncertainty: stack_default
+training:
+  batch_size: 48
+  eval_batch_size: 48
+  accumulation_steps: 1
+  epochs: 320
+  optimizer:
+    type: adamw
+    lr: 0.0001
+    weight_decay: 0.05
+    betas: [0.9, 0.95]
+  scheduler:
+    type: cosine
+    warmup_steps: 1500
+    min_lr: 0.00001
+  stages:
+    mae: stage_mae
+    align: stage_align
+    tasks: stage_tasks
+    uncertainty: stage_uncertainty
+  multitask: multitask_default
+eval: solids_default

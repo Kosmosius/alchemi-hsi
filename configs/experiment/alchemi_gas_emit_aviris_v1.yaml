@@ -1,0 +1,62 @@
+# Gas-focused multi-domain training with EMIT gas cells and AVIRIS-NG plumes.
+
+experiment_name: alchemi_gas_emit_aviris_v1
+run_id:
+data:
+  dataset_names: ["emit_gas", "avirisng_gas"]
+  sensors: ["emit", "avirisng"]
+  data_roots:
+    - data/emit/gas
+    - data/aviris/gas
+  sample:
+    chip_size: 192
+    patch_size: 32
+    stride: 16
+  augmentation:
+    band_masking: true
+    srf_jitter: true
+    noise_injection: true
+    geometric_transforms: true
+  spectrum:
+    num_bands: 430
+    wavelength_min: 380.0
+    wavelength_max: 2500.0
+    resolution: 5.0
+model:
+  ingest: any_sensor_default
+  backbone: mae_base
+  alignment: lab_overhead_default
+  heads:
+    solids: solids_default
+    gas: gas_default
+    aux: aux_default
+  uncertainty: stack_default
+training:
+  batch_size: 40
+  eval_batch_size: 40
+  accumulation_steps: 2
+  epochs: 280
+  optimizer:
+    type: adamw
+    lr: 0.00012
+    weight_decay: 0.05
+    betas: [0.9, 0.95]
+  scheduler:
+    type: cosine
+    warmup_steps: 1800
+    min_lr: 0.00001
+  stages:
+    mae: stage_mae
+    align:
+      learning_rate: 0.00012
+      loss_weight: 1.2
+      description: "Stage B alignment across EMIT/AVIRIS"
+    tasks: stage_tasks
+    uncertainty: stage_uncertainty
+  multitask:
+    solids_weight: 0.2
+    gas_weight: 1.3
+    aux_weight: 0.5
+    use_gradnorm: true
+    use_pcgrad: false
+eval: gas_default

@@ -1,0 +1,24 @@
+# EMIT solids spectral library chips for solids classification.
+
+dataset_names: ["emit_solids"]
+sensors: ["emit"]
+splits:
+  train: ["train"]
+  val: ["val"]
+  test: ["test"]
+sample:
+  chip_size: 256
+  patch_size: 32
+  stride: 16
+augmentation:
+  band_masking: true
+  srf_jitter: true
+  noise_injection: false
+  geometric_transforms: true
+data_roots:
+  - data/emit/solids
+spectrum:
+  num_bands: 285
+  wavelength_min: 380.0
+  wavelength_max: 2500.0
+  resolution: 10.0

@@ -1,5 +1,4 @@
-# TODO: migrated from legacy structure – reconcile with new design.
-"""Shared configuration helpers for runtime settings."""
+"""Configuration entrypoints and schema exports for ALCHEMI."""
 
 from __future__ import annotations
 
@@ -8,6 +7,60 @@ from dataclasses import dataclass
 from typing import Any
 
 import torch
+
+from .core import (
+    AugmentationConfig,
+    BackboneConfig,
+    DataConfig,
+    EvalConfig,
+    ExperimentConfig,
+    HeadsConfig,
+    IngestConfig,
+    ModelConfig,
+    MultiTaskConfig,
+    OptimizerConfig,
+    SchedulerConfig,
+    SpectrumConfig,
+    StageSchedule,
+    StageSetting,
+    TrainingConfig,
+    UncertaintyConfig,
+)
+from .hydra import (
+    load_data_config,
+    load_eval_config,
+    load_experiment_config,
+    load_model_config,
+    load_training_config,
+)
+
+__all__ = [
+    "AugmentationConfig",
+    "BackboneConfig",
+    "DataConfig",
+    "EvalConfig",
+    "ExperimentConfig",
+    "HeadsConfig",
+    "IngestConfig",
+    "ModelConfig",
+    "MultiTaskConfig",
+    "OptimizerConfig",
+    "SchedulerConfig",
+    "SpectrumConfig",
+    "StageSchedule",
+    "StageSetting",
+    "TrainingConfig",
+    "UncertaintyConfig",
+    "load_data_config",
+    "load_eval_config",
+    "load_experiment_config",
+    "load_model_config",
+    "load_training_config",
+    "RuntimeConfig",
+    "select_device",
+    "resolve_dtype",
+    "resolve_amp_dtype",
+]
 
 
 @dataclass(slots=True)

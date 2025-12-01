@@ -1,0 +1,8 @@
+# Sensor-agnostic ingest stem used across EMIT/EnMAP/AVIRIS/HYTES.
+
+spectral_bins: 256
+patch_embed_dim: 256
+max_sensors: 4
+dropout: 0.0
+mask_tokens: true
+normalization: layernorm

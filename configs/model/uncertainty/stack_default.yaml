@@ -1,0 +1,7 @@
+# Ensemble-based uncertainty estimation used in Stage D calibration.
+
+enabled: true
+ensemble_size: 4
+conformal: true
+conformal_alpha: 0.1
+temperature_scaling: true

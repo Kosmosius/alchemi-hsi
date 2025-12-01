@@ -1,0 +1,24 @@
+# EnMAP spectral-Earth style MAE pretraining configuration.
+
+dataset_names: ["enmap_spectralearth"]
+sensors: ["enmap"]
+splits:
+  train: ["train"]
+  val: ["val"]
+  test: ["test"]
+sample:
+  chip_size: 256
+  patch_size: 32
+  stride: 16
+augmentation:
+  band_masking: true
+  srf_jitter: true
+  noise_injection: false
+  geometric_transforms: true
+data_roots:
+  - data/enmap/mae
+spectrum:
+  num_bands: 230
+  wavelength_min: 420.0
+  wavelength_max: 2450.0
+  resolution: 10.0

@@ -1,0 +1,9 @@
+# Stress-test metrics under heavy atmospheric absorption.
+
+solids: true
+gas: true
+representation: false
+srf_robustness: false
+heavy_atmosphere: true
+teacher_noise: false
+coverage: true

@@ -1,0 +1,5 @@
+# Top-level defaults for Hydra-style config composition.
+# These defaults mirror the recommended Stage A-D workflow described in the design doc.
+
+experiment_dir: outputs/experiments
+checkpoint_dir: checkpoints

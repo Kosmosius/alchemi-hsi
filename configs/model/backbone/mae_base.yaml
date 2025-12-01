@@ -1,0 +1,10 @@
+# MAE-Base backbone aligned with Stage A spectral pretraining.
+
+variant: mae_base
+embed_dim: 768
+depth: 12
+num_heads: 12
+grouping: 1
+masking_ratio: 0.75
+decoder_dim: 512
+decoder_depth: 8

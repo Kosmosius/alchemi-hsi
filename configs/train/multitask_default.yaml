@@ -1,0 +1,7 @@
+# Default multi-task loss balancing and gradient strategy.
+
+solids_weight: 1.0
+gas_weight: 1.0
+aux_weight: 0.5
+use_gradnorm: false
+use_pcgrad: false

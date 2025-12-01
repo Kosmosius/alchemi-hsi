@@ -1,0 +1,24 @@
+# HYTES longwave infrared coverage for robustness to thermal conditions.
+
+dataset_names: ["hytes_lwir"]
+sensors: ["hytes"]
+splits:
+  train: ["train"]
+  val: ["val"]
+  test: ["test"]
+sample:
+  chip_size: 128
+  patch_size: 16
+  stride: 8
+augmentation:
+  band_masking: true
+  srf_jitter: false
+  noise_injection: true
+  geometric_transforms: true
+data_roots:
+  - data/hytes/lwir
+spectrum:
+  num_bands: 256
+  wavelength_min: 8000.0
+  wavelength_max: 12000.0
+  resolution: 25.0
