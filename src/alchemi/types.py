@@ -398,6 +398,16 @@ class SRFMatrix:
             bad_band_windows_nm=self.bad_band_windows_nm,
         )
 
+    def normalize_rows_trapz(self) -> SRFMatrix:
+        """Alias for :meth:`normalize_trapz` for backward compatibility.
+
+        The registry helpers expect SRF matrices to be normalized per band.
+        This convenience wrapper preserves the original interface used in the
+        ALCHEMI design notes while delegating to ``normalize_trapz``.
+        """
+
+        return self.normalize_trapz()
+
 
 @dataclass
 class SampleMeta:
