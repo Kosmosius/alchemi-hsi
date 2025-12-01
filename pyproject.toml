@@ -3,8 +3,8 @@ requires = ["hatchling>=1.20"]
 build-backend = "hatchling.build"
 
 [project]
-name = "alchemi-hsi"
-version = "0.2.1"
+name = "alchemi"
+version = "0.2.1-dev"
 description = "ALCHEMI — Atmosphere-aware Lab-to-scene Contrastive Hyperspectral Embeddings for Material Identity"
 readme = "README.md"
 requires-python = ">=3.10"

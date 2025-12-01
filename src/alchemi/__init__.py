@@ -1,4 +1,11 @@
-"""Top-level package exports with lazy submodule loading."""
+# TODO: migrated from legacy structure – reconcile with new design.
+"""ALCHEMI: physics-aware any-sensor hyperspectral foundation model.
+
+This package bundles the reusable library code for ingestion, physics, modeling,
+and evaluation; the detailed system specification lives in ``docs/design/alchemi_design.tex``.
+Refer to that design document for the authoritative description of contracts,
+architecture, and evaluation scope.
+"""
 
 from __future__ import annotations
 
@@ -15,8 +22,10 @@ from .types import (
     ValueUnits,
     WavelengthGrid,
 )
+from .version import __version__
 
 __all__ = [
+    "__version__",
     "SRFMatrix",
     "Sample",
     "SampleMeta",
@@ -42,6 +51,7 @@ _SUBMODULES = {
     for name in __all__
     if name
     not in {
+        "__version__",
         "SRFMatrix",
         "Sample",
         "SampleMeta",
