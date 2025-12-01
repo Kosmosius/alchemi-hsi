@@ -1,548 +1,220 @@
-"""Synthetic MAE pretraining and toy alignment harness.
+"""High level training orchestrator for staged experiments.
 
-This module is primarily a lightweight throughput/ablation playground that
-trains on random tokens. The CLIP-style alignment trainer in
-``alchemi.train.alignment_trainer`` is the mainline path used for producing
-deployable encoders. Keeping this module documented makes it clear that its
-scope is experimental and synthetic.
+The trainer glues together configuration objects, data pipelines, model
+construction, loss wiring, optimisation, and logging. The implementation here
+is intentionally lightweight – a dummy call such as ``Trainer(cfg).run()`` will
+build the model stack and iterate through a few batches without requiring an
+external dataset. Detailed loss wiring can be extended later without changing
+this entry point.
 """
-
 from __future__ import annotations
 
-import os
-from pathlib import Path
-from collections.abc import Iterator
-from typing import Any, Mapping
+from dataclasses import dataclass
+from typing import Any, Iterable
 
 import torch
-import torch.nn as nn
-import yaml
-from torch import Tensor
-from torch.utils.data import DataLoader
+from torch import nn
+from torch.utils.data import DataLoader, Dataset
 
-from ..config import RuntimeConfig
-from ..data.datasets import RealMAEDataset
-from ..heads import BandDepthHead, load_banddepth_config
-from ..losses import InfoNCELoss, ReconstructionLoss, SpectralSmoothnessLoss
-from ..models import (
-    DomainDiscriminator,
-    MAEDecoder,
-    MAEEncoder,
-    SetEncoder,
-    SpectralBasisProjector,
-    build_set_encoder,
+from alchemi.config import ExperimentConfig, StageSchedule
+from alchemi.data import pipelines
+from alchemi.models import (
+    AnySensorIngest,
+    AuxHead,
+    GasHead,
+    LabOverheadAlignment,
+    MAEBackbone,
+    SolidsHead,
 )
-from ..models import MaskingConfig
-from ..utils.ckpt import save_checkpoint
-from ..utils.logging import ThroughputMeter, ThroughputStats, get_logger
-from .amp import autocast
-from .config import DataCfg, TrainCfg
-from .loss_mixer import Weights
-from .seed import seed_everything
 
-_LOG = get_logger(__name__)
+from .losses import (
+    build_aux_loss,
+    build_gas_loss,
+    build_info_nce_loss,
+    build_mae_reconstruction_loss,
+    build_solids_loss,
+)
+from .loops import evaluate, train_epoch
+from .logging import MetricLogger
+from .multitask import MultiTaskLoss
+from .optimizers import build_optimizer
+from .schedulers import build_scheduler
+from .stages import (
+    run_alignment,
+    run_mae_pretrain,
+    run_task_training,
+    run_uncertainty_calibration,
+)
 
 
-def _is_main_process() -> bool:
-    if torch.distributed.is_available() and torch.distributed.is_initialized():
+@dataclass
+class _DummySpectra(Dataset[dict[str, torch.Tensor]]):
+    """Fallback dataset emitting random spectral tokens.
+
+    This keeps the trainer runnable in environments without data availability
+    while still exercising the model and loss plumbing.
+    """
+
+    length: int
+    embed_dim: int
+    seq_len: int = 128
+
+    def __len__(self) -> int:  # pragma: no cover - trivial
+        return self.length
+
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:  # pragma: no cover - simple
+        tokens = torch.randn(self.seq_len, self.embed_dim)
+        alt_tokens = torch.randn(self.seq_len, self.embed_dim)
+        labels = torch.randint(0, 5, (1,))
+        return {"tokens": tokens, "tokens_alt": alt_tokens, "labels": labels.float()}
+
+
+class Trainer:
+    """Top-level staged training orchestrator."""
+
+    def __init__(self, cfg: ExperimentConfig, *, device: torch.device | None = None) -> None:
+        self.cfg = cfg
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.logger = MetricLogger(enable_wandb=False)
+
+        # Build model components from config
+        self.ingest = AnySensorIngest.from_config(cfg.model).to(self.device)
+        self.backbone = MAEBackbone.from_config(cfg.model).to(self.device)
+        self.alignment = LabOverheadAlignment.from_config(cfg.model).to(self.device)
+        self.solids_head = SolidsHead.from_config(cfg.model.backbone.embed_dim, cfg.model.heads.solids).to(
+            self.device
+        )
+        self.gas_head = GasHead.from_config(cfg.model.backbone.embed_dim, cfg.model.heads.gas).to(self.device)
+        self.aux_head = AuxHead.from_config(cfg.model.backbone.embed_dim, cfg.model.heads.aux).to(self.device)
+
+        # Loss helpers
+        self.mae_loss = build_mae_reconstruction_loss()
+        self.info_nce = build_info_nce_loss(cfg.model.alignment.temperature)
+        self.solids_loss = build_solids_loss()
+        self.gas_loss = build_gas_loss()
+        self.aux_loss = build_aux_loss()
+
+        self.multitask = MultiTaskLoss(cfg.training.multitask)
+
+        # Optimizer + scheduler will be constructed per-stage in case LR differs
+        self.optimizer: torch.optim.Optimizer | None = None
+        self.scheduler: torch.optim.lr_scheduler._LRScheduler | None = None
+
+        self.train_loader, self.val_loader = self._build_pipelines()
+
+    def _build_pipelines(self) -> tuple[DataLoader[Any], DataLoader[Any]]:
+        """Build data pipelines; fall back to dummy random data when unavailable."""
+
+        batch_size = self.cfg.training.batch_size
         try:
-            return bool(torch.distributed.get_rank() == 0)
-        except RuntimeError:
+            loaders: list[DataLoader[Any]] = []
+            for name in self.cfg.data.dataset_names:
+                builder = getattr(pipelines, f"build_{name}_pipeline", None)
+                if builder is None:
+                    continue
+                loaders.append(builder(self.cfg.data))
+            if loaders:
+                return loaders[0], loaders[0]
+        except Exception:
+            # Fallback below
             pass
 
-    for env_key in ("LOCAL_RANK", "RANK"):
-        raw = os.environ.get(env_key)
-        if raw is not None:
-            try:
-                return bool(int(raw) == 0)
-            except ValueError:
-                continue
+        dummy = _DummySpectra(length=32, embed_dim=self.cfg.model.backbone.embed_dim)
+        loader = DataLoader(dummy, batch_size=batch_size)
+        return loader, loader
 
-    return True
-
-
-def persist_mask(mask: Tensor, path: Path) -> None:
-    """Persist a boolean mask tensor for later inspection."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(mask.cpu(), path)
-
-
-def _mask_spectral(
-    values: Tensor,
-    mask: Tensor,
-    spectral_mask_ratio: float,
-    *,
-    persist_path: Path | None = None,
-) -> tuple[Tensor, Tensor]:
-    """Randomly mask a fraction of spectral positions."""
-    B = values.shape[0]
-    k = max(1, int(B * spectral_mask_ratio))
-    idx = torch.randperm(B, device=values.device)[:k]
-    m = mask.clone()
-    m[idx] = False
-
-    if persist_path is not None:
-        persist_mask(m, persist_path)
-
-    return m, idx
-
-
-def _mask_spatial(shape: tuple[int, ...], spatial_mask_ratio: float, *, disabled: bool) -> Tensor:
-    mask = torch.ones(shape, dtype=torch.bool)
-    if disabled:
-        return mask
-
-    numel = mask.numel()
-    k = max(1, int(numel * spatial_mask_ratio))
-    flat = mask.view(-1)
-    idx = torch.randperm(numel)[:k]
-    flat[idx] = False
-    return flat.view_as(mask)
-
-
-def _build_embedder(cfg: TrainCfg) -> tuple[SpectralBasisProjector, SetEncoder]:
-    basis = SpectralBasisProjector(K=cfg.basis_K)
-    setenc = build_set_encoder(embed_dim=cfg.embed_dim, depth=2, heads=cfg.n_heads)
-    return basis, setenc
-
-
-def _encode_pixel(
-    basis: SpectralBasisProjector,
-    setenc: SetEncoder,
-    wavelengths: Tensor,
-    values: Tensor,
-    mask: Tensor,
-) -> Tensor:
-    phi = basis(wavelengths, values, mask)
-    tokens = phi.unsqueeze(0)
-    return tokens.squeeze(0)
-
-
-def _aggregate_stats(stats_list: list[ThroughputStats]) -> ThroughputStats:
-    """Aggregate per-step stats into a single summary."""
-    if not stats_list:
-        return ThroughputStats(
-            tokens_per_s=0.0,
-            gb_per_s=0.0,
-            peak_mem_gb=None,
-            step_time_s=0.0,
-            tokens=0,
-            num_bytes=0,
+    def _set_stage_optim(self, schedule: StageSchedule, stage_name: str) -> None:
+        stage_cfg = getattr(schedule, stage_name)
+        self.optimizer = build_optimizer(
+            self.parameters(),
+            self.cfg.training.optimizer,
+            lr_override=stage_cfg.learning_rate,
         )
+        self.scheduler = build_scheduler(self.optimizer, self.cfg.training.scheduler, stage_cfg.epochs)
 
-    total_tokens = sum(int(s.tokens) for s in stats_list)
-    total_bytes = sum(int(s.num_bytes or 0) for s in stats_list)
-    total_time = sum(float(s.step_time_s) for s in stats_list)
-    peak_mem = max(float(s.peak_mem_gb or 0.0) for s in stats_list)
+    def parameters(self) -> Iterable[nn.Parameter]:  # pragma: no cover - passthrough
+        modules = [self.ingest, self.backbone, self.alignment, self.solids_head, self.gas_head, self.aux_head]
+        for module in modules:
+            yield from module.parameters()
 
-    total_time = max(total_time, 1e-12)
-    tokens_per_s = total_tokens / total_time
-    gb_per_s = total_bytes / (total_time * 1e9)
-    avg_step_time = total_time / len(stats_list)
+    def run(self) -> None:
+        """Run all configured training stages sequentially."""
 
-    return ThroughputStats(
-        tokens_per_s=tokens_per_s,
-        gb_per_s=gb_per_s,
-        peak_mem_gb=peak_mem if peak_mem > 0.0 else None,
-        step_time_s=avg_step_time,
-        tokens=total_tokens,
-        num_bytes=total_bytes,
-    )
+        stages = self.cfg.training.stages
+        if stages.mae.enabled:
+            self._set_stage_optim(stages, "mae")
+            run_mae_pretrain(self, self.train_loader, self.val_loader, self.cfg.training)
 
+        if stages.align.enabled:
+            self._set_stage_optim(stages, "align")
+            run_alignment(self, self.train_loader, self.val_loader, self.cfg.training)
 
-def _normalise_train_config(
-    config: str | Path | Mapping[str, Any] | TrainCfg,
-    *,
-    seed_override: int | None,
-) -> tuple[RuntimeConfig, TrainCfg, str]:
-    """Load a training configuration from various formats.
+        if stages.tasks.enabled:
+            self._set_stage_optim(stages, "tasks")
+            run_task_training(self, self.train_loader, self.val_loader, self.cfg.training)
 
-    Returns the runtime config, train config, and a human readable config label
-    for logging/metadata.
-    """
-    config_label = "<in-memory-config>"
-    if isinstance(config, TrainCfg):
-        train_payload: Mapping[str, Any] = config.model_dump()
-        payload: Mapping[str, Any] = {"train": train_payload}
-    elif isinstance(config, Mapping):
-        payload = config
-        if "train" in payload:
-            train_payload = payload.get("train", {}) or {}
-        else:
-            train_payload = payload
-    else:
-        config_path = Path(config)
-        payload = yaml.safe_load(config_path.read_text())
-        config_label = str(config_path)
-        train_payload = payload.get("train", {}) if isinstance(payload, dict) else {}
+        if stages.uncertainty.enabled:
+            self._set_stage_optim(stages, "uncertainty")
+            run_uncertainty_calibration(self, self.train_loader, self.val_loader, self.cfg.training)
 
-    runtime_cfg = RuntimeConfig.from_mapping(
-        payload.get("global") if isinstance(payload, Mapping) else None,
-        fallback=train_payload,
-    )
-    runtime_cfg = runtime_cfg.with_seed(seed_override)
-    cfg = TrainCfg(**train_payload) if not isinstance(config, TrainCfg) else config
-    return runtime_cfg, cfg, config_label
+    # ------------------------------------------------------------------
+    # Convenience wrappers used by stages
+    # ------------------------------------------------------------------
+    def mae_step(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+        tokens = batch["tokens"].to(self.device)
+        out = self.backbone.forward_mae(tokens)
+        loss = self.mae_loss(out.decoded, tokens, mask=out.mask)
+        return loss, {"mae": float(loss.detach().cpu())}
 
+    def alignment_step(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+        tok_a = batch["tokens"].to(self.device)
+        tok_b = batch.get("tokens_alt", tok_a).to(self.device)
+        enc_a = self.backbone.forward_encoder(tok_a)
+        enc_b = self.backbone.forward_encoder(tok_b)
+        loss = self.info_nce(enc_a.mean(dim=1), enc_b.mean(dim=1))
+        return loss, {"info_nce": float(loss.detach().cpu())}
 
-def run_pretrain_mae(
-    config: str | Path | Mapping[str, Any] | TrainCfg,
-    *,
-    no_spatial_mask: bool = False,
-    no_posenc: bool = False,
-    seed_override: int | None = None,
-    return_loss: bool = False,
-) -> ThroughputStats | tuple[ThroughputStats, float]:
-    """Toy MAE pretraining loop with spatial+spectral masking and throughput measurement.
+    def task_step(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+        tokens = batch["tokens"].to(self.device)
+        features = self.backbone.forward_encoder(tokens)
+        pooled = features.mean(dim=1)
+        spatial = pooled.view(pooled.size(0), 1, 1, -1)
+        losses: dict[str, torch.Tensor] = {}
 
-    Args:
-        config: Path to a YAML config, a mapping containing ``global``/``train``
-            sections, or an in-memory ``TrainCfg`` instance.
-        no_spatial_mask: Disable spatial masking regardless of config value.
-        no_posenc: Disable positional encoding regardless of config value.
-        seed_override: Optional seed to override the config.
-        return_loss: When ``True``, also return the final reconstruction loss
-            from training (useful for ablations).
+        solids_out = self.solids_head(pooled)
+        losses["solids"] = self.solids_loss(solids_out, batch.get("labels"))
 
-    This harness runs on synthetic tokens and is intended for ablations rather
-    than producing the deployment encoder.
-    """
+        gas_out = self.gas_head(spatial)
+        losses["gas"] = self.gas_loss(gas_out, batch.get("gas_labels"))
 
-    runtime_cfg = runtime_cfg.with_seed(seed_override)
-    cfg = TrainCfg(**train_payload)
-    data_cfg = DataCfg(**payload.get("data", {}) if isinstance(payload, dict) else {})
+        aux_out = self.aux_head(spatial)
+        losses["aux"] = self.aux_loss(aux_out, batch.get("aux_targets"))
 
-    # Fold CLI toggles into config so baselines are properly recorded.
-    cfg = cfg.copy(
-        update={
-            "no_spatial_mask": cfg.no_spatial_mask or no_spatial_mask,
-            "no_posenc": cfg.no_posenc or no_posenc,
-        }
-    )
+        total = self.multitask.combine(losses)
+        metrics = {k: float(v.detach().cpu()) for k, v in losses.items()}
+        return total, metrics
 
-    cfg = cfg.copy(update={"seed": runtime_cfg.seed, "deterministic": runtime_cfg.deterministic})
-
-    # Seed / determinism config.
-    torch.set_default_dtype(runtime_cfg.torch_dtype)
-    seed_everything(runtime_cfg.seed, runtime_cfg.deterministic)
-    device = runtime_cfg.torch_device
-    _LOG.info(
-        "Starting MAE pretrain config=%s seed=%s deterministic=%s device=%s dtype=%s",
-        config_label,
-        runtime_cfg.seed,
-        runtime_cfg.deterministic,
-        device,
-        runtime_cfg.torch_dtype,
-    )
-
-    # Optional mask persistence path, if present in the config.
-    mask_path: Path | None = None
-    if hasattr(cfg, "mask_path"):
-        mask_str = cfg.mask_path
-        if mask_str:
-            mask_path = Path(mask_str)
-
-    basis, setenc = _build_embedder(cfg)
-
-    no_spatial_mask = getattr(cfg, "no_spatial_mask", False)
-    no_posenc = getattr(cfg, "no_posenc", False)
-    mask_cfg = MaskingConfig(
-        spatial_mask_ratio=cfg.spatial_mask_ratio,
-        spectral_mask_ratio=cfg.spectral_mask_ratio,
-    )
-
-    real_loader: DataLoader[dict[str, Tensor]] | None = None
-    real_iter: Iterator[dict[str, Tensor]] | None = None
-    decoder_out_dim = cfg.embed_dim
-    if data_cfg.mode == "real":
-        if data_cfg.dataset_name is None:
-            raise ValueError("data.dataset_name must be set for real MAE runs")
-
-        dataset_path = data_cfg.paths.get(data_cfg.dataset_name)
-        if dataset_path is None:
-            msg = f"Missing dataset path for {data_cfg.dataset_name!r}"
-            raise ValueError(msg)
-
-        real_dataset = RealMAEDataset(
-            data_cfg.dataset_name,
-            dataset_path,
-            patch_size=2,
-            max_patches=max(cfg.batch_size * 2, 4),
-        )
-        decoder_out_dim = real_dataset.data.shape[-1]
-        real_loader = DataLoader(real_dataset, batch_size=cfg.batch_size, shuffle=True)
-        real_iter = iter(real_loader)
-
-    enc = MAEEncoder(
-        embed_dim=cfg.embed_dim,
-        depth=cfg.depth,
-        n_heads=cfg.n_heads,
-        use_posenc=not no_posenc,
-        max_tokens=cfg.embed_dim * 2,
-    )
-    dec = MAEDecoder(
-        embed_dim=cfg.embed_dim,
-        depth=max(1, cfg.depth // 2),
-        n_heads=cfg.n_heads,
-        out_dim=decoder_out_dim,
-    )
-
-    input_proj: nn.Linear | None = None
-    if decoder_out_dim != cfg.embed_dim:
-        input_proj = nn.Linear(decoder_out_dim, cfg.embed_dim)
-
-    for module in (basis, setenc, enc, dec):
-        module.to(device)
-    if input_proj is not None:
-        input_proj.to(device)
-
-    recon_loss = ReconstructionLoss()
-    smooth_loss = SpectralSmoothnessLoss()
-    opt = torch.optim.AdamW(
-        list(basis.parameters())
-        + list(setenc.parameters())
-        + list(enc.parameters())
-        + list(dec.parameters()),
-        lr=cfg.lr,
-    )
-    if input_proj is not None:
-        opt.add_param_group({"params": input_proj.parameters()})
-    weights = Weights(recon=1.0, nce=0.0, sam=0.0, smooth=1e-4)
-
-    meter = ThroughputMeter(device)
-    step_stats: list[ThroughputStats] = []
-    mask_persisted = False
-    final_loss = 0.0
-
-    # Simple synthetic MAE loop: random tokens with spatial+spectral masking.
-    for step in range(1, cfg.max_steps + 1):
-        if data_cfg.mode == "synthetic":
-            batch_size = cfg.batch_size
-            num_tokens = cfg.embed_dim
-            token_dim = cfg.embed_dim
-
-            # Fake token grid: (B, T, D)
-            tokens = torch.randn(
-                batch_size, num_tokens, token_dim, device=device, dtype=runtime_cfg.torch_dtype
-            )
-
-            # Spectral mask over feature dimension.
-            spectral_values = torch.arange(
-                token_dim, dtype=runtime_cfg.torch_dtype, device=device
-            )
-            base_band_mask = torch.ones(token_dim, dtype=torch.bool, device=device)
-        else:
-            assert real_loader is not None and real_iter is not None
-            try:
-                batch = next(real_iter)
-            except StopIteration:
-                real_iter = iter(real_loader)
-                batch = next(real_iter)
-
-            tokens = batch["tokens"].to(device=device, dtype=runtime_cfg.torch_dtype)
-            wavelengths = batch["wavelengths"].to(device=device, dtype=runtime_cfg.torch_dtype)
-            band_mask = batch["band_mask"].to(device=device)
-
-            batch_size = tokens.shape[0]
-            num_tokens = tokens.shape[1]
-            token_dim = tokens.shape[2]
-            spectral_values = wavelengths[0]
-            base_band_mask = band_mask[0].to(torch.bool)
-        persist_target = (
-            mask_path if (mask_path and not mask_persisted and _is_main_process()) else None
-        )
-        spectral_mask, _ = _mask_spectral(
-            spectral_values,
-            base_band_mask,
-            spectral_mask_ratio=mask_cfg.spectral_mask_ratio,
-            persist_path=persist_target,
-        )
-        if persist_target is not None:
-            mask_persisted = True
-
-        # Spatial mask over tokens.
-        spatial_mask = _mask_spatial(
-            (num_tokens,),
-            mask_cfg.spatial_mask_ratio,
-            disabled=no_spatial_mask,
-        ).to(device)
-
-        # Encoder key padding mask: True = pad (i.e. masked-out tokens).
-        key_padding_mask = (~spatial_mask).unsqueeze(0).expand(batch_size, -1)
-
-        # Combined mask for reconstruction loss: (B, T, D)
-        combined_mask_2d = spatial_mask.unsqueeze(-1) & spectral_mask.unsqueeze(0)
-        combined_mask = combined_mask_2d.unsqueeze(0).expand(batch_size, -1, -1)
-
-        # Throughput accounting.
-        active_tokens = int(combined_mask.sum().item())
-        element_size = tokens.element_size()
-        num_bytes = int(tokens.numel() * element_size)
-
-        meter.start()
-        with autocast(enabled=False):
-            model_tokens = tokens if input_proj is None else input_proj(tokens)
-            z = enc(model_tokens, key_padding_mask=key_padding_mask)
-            y = dec(z)
-
-            # Reconstruction over masked region.
-            loss = weights.recon * recon_loss(y, tokens, mask=combined_mask)
-
-            # Spectral smoothness: first batch element with spectra in last dim
-            values_for_smooth = tokens[0]  # (T, D)
-            smooth_mask = spectral_mask.unsqueeze(0)
-            smooth = smooth_loss(values_for_smooth, smooth_mask)
-            loss = loss + weights.smooth * smooth
-
-        opt.zero_grad(set_to_none=True)
-        loss.backward()
-        opt.step()
-
-        stats = meter.stop(tokens=active_tokens, num_bytes=num_bytes)
-        step_stats.append(stats)
-        final_loss = float(loss)
-
-        if step % cfg.log_every == 0:
-            _LOG.info(
-                "[MAE] step %d loss=%.4f tokens/s=%.1f gb/s=%.2f peak_mem=%.2fGB",
-                step,
-                float(loss),
-                stats.tokens_per_s,
-                stats.gb_per_s or 0.0,
-                stats.peak_mem_gb or 0.0,
-            )
-
-    save_checkpoint(
-        "checkpoints/mae.pt",
-        {"basis": basis.state_dict(), "enc": enc.state_dict(), "dec": dec.state_dict()},
-    )
-
-    aggregated = _aggregate_stats(step_stats)
-    if return_loss:
-        return aggregated, final_loss
-    return aggregated
+    def eval_step(self, batch: dict[str, torch.Tensor]) -> dict[str, float]:
+        loss, metrics = self.task_step(batch)
+        metrics = {**metrics, "total": float(loss.detach().cpu())}
+        return metrics
 
 
-def run_align(config_path: str, *, seed_override: int | None = None) -> ThroughputStats:
-    """Toy alignment loop with throughput measurement.
+def run_pretrain_mae(config: ExperimentConfig) -> None:
+    """Compatibility wrapper around the new :class:`Trainer` API."""
 
-    This synthetic loop mirrors the main alignment trainer at a high level but
-    runs on random tensors for fast instrumentation.
-    """
-    payload = yaml.safe_load(Path(config_path).read_text())
-    train_payload = payload.get("train", {}) if isinstance(payload, dict) else {}
-    runtime_cfg = RuntimeConfig.from_mapping(
-        payload.get("global") if isinstance(payload, dict) else None,
-        fallback=train_payload,
-    )
-    runtime_cfg = runtime_cfg.with_seed(seed_override)
-    cfg = TrainCfg(**train_payload)
-
-    cfg = cfg.copy(update={"seed": runtime_cfg.seed, "deterministic": runtime_cfg.deterministic})
-
-    seed_everything(runtime_cfg.seed, runtime_cfg.deterministic)
-    torch.set_default_dtype(runtime_cfg.torch_dtype)
-    device = runtime_cfg.torch_device
-    _LOG.info(
-        "Starting ALIGN config=%s seed=%s deterministic=%s device=%s dtype=%s",
-        config_path,
-        runtime_cfg.seed,
-        runtime_cfg.deterministic,
-        device,
-        runtime_cfg.torch_dtype,
-    )
-
-    basis, setenc = _build_embedder(cfg)
-    enc = MAEEncoder(embed_dim=cfg.embed_dim, depth=cfg.depth, n_heads=cfg.n_heads)
-    nce = InfoNCELoss()
-    domain = DomainDiscriminator(embed_dim=cfg.embed_dim, n_domains=4)
-
-    for module in (basis, setenc, enc, domain):
-        module.to(device)
-
-    params = (
-        list(basis.parameters())
-        + list(setenc.parameters())
-        + list(enc.parameters())
-        + list(domain.parameters())
-    )
-    band_head: BandDepthHead | None = None
-    if cfg.banddepth_cfg and cfg.banddepth_weight > 0.0:
-        bands = load_banddepth_config(cfg.banddepth_cfg)
-        band_head = BandDepthHead(
-            embed_dim=cfg.embed_dim,
-            bands=bands,
-            hidden_dim=cfg.banddepth_hidden,
-            loss=cfg.banddepth_loss,
-        )
-        params += list(band_head.parameters())
-    opt = torch.optim.AdamW(params, lr=cfg.lr)
-
-    # Synthetic paired feature/lab spectra
-    Xf = torch.randn(512, 64)
-    Xl = torch.randn(512, 64)
-    loader: DataLoader[tuple[Tensor, Tensor]] = DataLoader(
-        list(zip(Xf, Xl, strict=False)), batch_size=cfg.batch_size, shuffle=True
-    )
-
-    meter = ThroughputMeter(device)
-    step_stats: list[ThroughputStats] = []
-
-    for step, (f, lab) in enumerate(loader, start=1):
-        f = f.to(device)
-        lab = lab.to(device)
-
-        tokens = int(f.numel() + lab.numel())
-        num_bytes = int(tokens * f.element_size())
-
-        meter.start()
-        with autocast(enabled=False):
-            zf = enc(f.unsqueeze(1)).squeeze(1)
-            zl = enc(lab.unsqueeze(1)).squeeze(1)
-            loss = nce(zf, zl)
-            if band_head is not None:
-                band_head = band_head.to(zf.device)
-                pooled = zf.mean(dim=1)
-                preds = band_head(pooled)
-                wavelengths = torch.linspace(
-                    900.0,
-                    2500.0,
-                    f.shape[1],
-                    device=f.device,
-                    dtype=f.dtype,
-                )
-                targets = band_head.compute_targets(wavelengths, f.detach())
-                band_loss = band_head.loss(preds, targets)
-                loss = loss + cfg.banddepth_weight * band_loss
-        opt.zero_grad(set_to_none=True)
-        loss.backward()
-        opt.step()
-        stats = meter.stop(tokens=tokens, num_bytes=num_bytes)
-        step_stats.append(stats)
-
-        if step % cfg.log_every == 0:
-            _LOG.info(
-                "[ALIGN] step %d nce=%.4f tokens/s=%.1f gb/s=%.2f peak_mem=%.2fGB",
-                step,
-                float(loss),
-                stats.tokens_per_s,
-                stats.gb_per_s or 0.0,
-                stats.peak_mem_gb or 0.0,
-            )
-        if step >= cfg.max_steps:
-            break
-
-    save_checkpoint("checkpoints/align.pt", {"basis": basis.state_dict(), "enc": enc.state_dict()})
-    return _aggregate_stats(step_stats)
+    trainer = Trainer(config)
+    trainer.cfg.training.stages.align.enabled = False
+    trainer.cfg.training.stages.tasks.enabled = False
+    trainer.cfg.training.stages.uncertainty.enabled = False
+    trainer.run()
 
 
-def run_eval(config_path: str) -> None:
-    """Placeholder eval that wires up metric plumbing."""
-    import numpy as np
+def run_eval(config: ExperimentConfig) -> None:
+    """Run a quick evaluation loop over the validation loader."""
 
-    from ..eval.metrics_solids import macro_f1
+    trainer = Trainer(config)
+    evaluate(trainer.val_loader, trainer.eval_step, logger=trainer.logger)
 
-    y_true = np.array([0, 1, 1, 0, 2])
-    y_pred = np.array([0, 1, 0, 0, 2])
-    f1 = macro_f1(y_true, y_pred)
-    _LOG.info("macro-F1=%.3f", f1)
+
+__all__ = ["Trainer", "run_pretrain_mae", "run_eval"]
