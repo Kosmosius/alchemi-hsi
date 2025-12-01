@@ -14,6 +14,10 @@ python -m alchemi.cli --help
 
 See docs/ for PRD, ARCH, DATA_SPEC, EVAL, ROADMAP, DECISIONS, APPENDIX. Phase‑1 quickstarts are collected under [`docs/quickstarts/`](docs/quickstarts/)—start with the [CLI walkthrough](docs/quickstarts/cli.md) to explore dataset validation and canonical cube exports end-to-end. For an interactive Python version, open [`notebooks/quickstart.ipynb`](notebooks/quickstart.ipynb) to build a synthetic cube, inspect spectra, and tokenise bands.
 
+## Pre-commit hooks
+
+Install the git hooks with `pre-commit install` to keep formatting and linting consistent with CI. Run `pre-commit run --all-files` before pushing changes to catch issues early.
+
 ## Tiling large cubes
 
 Process large scenes without loading the full raster into GPU/CPU memory by iterating over tiles:
