@@ -13,6 +13,12 @@ from .hytes import (
     hytes_pixel_bt,
     load_hytes_l1b_bt,
 )
+
+
+def load_hytes_l1b(*args, **kwargs):
+    """Backward-compatible alias for brightness-temperature loader."""
+
+    return load_hytes_l1b_bt(*args, **kwargs)
 from .splib import SPLIBCatalog, load_splib
 
 __all__ = [
@@ -27,6 +33,7 @@ __all__ = [
     "load_avirisng_l1b",
     "load_emit_l1b",
     "load_enmap_l1b",
+    "load_hytes_l1b",
     "load_hytes_l1b_bt",
     "load_splib",
     "mako_pixel_radiance",
