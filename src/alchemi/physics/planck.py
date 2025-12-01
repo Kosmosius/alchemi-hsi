@@ -4,6 +4,16 @@ from __future__ import annotations
 
 import numpy as np
 
+from alchemi.types import (
+    QuantityKind,
+    RadianceUnits,
+    Spectrum,
+    SRFMatrix,
+    TemperatureUnits,
+    WavelengthGrid,
+)
+from alchemi.utils.integrate import np_integrate
+
 __all__ = [
     "K_B",
     "C",
@@ -42,6 +52,10 @@ def _as_float64_arrays(*arrays: np.ndarray) -> tuple[np.ndarray, ...]:
 
     return tuple(np.asarray(arr, dtype=np.float64) for arr in arrays)
 
+
+# ----------------------------------------------------------------------------
+# Array-based Planck conversions (internal helpers)
+# ----------------------------------------------------------------------------
 
 def radiance_to_bt_K(
     L: np.ndarray,
@@ -163,26 +177,106 @@ def bt_K_to_radiance(
     return radiance_nm
 
 
-# Backwards compatibility aliases -------------------------------------------------
+def _band_averaged(values: np.ndarray, wavelengths: np.ndarray, srf: SRFMatrix) -> tuple[np.ndarray, np.ndarray]:
+    """Convolve spectral values to sensor bands using an SRF matrix.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        Band-averaged values and the SRF centers.
+    """
+
+    band_values: list[float] = []
+    for nm_band, resp in zip(srf.bands_nm, srf.bands_resp, strict=True):
+        nm_arr = np.asarray(nm_band, dtype=np.float64)
+        resp_arr = np.asarray(resp, dtype=np.float64)
+        interp_vals = np.interp(nm_arr, wavelengths, values)
+        area = float(np_integrate(resp_arr, nm_arr))
+        if not np.isfinite(area) or area <= 0.0:
+            raise ValueError("SRF band responses must integrate to a positive value")
+        numerator = float(np_integrate(interp_vals * resp_arr, nm_arr))
+        band_values.append(numerator / area)
+
+    return np.asarray(band_values, dtype=np.float64), np.asarray(srf.centers_nm, dtype=np.float64)
 
 
-def radiance_to_bt(
-    L: np.ndarray,
-    wavelength_nm: np.ndarray,
-    *,
-    out: np.ndarray | None = None,
-) -> np.ndarray:
-    """Alias for :func:`radiance_to_bt_K` for backwards compatibility."""
-
-    return radiance_to_bt_K(L, wavelength_nm, out=out)
+def _srf_centers(srf: SRFMatrix) -> np.ndarray:
+    centers = np.asarray(srf.centers_nm, dtype=np.float64)
+    if centers.ndim != 1:
+        raise ValueError("SRF centers must be 1-D")
+    if centers.size == 0:
+        raise ValueError("SRF must contain at least one band")
+    return centers
 
 
-def bt_to_radiance(
-    bt_K: np.ndarray,
-    wavelength_nm: np.ndarray,
-    *,
-    out: np.ndarray | None = None,
-) -> np.ndarray:
-    """Alias for :func:`bt_K_to_radiance` for backwards compatibility."""
+# ---------------------------------------------------------------------------
+# Spectrum-aware wrappers
+# ---------------------------------------------------------------------------
 
-    return bt_K_to_radiance(bt_K, wavelength_nm, out=out)
+def radiance_to_bt(spectrum: Spectrum, srf: SRFMatrix | None = None) -> Spectrum:
+    """Convert a radiance :class:`~alchemi.types.Spectrum` to brightness temperature.
+
+    Parameters
+    ----------
+    spectrum:
+        Radiance spectrum with wavelengths in nanometres and radiance units
+        of W·m⁻²·sr⁻¹·nm⁻¹.
+    srf:
+        Optional spectral response matrix. When provided, radiance is first
+        band-averaged using the SRF rows before converting each band centre to
+        brightness temperature.
+    """
+
+    if spectrum.kind != QuantityKind.RADIANCE:
+        raise ValueError("Input spectrum must represent radiance")
+
+    wavelengths = np.asarray(spectrum.wavelengths.nm, dtype=np.float64)
+    radiance_vals = np.asarray(spectrum.values, dtype=np.float64)
+
+    if srf is not None:
+        radiance_vals, wavelengths = _band_averaged(radiance_vals, wavelengths, srf)
+        mask = srf.bad_band_mask
+    else:
+        mask = spectrum.mask
+
+    bt_vals = radiance_to_bt_K(radiance_vals, wavelengths)
+
+    return Spectrum.from_brightness_temperature(
+        WavelengthGrid(wavelengths),
+        bt_vals,
+        units=TemperatureUnits.KELVIN,
+        mask=mask,
+        meta=spectrum.meta.copy(),
+    )
+
+
+def bt_to_radiance(spectrum: Spectrum, srf: SRFMatrix | None = None) -> Spectrum:
+    """Convert brightness temperature to spectral radiance.
+
+    When an SRF is provided, the returned radiance spectrum is defined on the
+    SRF band centres to remain consistent with band-averaged BT inputs.
+    """
+
+    if spectrum.kind != QuantityKind.BRIGHTNESS_T:
+        raise ValueError("Input spectrum must represent brightness temperature")
+
+    bt_vals = np.asarray(spectrum.values, dtype=np.float64)
+    wavelengths = np.asarray(spectrum.wavelengths.nm, dtype=np.float64)
+
+    if srf is not None:
+        wavelengths = _srf_centers(srf)
+        if bt_vals.shape[0] != wavelengths.shape[0]:
+            raise ValueError("Brightness temperature must align with SRF band centres")
+        mask = srf.bad_band_mask
+    else:
+        mask = spectrum.mask
+
+    radiance_vals = bt_K_to_radiance(bt_vals, wavelengths)
+
+    return Spectrum.from_radiance(
+        WavelengthGrid(wavelengths),
+        radiance_vals,
+        units=RadianceUnits.W_M2_SR_NM,
+        mask=mask,
+        meta=spectrum.meta.copy(),
+    )
