@@ -1,0 +1,9 @@
+# Default solids evaluation suite (spectral angle, abundance metrics).
+
+solids: true
+gas: false
+representation: true
+srf_robustness: false
+heavy_atmosphere: false
+teacher_noise: false
+coverage: true

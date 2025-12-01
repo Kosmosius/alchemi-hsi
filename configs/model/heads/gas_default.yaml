@@ -1,0 +1,6 @@
+# Gas detection head tuned for plume localization.
+
+enabled: true
+hidden_dim: 512
+dropout: 0.1
+loss_weight: 1.2

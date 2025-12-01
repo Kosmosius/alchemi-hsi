@@ -1,0 +1,7 @@
+# Stage A: MAE spectral pretraining.
+
+enabled: true
+epochs: 400
+learning_rate: 0.00015
+loss_weight: 1.0
+description: "Stage A: MAE spectral pretraining"

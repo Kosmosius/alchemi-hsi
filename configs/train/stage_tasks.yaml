@@ -1,0 +1,7 @@
+# Stage C: Task heads finetuning for solids and gas.
+
+enabled: true
+epochs: 160
+learning_rate: 0.00008
+loss_weight: 1.0
+description: "Stage C: Task heads"

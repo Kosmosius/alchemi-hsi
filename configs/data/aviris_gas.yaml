@@ -1,0 +1,24 @@
+# AVIRIS-NG airborne gas plume runs paired with EMIT for domain transfer.
+
+dataset_names: ["avirisng_gas"]
+sensors: ["avirisng"]
+splits:
+  train: ["train"]
+  val: ["val"]
+  test: ["test"]
+sample:
+  chip_size: 160
+  patch_size: 32
+  stride: 16
+augmentation:
+  band_masking: true
+  srf_jitter: true
+  noise_injection: true
+  geometric_transforms: true
+data_roots:
+  - data/aviris/gas
+spectrum:
+  num_bands: 430
+  wavelength_min: 380.0
+  wavelength_max: 2500.0
+  resolution: 5.0

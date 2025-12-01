@@ -1,0 +1,5 @@
+# Auxiliary representation head used for self-supervised objectives.
+
+enabled: true
+projection_dim: 256
+loss_weight: 0.5

@@ -1,0 +1,24 @@
+# EMIT gas-cell captures used for trace gas detection.
+
+dataset_names: ["emit_gas"]
+sensors: ["emit"]
+splits:
+  train: ["train"]
+  val: ["val"]
+  test: ["test"]
+sample:
+  chip_size: 192
+  patch_size: 32
+  stride: 16
+augmentation:
+  band_masking: true
+  srf_jitter: true
+  noise_injection: true
+  geometric_transforms: true
+data_roots:
+  - data/emit/gas
+spectrum:
+  num_bands: 285
+  wavelength_min: 380.0
+  wavelength_max: 2500.0
+  resolution: 10.0

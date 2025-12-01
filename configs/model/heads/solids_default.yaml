@@ -1,0 +1,6 @@
+# Solids head for mineral identification.
+
+enabled: true
+hidden_dim: 512
+dropout: 0.1
+loss_weight: 1.0

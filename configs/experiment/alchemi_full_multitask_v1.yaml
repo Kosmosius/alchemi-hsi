@@ -1,0 +1,62 @@
+# Full multi-task curriculum spanning solids, gas, and LWIR robustness.
+
+experiment_name: alchemi_full_multitask_v1
+run_id:
+data:
+  dataset_names: ["emit_solids", "emit_gas", "avirisng_gas", "hytes_lwir"]
+  sensors: ["emit", "avirisng", "hytes"]
+  data_roots:
+    - data/emit/solids
+    - data/emit/gas
+    - data/aviris/gas
+    - data/hytes/lwir
+  sample:
+    chip_size: 224
+    patch_size: 32
+    stride: 16
+  augmentation:
+    band_masking: true
+    srf_jitter: true
+    noise_injection: true
+    geometric_transforms: true
+model:
+  ingest: any_sensor_default
+  backbone: mae_large
+  alignment: lab_overhead_default
+  heads:
+    solids: solids_default
+    gas: gas_default
+    aux: aux_default
+  uncertainty: stack_default
+training:
+  batch_size: 32
+  eval_batch_size: 32
+  accumulation_steps: 2
+  epochs: 360
+  optimizer:
+    type: adamw
+    lr: 0.0001
+    weight_decay: 0.05
+    betas: [0.9, 0.98]
+  scheduler:
+    type: cosine
+    warmup_steps: 2500
+    min_lr: 0.00001
+  stages:
+    mae: stage_mae
+    align: stage_align
+    tasks:
+      learning_rate: 0.0001
+      loss_weight: 1.0
+      description: "Stage C multitask heads"
+    uncertainty:
+      learning_rate: 0.00005
+      loss_weight: 0.6
+      description: "Stage D ensemble/conformal"
+  multitask:
+    solids_weight: 1.0
+    gas_weight: 1.2
+    aux_weight: 0.5
+    use_gradnorm: true
+    use_pcgrad: true
+eval: srf_robustness
