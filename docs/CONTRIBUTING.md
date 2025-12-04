@@ -15,11 +15,11 @@ We welcome contributions that strengthen the hyperspectral ingestion, physics, a
    source .venv/bin/activate
    ```
 3. **Install dependencies**
-   Use the convenience target below (it will exist once the Phase 1 automation work lands) to install the project in editable mode with developer extras and pre-commit hooks:
+   Use the convenience target below to install the project in editable mode with developer extras and pre-commit hooks:
    ```bash
    make setup
    ```
-   Until the Make target is available you can run the equivalent commands manually:
+   You can also run the equivalent commands manually:
    ```bash
    pip install -e .[dev]
    pre-commit install
@@ -31,7 +31,7 @@ We welcome contributions that strengthen the hyperspectral ingestion, physics, a
 
 ### Coding style
 
-- Python code is formatted with **Black** using a 100 character line length and linted with **Ruff**. Run `make lint` (or `ruff check src tests`) before sending a change.
+- Python code is formatted with **Black** using a 100 character line length and linted with **Ruff**. Run `make lint` (which runs Ruff, Black in check mode, and isort in check-only mode) before sending a change.
 - Keep imports sorted and grouped (Black + Ruff will handle this automatically).
 - Public APIs require docstrings that describe arguments, return values, units, and failure modes. See the [Definition of Done](DEFINITION_OF_DONE.md#documentation-and-contracts) for the required structure.
 - Prefer `Path` objects over raw strings for filesystem interactions.
@@ -40,7 +40,7 @@ We welcome contributions that strengthen the hyperspectral ingestion, physics, a
 
 - All new or modified functions must be fully type annotated.
 - Use `typing.Annotated` to record physical units when applicable.
-- Run `make typecheck` (initially an alias for `pyright`; will exist after the type-checking task lands) to ensure the module type-checks cleanly.
+- Run `make typecheck` to ensure the module type-checks cleanly with **mypy** (configured via `mypy.ini`, defaulting to strictness).
 
 ### Tests and coverage
 
