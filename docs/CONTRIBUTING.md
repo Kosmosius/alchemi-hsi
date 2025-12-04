@@ -58,6 +58,10 @@ We welcome contributions that strengthen the hyperspectral ingestion, physics, a
   - Include a summary of changes, testing evidence, and any known limitations.
   - Check the boxes in the [PR template](../.github/PULL_REQUEST_TEMPLATE.md) confirming the Definition of Done is met.
 
+#### Architecture Decision Records (ADRs)
+
+Major architectural changes—including data contracts, tooling choices, and project policies—must include an ADR. Start from the [ADR template](adr/0000-template.md) and add the new record under `docs/adr/`. Reference the ADR in the pull request description alongside the code implementing the decision. See the [ADR index](DECISIONS.md) and [ADR guidance](adr/README.md) for the full workflow.
+
 ## Local CLI and notebooks
 
 - The Typer CLI entry point lives at `alchemi.cli` and can be invoked with `python -m alchemi.cli` or the future console script `alchemi` once packaging is configured.
