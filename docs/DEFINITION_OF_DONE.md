@@ -4,8 +4,8 @@ All pull requests must satisfy the following checklist before merging. The check
 
 ## Quality gates
 
-- **Lint clean** — `make lint` passes with no warnings (Black formatting + Ruff lint). If the Make target is not yet available, run `black --check src tests` and `ruff check src tests` manually.
-- **Type safe** — `make typecheck` succeeds. The initial implementation will wrap `pyright`; until it lands, contributors must run the equivalent type checker locally and resolve all errors.
+- **Lint clean** — `make lint` passes with no warnings (Ruff + Black formatting check + isort check). If the Make target is unavailable, run `black --check src tests`, `ruff check src tests`, and `isort --check-only src tests` manually.
+- **Type safe** — `make typecheck` succeeds with **mypy** (strictness configured via `mypy.ini`).
 - **Unit tests** — `make test` (pytest) passes on a clean working tree. Tests must cover both success and failure modes.
 - **Coverage** — `make coverage` meets or exceeds the project threshold (80% line coverage for the touched modules). Include coverage reports in the PR description when the automation is unavailable.
 
