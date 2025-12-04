@@ -4,4 +4,4 @@ This index tracks Architecture Decision Records (ADRs) for the project. ADRs cap
 
 | ID | Title | Status | Summary |
 | --- | --- | --- | --- |
-| _TBD_ | _Coming soon_ | Proposed | Placeholder entry until the first ADR is recorded. |
+| 0001 | Repository layout, tooling, and CI | Accepted | Defines the src/ layout, tooling stack, and GitHub Actions CI for ALCHEMI-HSI. |
