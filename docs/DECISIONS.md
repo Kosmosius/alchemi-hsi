@@ -4,4 +4,4 @@ This page indexes Architecture Decision Records (ADRs) for ALCHEMI-HSI. ADRs cap
 
 | ID | Title | Status | Summary |
 | --- | --- | --- | --- |
-| _TBD_ | _Placeholder_ | _Proposed_ | Initial ADRs will be added in upcoming milestones. |
+| 0001 | Repository layout, tooling, and CI | Accepted | Defines the src/ layout, tooling stack, and GitHub Actions CI for ALCHEMI-HSI. |
