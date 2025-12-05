@@ -1,13 +1,8 @@
-"""Stub adapter for EMIT scenes returning :class:`~alchemi.spectral.sample.Sample` objects.
-
-The implementation focuses on the expected data flow (unit conversions,
-wavelength handling, quality masks, and SRF lookup) while leaving TODOs for the
-mission-specific parsing logic.
-"""
+"""Adapter for EMIT scenes returning contract-compliant :class:`Sample` objects."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Any, Dict, List
 
 import numpy as np
@@ -15,25 +10,105 @@ import xarray as xr
 
 from alchemi.registry import srfs
 from alchemi.spectral import Sample, Spectrum
+from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
+from alchemi.types import QuantityKind, SRFMatrix as LegacySRFMatrix, ValueUnits
+from alchemi.physics import units as qty_units
 
 from ..io import load_emit_l1b
+from ...io.emit_l2b import iter_high_confident_pixels, load_emit_l2b
 
-__all__ = ["load_emit_scene", "iter_emit_pixels"]
+__all__ = [
+    "attach_emit_l2b_labels",
+    "iter_emit_pixels",
+    "iter_emit_l2a_pixels",
+    "load_emit_scene",
+    "load_emit_l2a_scene",
+]
 
 
-def _normalize_radiance_units(radiance: xr.DataArray) -> np.ndarray:
-    """Convert radiance to W/m^2/sr/nm when possible.
-
-    EMIT provides radiance in W/m^2/sr/µm. We rescale to per-nm to match the
-    spectral model used elsewhere in the codebase. This function is intentionally
-    lightweight; real implementations should inspect official metadata.
-    """
+def _normalize_radiance_units(radiance: xr.DataArray, dataset: xr.Dataset) -> np.ndarray:
+    """Convert radiance to W/m^2/sr/nm using declared metadata."""
 
     values = np.asarray(radiance.values, dtype=np.float64)
-    units = str(radiance.attrs.get("units", "")).lower()
-    if "um" in units or "µm" in units:
-        return values / 1_000.0
+    raw_units = radiance.attrs.get("units") or dataset.attrs.get("radiance_units")
+    src_units = qty_units.normalize_units(
+        raw_units or ValueUnits.RADIANCE_W_M2_SR_NM.value, QuantityKind.RADIANCE
+    )
+    if src_units != ValueUnits.RADIANCE_W_M2_SR_NM:
+        values = qty_units.scale_radiance_between_wavelength_units(
+            values, src_units, ValueUnits.RADIANCE_W_M2_SR_NM
+        )
     return values
+
+
+def _ensure_wavelengths_nm(ds: xr.Dataset) -> np.ndarray:
+    if "wavelength_nm" not in ds.coords:
+        raise KeyError("Dataset is missing 'wavelength_nm' coordinate")
+    wavelengths = np.asarray(ds["wavelength_nm"].values, dtype=np.float64)
+    if wavelengths.ndim != 1:
+        raise ValueError("wavelength_nm must be one-dimensional")
+    if wavelengths.size > 1 and np.any(np.diff(wavelengths) <= 0):
+        raise ValueError("wavelength_nm must be strictly increasing")
+
+    coord_units = str(ds["wavelength_nm"].attrs.get("units", "nm")).lower()
+    if coord_units not in {"", "nm", "nanometer", "nanometre"}:
+        raise ValueError(f"wavelength_nm must be expressed in nanometres, got {coord_units!r}")
+    return wavelengths
+
+
+def _quality_masks(
+    ds: xr.Dataset, radiance: xr.DataArray, include_quality: bool, extra_band_masks: Sequence[np.ndarray] | None = None
+) -> dict[str, np.ndarray]:
+    bands = radiance.shape[-1]
+    valid_band = np.ones(bands, dtype=bool)
+
+    band_masks: list[np.ndarray] = []
+    if include_quality and "band_mask" in ds:
+        band_masks.append(np.asarray(ds["band_mask"].values, dtype=bool))
+
+    if extra_band_masks:
+        band_masks.extend(list(extra_band_masks))
+
+    for mask in band_masks:
+        valid_band &= np.asarray(mask, dtype=bool)
+
+    quality: dict[str, np.ndarray] = {"valid_band": np.broadcast_to(valid_band, radiance.shape)}
+    if include_quality:
+        for idx, mask in enumerate(band_masks):
+            name = "band_mask" if idx == 0 else f"band_mask_{idx}"
+            quality[name] = np.broadcast_to(np.asarray(mask, dtype=bool), radiance.shape)
+    return quality
+
+
+def _coerce_srf_matrix(srf_matrix: Any | None, wavelengths_nm: np.ndarray | None = None) -> Any | None:
+    if srf_matrix is None:
+        return None
+    if hasattr(srf_matrix, "matrix"):
+        return srf_matrix
+    if isinstance(srf_matrix, LegacySRFMatrix):
+        grid = (
+            np.asarray(wavelengths_nm, dtype=np.float64)
+            if wavelengths_nm is not None
+            else np.unique(np.concatenate([np.asarray(b, dtype=np.float64) for b in srf_matrix.bands_nm]))
+        )
+        dense = np.zeros((len(srf_matrix.bands_nm), grid.shape[0]), dtype=np.float64)
+        for idx, (nm, resp) in enumerate(zip(srf_matrix.bands_nm, srf_matrix.bands_resp, strict=True)):
+            nm_arr = np.asarray(nm, dtype=np.float64)
+            resp_arr = np.asarray(resp, dtype=np.float64)
+            dense[idx] = np.interp(grid, nm_arr, resp_arr, left=0.0, right=0.0)
+            area = float(np.trapezoid(dense[idx], x=grid))
+            if area > 0.0:
+                dense[idx] /= area
+        return DenseSRFMatrix(wavelength_nm=grid, matrix=dense)
+    return srf_matrix
+
+
+def _srf_for_emit(wavelengths_nm: np.ndarray | None = None) -> tuple[Any | None, str]:
+    try:
+        raw_srf = srfs.get_srf("emit")
+        return _coerce_srf_matrix(raw_srf, wavelengths_nm=wavelengths_nm), "official"
+    except FileNotFoundError:
+        return None, "none"
 
 
 def iter_emit_pixels(path: str, *, include_quality: bool = True) -> Iterable[Sample]:
@@ -48,38 +123,38 @@ def iter_emit_pixels(path: str, *, include_quality: bool = True) -> Iterable[Sam
     """
 
     ds = load_emit_l1b(path)
-    wavelengths = np.asarray(ds["wavelength_nm"].values, dtype=np.float64)
-    srfs_for_sensor = None
-    try:
-        srfs_for_sensor = srfs.get_srf("emit")
-    except Exception:
-        # TODO: handle SRF lookup failures once registry paths are configured in fixtures.
-        srfs_for_sensor = None
-
-    band_mask = None
-    if include_quality and "band_mask" in ds:
-        band_mask = np.asarray(ds["band_mask"].values, dtype=bool)
-
+    wavelengths = _ensure_wavelengths_nm(ds)
     radiance = ds["radiance"]
-    scaled = _normalize_radiance_units(radiance)
+    scaled = _normalize_radiance_units(radiance, ds)
 
-    quality_base: Dict[str, np.ndarray] = {}
-    if band_mask is not None:
-        quality_base["band_mask"] = np.broadcast_to(band_mask, radiance.shape)
+    srf_matrix, srf_source = _srf_for_emit(wavelengths)
+    srf_masks: list[np.ndarray] = []
+    if srf_matrix is not None and getattr(srf_matrix, "bad_band_mask", None) is not None:
+        srf_masks.append(~np.asarray(srf_matrix.bad_band_mask, dtype=bool))
 
-    # TODO: incorporate mission QA layers (clouds, glint, saturation) once the
-    # product specification is wired in.
+    quality_base = _quality_masks(ds, radiance, include_quality, extra_band_masks=srf_masks)
+
     for y in range(scaled.shape[0]):
         for x in range(scaled.shape[1]):
             values = scaled[y, x, :]
-            spectrum = Spectrum(wavelength_nm=wavelengths, values=values, kind="radiance")
+            spectrum = Spectrum(
+                wavelength_nm=wavelengths,
+                values=values,
+                kind="radiance",
+                units=ValueUnits.RADIANCE_W_M2_SR_NM,
+            )
             quality_masks = {name: mask[y, x, :] for name, mask in quality_base.items()}
             yield Sample(
                 spectrum=spectrum,
                 sensor_id="emit",
                 quality_masks=quality_masks,
-                srf_matrix=srfs_for_sensor,
-                ancillary={"source_path": path, "y": int(y), "x": int(x)},
+                srf_matrix=srf_matrix,
+                ancillary={
+                    "source_path": path,
+                    "y": int(y),
+                    "x": int(x),
+                    "srf_source": srf_source,
+                },
             )
 
 
@@ -92,6 +167,97 @@ def load_emit_scene(path: str, *, include_quality: bool = True) -> List[Sample]:
     """
 
     return list(iter_emit_pixels(path, include_quality=include_quality))
+
+
+def _load_emit_l2a(path: str) -> xr.Dataset:
+    return xr.open_dataset(path)
+
+
+def _normalize_reflectance_values(reflectance: xr.DataArray) -> np.ndarray:
+    values = np.asarray(reflectance.values, dtype=np.float64)
+    units = str(reflectance.attrs.get("units", "")).lower()
+    if "%" in units or "percent" in units:
+        values = values / 100.0
+    if np.nanmin(values) < 0.0 or np.nanmax(values) > 1.0:
+        raise ValueError("Reflectance values must lie within [0, 1]")
+    return values
+
+
+def iter_emit_l2a_pixels(path: str, *, include_quality: bool = True) -> Iterable[Sample]:
+    ds = _load_emit_l2a(path)
+    wavelengths = _ensure_wavelengths_nm(ds)
+    reflectance = ds.get("reflectance")
+    if reflectance is None:
+        reflectance = ds.get("surface_reflectance")
+    if reflectance is None:
+        raise KeyError("Dataset does not contain 'reflectance' variable")
+
+    scaled = _normalize_reflectance_values(reflectance)
+    srf_matrix, srf_source = _srf_for_emit(wavelengths)
+    srf_masks: list[np.ndarray] = []
+    if srf_matrix is not None and getattr(srf_matrix, "bad_band_mask", None) is not None:
+        srf_masks.append(~np.asarray(srf_matrix.bad_band_mask, dtype=bool))
+
+    quality_base = _quality_masks(ds, reflectance, include_quality, extra_band_masks=srf_masks)
+
+    for y in range(scaled.shape[0]):
+        for x in range(scaled.shape[1]):
+            values = scaled[y, x, :]
+            spectrum = Spectrum(
+                wavelength_nm=wavelengths,
+                values=values,
+                kind="reflectance",
+                units=ValueUnits.REFLECTANCE_FRACTION,
+            )
+            quality_masks = {name: mask[y, x, :] for name, mask in quality_base.items()}
+            yield Sample(
+                spectrum=spectrum,
+                sensor_id="emit",
+                quality_masks=quality_masks,
+                srf_matrix=srf_matrix,
+                ancillary={
+                    "source_path": path,
+                    "y": int(y),
+                    "x": int(x),
+                    "srf_source": srf_source,
+                },
+            )
+
+
+def load_emit_l2a_scene(path: str, *, include_quality: bool = True) -> List[Sample]:
+    return list(iter_emit_l2a_pixels(path, include_quality=include_quality))
+
+
+def attach_emit_l2b_labels(
+    samples: Sequence[Sample],
+    ds_l2b: xr.Dataset | str,
+    *,
+    r2_min: float = 0.9,
+    mineral_var: str = "mineral_group",
+    r2_var: str = "fit_r2",
+) -> List[Sample]:
+    if isinstance(ds_l2b, (str, bytes, np.str_)):
+        ds_l2b = load_emit_l2b(str(ds_l2b))
+
+    index = {}
+    for sample in samples:
+        anc = sample.ancillary
+        key = (anc.get("y"), anc.get("x"))
+        if None not in key:
+            index[(int(key[0]), int(key[1]))] = sample
+
+    for y_idx, x_idx, mineral_group, r2 in iter_high_confident_pixels(
+        ds_l2b, r2_min=r2_min, mineral_var=mineral_var, r2_var=r2_var
+    ):
+        key = (y_idx, x_idx)
+        sample = index.get(key)
+        if sample is None:
+            continue
+
+        labels = sample.ancillary.setdefault("labels", {})
+        labels["emit_l2b"] = {"mineral_group": mineral_group, "fit_r2": float(r2)}
+
+    return list(samples)
 
 
 # Legacy exports maintained for compatibility with earlier adapters. These call
