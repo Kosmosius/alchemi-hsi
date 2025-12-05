@@ -25,7 +25,15 @@ from .rad_reflectance import (
 )
 from .resampling import convolve_to_bands, generate_gaussian_srf, interpolate_to_centers, simulate_virtual_sensor
 from .continuum import compute_band_depth, compute_convex_hull_continuum
-from .rt_regime import classify_rt_regime
+from .rt_regime import (
+    SWIRRegime,
+    attach_swir_regime,
+    classify_rt_regime,
+    classify_swir_regime,
+    swir_regime_for_sample,
+    swir_regime_for_scene,
+    trusted_swir,
+)
 from .tes import tes_lwirt
 from .solar import (
     earth_sun_distance_au,
@@ -58,7 +66,10 @@ __all__ = [
     "bt_sample_to_radiance_sample",
     "bt_spectrum_to_radiance",
     "bt_to_radiance",
+    "SWIRRegime",
+    "attach_swir_regime",
     "classify_rt_regime",
+    "classify_swir_regime",
     "compute_band_depth",
     "compute_convex_hull_continuum",
     "convolve_to_bands",
@@ -87,4 +98,7 @@ __all__ = [
     "esun_for_sample",
     "toa_reflectance_sample_to_radiance",
     "toa_reflectance_to_radiance",
+    "trusted_swir",
+    "swir_regime_for_sample",
+    "swir_regime_for_scene",
 ]
