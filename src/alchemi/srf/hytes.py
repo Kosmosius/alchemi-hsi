@@ -20,8 +20,10 @@ import hashlib
 
 import numpy as np
 
+from ..spectral.srf import SensorSRF, SRFProvenance
 from alchemi.data.io import HYTES_WAVELENGTHS_NM
 from alchemi.types import SRFMatrix
+from .registry import register_sensor_srf, sensor_srf_from_legacy
 
 _SENSOR_NAME = "HyTES"
 _DEFAULT_VERSION = "v1"
@@ -109,6 +111,14 @@ def _make_cache_key(srf: SRFMatrix) -> str:
         hasher.update(np.asarray(resp, dtype=np.float64).tobytes())
     digest = hasher.hexdigest()[:12]
     return f"{srf.sensor}:{srf.version}:{digest}"
+
+
+def build_hytes_sensor_srf(version: str = _DEFAULT_VERSION) -> SensorSRF:
+    legacy = hytes_srf_matrix(version=version)
+    return sensor_srf_from_legacy(legacy, provenance=SRFProvenance.GAUSSIAN)
+
+
+register_sensor_srf(build_hytes_sensor_srf())
 
 
 __all__ = ["hytes_srf_matrix"]

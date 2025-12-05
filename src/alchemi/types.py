@@ -6,14 +6,18 @@ import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 import numpy as np
 from numpy.typing import NDArray
 
-from alchemi.spectral import Sample as CanonicalSample
 from alchemi.wavelengths import check_monotonic, ensure_nm
 from alchemi.utils.integrate import np_integrate as _np_integrate
+
+if TYPE_CHECKING:
+    from alchemi.spectral import Sample as CanonicalSample
+else:  # pragma: no cover - avoid circular import at runtime
+    CanonicalSample = Any
 
 logger = logging.getLogger(__name__)
 
@@ -612,6 +616,10 @@ class Spectrum:
             None,
             self.meta.copy(),
         )
+
+
+# Delayed import to avoid circular dependency during module initialisation.
+from alchemi.spectral import Sample as CanonicalSample
 
 
 # TODO: Legacy SRFMatrix retained for compatibility; prefer alchemi.spectral.SRFMatrix.
