@@ -37,6 +37,10 @@ def from_enmap_l1b(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
 
     geo = geo_from_attrs(dataset.attrs)
 
+    band_mask = None
+    if "band_mask" in dataset:
+        band_mask = np.asarray(dataset["band_mask"].values, dtype=bool)
+
     return Cube(
         data=data,
         axis=axis,
@@ -45,4 +49,5 @@ def from_enmap_l1b(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
         srf_id=srf_id or attrs.get("sensor"),
         geo=geo,
         attrs=attrs,
+        band_mask=band_mask,
     )

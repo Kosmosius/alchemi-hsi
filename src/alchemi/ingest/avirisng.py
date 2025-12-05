@@ -37,12 +37,21 @@ def from_avirisng_l1b(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube
 
     geo = geo_from_attrs(dataset.attrs)
 
+    band_mask = None
+    if "band_mask" in dataset:
+        band_mask = np.asarray(dataset["band_mask"].values, dtype=bool)
+
+    sensor_id = srf_id or attrs.get("sensor")
+    if sensor_id is not None and str(sensor_id).lower() == "avirisng":
+        sensor_id = "aviris-ng"
+
     return Cube(
         data=data,
         axis=axis,
         axis_unit="wavelength_nm",
         value_kind="radiance",
-        srf_id=srf_id or attrs.get("sensor"),
+        srf_id=sensor_id,
         geo=geo,
         attrs=attrs,
+        band_mask=band_mask,
     )

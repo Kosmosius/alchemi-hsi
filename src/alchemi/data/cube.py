@@ -270,7 +270,12 @@ class Cube:
         if self.band_mask is not None:
             quality_masks["band_mask"] = valid_mask
 
-        spectrum = Spectrum(wavelength_nm=wavelengths_nm, values=values, kind=spectrum_kind.value)
+        spectrum = Spectrum(
+            wavelength_nm=wavelengths_nm,
+            values=values,
+            kind=spectrum_kind.value,
+            mask=valid_mask,
+        )
 
         return Sample(
             spectrum=spectrum,
