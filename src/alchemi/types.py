@@ -775,4 +775,6 @@ class SampleMeta:
 
 
 # Backwards-compatible alias for the canonical Sample type.
+from alchemi.spectral import Sample as CanonicalSample  # Late import to avoid circular dependency
+
 Sample = _resolve_canonical_sample()
