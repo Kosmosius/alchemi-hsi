@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 
 from alchemi.spectral import BandMetadata, Sample, Spectrum
+from alchemi.wavelengths import check_monotonic, to_nm
 from alchemi.tokens.band_tokenizer import AxisUnit, BandTokenizer, Tokens
 from alchemi.tokens.registry import get_default_tokenizer
 from alchemi.types import QuantityKind, ValueUnits, WavelengthGrid, _normalize_quantity_kind, _normalize_value_units
@@ -146,6 +147,9 @@ class Cube:
             msg = "geo must be a GeoInfo instance when provided"
             raise TypeError(msg)
 
+        # Validate spectral axis monotonicity in nm
+        check_monotonic(self._axis_wavelength_nm())
+
         # Normalise attrs
         self.attrs = dict(self.attrs or {})
 
@@ -224,9 +228,9 @@ class Cube:
         """
 
         if self.axis_unit == "wavelength_nm":
-            return np.asarray(self.axis, dtype=np.float64)
+            return to_nm(self.axis, "nm")
         if self.axis_unit == "wavenumber_cm1":
-            return (1.0e7 / np.asarray(self.axis, dtype=np.float64)).astype(np.float64, copy=False)
+            return to_nm(self.axis, "cm-1")
 
         msg = f"Cannot convert axis_unit {self.axis_unit!r} to wavelengths"
         raise ValueError(msg)
