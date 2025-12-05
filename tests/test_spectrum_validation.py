@@ -1,9 +1,6 @@
 import logging
 
 import numpy as np
-import logging
-
-import numpy as np
 import pytest
 
 from alchemi.types import (
@@ -70,3 +67,16 @@ def test_invalid_quantity_units_pairing(wavelengths: WavelengthGrid) -> None:
 
     with pytest.raises(ValueError, match="incompatible"):
         Spectrum(wavelengths, values, QuantityKind.RADIANCE, ValueUnits.REFLECTANCE_FRACTION)
+
+
+def test_values_shape_mismatch(wavelengths: WavelengthGrid) -> None:
+    values = np.linspace(0.0, 1.0, 4)
+    with pytest.raises(ValueError, match="values length"):
+        Spectrum(wavelengths, values, QuantityKind.RADIANCE, RadianceUnits.W_M2_SR_NM)
+
+
+def test_mask_shape_mismatch(wavelengths: WavelengthGrid) -> None:
+    values = np.linspace(0.0, 1.0, 5)
+    mask = np.array([True, False, True])
+    with pytest.raises(ValueError, match="mask shape"):
+        Spectrum(wavelengths, values, QuantityKind.RADIANCE, RadianceUnits.W_M2_SR_NM, mask=mask)

@@ -48,7 +48,7 @@ SpectrumKind = QuantityKind
 
 
 # Wavelength grid validation tolerances
-WAVELENGTH_GRID_MONOTONICITY_EPS = 1e-9
+WAVELENGTH_GRID_MONOTONICITY_EPS = 0.0
 """Absolute tolerance (in nm) for wavelength monotonicity checks."""
 
 WAVELENGTH_GRID_DUPLICATE_EPS = 1e-12
@@ -96,6 +96,22 @@ _EXPECTED_UNITS: dict[QuantityKind, set[ValueUnits]] = {
 }
 
 
+def _wavelength_unit_scale(units: str | None) -> float:
+    """Return the multiplicative scale to convert the given unit to nm."""
+
+    if units is None:
+        return 1.0
+    token = units.strip().lower().replace(" ", "")
+    if token in {"nm", "nanometer", "nanometre"}:
+        return 1.0
+    if token in {"um", "µm", "micrometer", "micrometre"}:
+        return 1e3
+    if token in {"ang", "angstrom", "å", "a"}:
+        return 0.1
+    msg = f"Unsupported wavelength unit: {units!r}"
+    raise ValueError(msg)
+
+
 def _normalize_quantity_kind(kind: QuantityKind | SpectrumKind | str) -> QuantityKind:
     if isinstance(kind, QuantityKind):
         return kind
@@ -124,7 +140,10 @@ def _unit_token(unit: str) -> str:
     return token
 
 
-def _normalize_value_units(units: ValueUnits | RadianceUnits | ReflectanceUnits | TemperatureUnits | str, kind: QuantityKind) -> ValueUnits:
+def _normalize_value_units(
+    units: ValueUnits | RadianceUnits | ReflectanceUnits | TemperatureUnits | str,
+    kind: QuantityKind,
+) -> ValueUnits:
     if isinstance(units, Enum):
         try:
             normalized_units = ValueUnits(getattr(units, "value", units))
@@ -168,58 +187,91 @@ class WavelengthGrid:
 
     def __post_init__(self) -> None:
         """
-        Validate a 1-D, strictly increasing wavelength grid with tolerance.
+        Canonical wavelength grid stored in **nanometres**, strictly increasing.
 
-        The grid is considered valid when the finite differences are larger than
-        ``-WAVELENGTH_GRID_MONOTONICITY_EPS`` (allowing tiny floating-point
-        jitters) and at least one step is positive. Exact or near-duplicate
-        bands (within ``WAVELENGTH_GRID_DUPLICATE_EPS``) are rejected to avoid
-        zero-width intervals.
+        The grid is normalised to ``float64`` and validated to be 1-D with
+        strictly increasing values (``λ[i+1] > λ[i]``). This class is the
+        single source of truth for spectral axes across M1.
         """
 
         a = np.asarray(self.nm, dtype=np.float64)
         if a.ndim != 1:
             raise ValueError("Wavelength grid must be a 1-D array (nm)")
+        if a.size == 0:
+            raise ValueError("Wavelength grid must contain at least one entry")
 
-        diffs = np.diff(a)
-        if diffs.size == 0:
-            raise ValueError("Wavelength grid must contain at least two entries")
-
-        if np.any(diffs < -WAVELENGTH_GRID_MONOTONICITY_EPS):
-            raise ValueError(
-                "Wavelength grid must be monotonically increasing within tolerance"
-            )
-        if np.any(np.isclose(diffs, 0.0, atol=WAVELENGTH_GRID_DUPLICATE_EPS)):
-            raise ValueError("Wavelength grid must not contain repeated bands")
-        if not np.any(diffs > 0):
-            raise ValueError("Wavelength grid must increase")
+        if a.size > 1:
+            diffs = np.diff(a)
+            if np.any(diffs <= WAVELENGTH_GRID_MONOTONICITY_EPS):
+                raise ValueError("Wavelength grid must be strictly increasing (nm)")
+            if np.any(np.isclose(diffs, 0.0, atol=WAVELENGTH_GRID_DUPLICATE_EPS)):
+                raise ValueError("Wavelength grid must not contain repeated bands")
 
         self.nm = a
 
+    @classmethod
+    def from_any(cls, values: Sequence[float] | NDArray[np.floating], units: str | None = None) -> WavelengthGrid:
+        """Create a grid from values expressed in nm, µm, or Ångström.
 
-# TODO: Legacy Spectrum retained for compatibility; prefer alchemi.spectral.Spectrum.
+        Parameters
+        ----------
+        values:
+            1-D wavelength coordinates.
+        units:
+            Unit label for ``values``. Supported forms are ``"nm"`` (default),
+            ``"um"``/``"µm"``, and ``"angstrom"``/``"Å"``. Unknown units raise
+            ``ValueError`` to avoid silent guesses.
+        """
+
+        scale = _wavelength_unit_scale(units)
+        nm_values = np.asarray(values, dtype=np.float64) * scale
+        return cls(nm_values)
+
+    def to(self, unit: str) -> NDArray[np.float64]:
+        """Return the wavelength grid converted to the requested unit."""
+
+        scale = 1.0 / _wavelength_unit_scale(unit)
+        return self.nm * scale
+
+
 @dataclass
 class Spectrum:
-    wavelengths: WavelengthGrid
+    """Canonical spectral sample coupling wavelengths, values, and metadata.
+
+    ``Spectrum`` pairs a :class:`WavelengthGrid` (always stored in nanometres)
+    with a 1-D value vector, an explicit :class:`QuantityKind`, and
+    normalised units. Construction enforces shape alignment and optional mask
+    compatibility so that downstream physics utilities can rely on consistent
+    invariants across M1.
+    """
+
+    wavelengths: WavelengthGrid | Sequence[float] | NDArray[np.floating]
     values: NDArray[np.float64]  # [B]
-    kind: QuantityKind
+    kind: QuantityKind | SpectrumKind | str
     units: ValueUnits | RadianceUnits | ReflectanceUnits | TemperatureUnits | str
     mask: NDArray[np.bool_] | None = None  # [B] boolean
     meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.wavelengths, WavelengthGrid):
+            self.wavelengths = WavelengthGrid.from_any(self.wavelengths)
+
         v = np.asarray(self.values, dtype=np.float64)
-        if v.ndim != 1 or v.shape[0] != self.wavelengths.nm.shape[0]:
+        if v.ndim != 1:
+            raise ValueError("values must be a 1-D array")
+        if v.shape[0] != self.wavelengths.nm.shape[0]:
             raise ValueError("values length must match wavelengths")
         self.values = v
+
         if self.mask is not None:
             m = np.asarray(self.mask, dtype=bool)
             if m.shape != v.shape:
-                raise ValueError("mask shape mismatch")
+                raise ValueError("mask shape must match values")
             self.mask = m
 
         self.kind = _normalize_quantity_kind(self.kind)
         self.units = _normalize_value_units(self.units, self.kind)
+        self.meta = dict(self.meta)
 
         self._validate_values()
 
@@ -246,6 +298,37 @@ class Spectrum:
             if np.any(self.values < 0):
                 msg = "Radiance values must be non-negative"
                 raise ValueError(msg)
+
+    @property
+    def wavelength_nm(self) -> NDArray[np.float64]:
+        """Return the underlying wavelength grid in nanometres."""
+
+        return self.wavelengths.nm
+
+    @property
+    def band_count(self) -> int:
+        """Number of spectral bands."""
+
+        return int(self.values.shape[0])
+
+    def copy_with(
+        self,
+        *,
+        wavelengths: WavelengthGrid | Sequence[float] | NDArray[np.floating] | None = None,
+        values: NDArray[np.float64] | None = None,
+        mask: NDArray[np.bool_] | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Spectrum:
+        """Return a shallow copy with selected fields replaced."""
+
+        return Spectrum(
+            wavelengths=wavelengths if wavelengths is not None else self.wavelengths,
+            values=values if values is not None else self.values,
+            kind=self.kind,
+            units=self.units,
+            mask=mask if mask is not None else self.mask,
+            meta=meta if meta is not None else dict(self.meta),
+        )
 
     @classmethod
     def from_radiance(
