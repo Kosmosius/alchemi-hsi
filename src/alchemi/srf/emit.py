@@ -12,6 +12,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from alchemi.types import SRFMatrix
+from .utils import normalize_srf_rows, validate_srf
 
 _RESOURCE_PACKAGE = __package__ + ".data"
 _RESOURCE_NAME = "emit_srf_v01.json"
@@ -71,35 +72,18 @@ def _load_emit_archive() -> _EmitSRFArchive:
 
 def _resample_to_grid(
     archive: _EmitSRFArchive, highres_wl_nm: np.ndarray
-) -> tuple[list[NDArray[np.float64]], list[NDArray[np.float64]]]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Resample EMIT SRF responses to the provided high-resolution wavelength grid."""
 
     highres = np.asarray(highres_wl_nm, dtype=np.float64)
     if highres.ndim != 1 or not np.all(np.diff(highres) > 0):
         raise ValueError("High-resolution wavelength grid must be strictly increasing")
 
-    nm_bands: list[NDArray[np.float64]] = []
-    resp_bands: list[NDArray[np.float64]] = []
-    for resp in archive:
-        sampled = np.interp(highres, archive.native_nm, resp, left=0.0, right=0.0)
-        mask = sampled > 1e-8
-        if mask.sum() < 2:
-            # Guarantee a minimally sized support to keep integration stable.
-            mask = (highres >= archive.native_nm[0]) & (highres <= archive.native_nm[-1])
-        nm_band = highres[mask]
-        resp_band = sampled[mask]
-        if nm_band.size < 2:
-            # Ensure at least a small baseline if interpolation produced degeneracy.
-            indices = np.clip(
-                np.searchsorted(highres, archive.native_nm[[0, -1]]),
-                0,
-                highres.size - 1,
-            )
-            nm_band = highres[indices]
-            resp_band = sampled[indices]
-        nm_bands.append(np.asarray(nm_band, dtype=np.float64))
-        resp_bands.append(np.asarray(resp_band, dtype=np.float64))
-    return nm_bands, resp_bands
+    resp_rows = [
+        np.interp(highres, archive.native_nm, resp, left=0.0, right=0.0)
+        for resp in archive
+    ]
+    return highres, np.asarray(resp_rows, dtype=np.float64)
 
 
 def _compute_cache_key(
@@ -125,9 +109,14 @@ def emit_srf_matrix(highres_wl_nm: np.ndarray) -> SRFMatrix:
     """
 
     archive = _load_emit_archive()
-    nm_bands, resp_bands = _resample_to_grid(archive, highres_wl_nm)
+    wavelength_grid_nm, resp_matrix = _resample_to_grid(archive, highres_wl_nm)
+    normalized = normalize_srf_rows(wavelength_grid_nm, resp_matrix, atol=1e-6)
+    validate_srf(wavelength_grid_nm, normalized, allow_negative_eps=1e-9)
+
+    nm_bands = [np.asarray(wavelength_grid_nm, dtype=np.float64) for _ in archive]
+    resp_bands = [row.copy() for row in normalized]
+
     srf = SRFMatrix(_SENSOR, archive.centers_nm, nm_bands, resp_bands, version=_VERSION)
-    srf = srf.normalize_trapz()
     srf.cache_key = _compute_cache_key(srf.centers_nm, srf.bands_nm, srf.bands_resp)
     return srf
 
