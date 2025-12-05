@@ -30,17 +30,32 @@ def test_reflectance_valid(wavelengths: WavelengthGrid) -> None:
 def test_reflectance_out_of_bounds(wavelengths: WavelengthGrid) -> None:
     values = np.array([-0.1, 0.2, 0.3, 0.4, 0.5])
     with pytest.raises(ValueError, match="Reflectance values must be within"):
-        Spectrum(wavelengths, values, QuantityKind.REFLECTANCE, ReflectanceUnits.FRACTION)
+        Spectrum(
+            wavelengths=wavelengths,
+            values=values,
+            kind=QuantityKind.REFLECTANCE,
+            units=ReflectanceUnits.FRACTION,
+        )
 
     values = np.array([0.0, 0.2, 1.0 + REFLECTANCE_MAX_EPS + 1e-4, 0.4, 0.5])
     with pytest.raises(ValueError, match="Reflectance values must be within"):
-        Spectrum(wavelengths, values, QuantityKind.REFLECTANCE, ReflectanceUnits.FRACTION)
+        Spectrum(
+            wavelengths=wavelengths,
+            values=values,
+            kind=QuantityKind.REFLECTANCE,
+            units=ReflectanceUnits.FRACTION,
+        )
 
 
 def test_radiance_non_negative(wavelengths: WavelengthGrid) -> None:
     values = np.array([0.0, 0.2, 0.3, -0.1, 0.5])
     with pytest.raises(ValueError, match="Radiance values must be non-negative"):
-        Spectrum(wavelengths, values, QuantityKind.RADIANCE, RadianceUnits.W_M2_SR_NM)
+        Spectrum(
+            wavelengths=wavelengths,
+            values=values,
+            kind=QuantityKind.RADIANCE,
+            units=RadianceUnits.W_M2_SR_NM,
+        )
 
 
 def test_brightness_temperature_positive(wavelengths: WavelengthGrid) -> None:
@@ -63,20 +78,41 @@ def test_brightness_temperature_warning_outside_plausible_range(
 def test_invalid_quantity_units_pairing(wavelengths: WavelengthGrid) -> None:
     values = np.linspace(0.0, 1.0, 5)
     with pytest.raises(ValueError, match="incompatible"):
-        Spectrum(wavelengths, values, QuantityKind.REFLECTANCE, RadianceUnits.W_M2_SR_NM)
+        Spectrum(
+            wavelengths=wavelengths,
+            values=values,
+            kind=QuantityKind.REFLECTANCE,
+            units=RadianceUnits.W_M2_SR_NM,
+        )
 
     with pytest.raises(ValueError, match="incompatible"):
-        Spectrum(wavelengths, values, QuantityKind.RADIANCE, ValueUnits.REFLECTANCE_FRACTION)
+        Spectrum(
+            wavelengths=wavelengths,
+            values=values,
+            kind=QuantityKind.RADIANCE,
+            units=ValueUnits.REFLECTANCE_FRACTION,
+        )
 
 
 def test_values_shape_mismatch(wavelengths: WavelengthGrid) -> None:
     values = np.linspace(0.0, 1.0, 4)
-    with pytest.raises(ValueError, match="values length"):
-        Spectrum(wavelengths, values, QuantityKind.RADIANCE, RadianceUnits.W_M2_SR_NM)
+    with pytest.raises(ValueError, match="wavelengths length"):
+        Spectrum(
+            wavelengths=wavelengths,
+            values=values,
+            kind=QuantityKind.RADIANCE,
+            units=RadianceUnits.W_M2_SR_NM,
+        )
 
 
 def test_mask_shape_mismatch(wavelengths: WavelengthGrid) -> None:
     values = np.linspace(0.0, 1.0, 5)
     mask = np.array([True, False, True])
     with pytest.raises(ValueError, match="mask shape"):
-        Spectrum(wavelengths, values, QuantityKind.RADIANCE, RadianceUnits.W_M2_SR_NM, mask=mask)
+        Spectrum(
+            wavelengths=wavelengths,
+            values=values,
+            kind=QuantityKind.RADIANCE,
+            units=RadianceUnits.W_M2_SR_NM,
+            mask=mask,
+        )
