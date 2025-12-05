@@ -4,6 +4,7 @@ import numpy as np
 import xarray as xr
 
 from alchemi.data.io import avirisng_pixel, load_avirisng_l1b
+from alchemi.types import RadianceUnits
 
 
 def _write_avirisng_file(
@@ -63,7 +64,7 @@ def test_wavelengths_monotonic_avirisng(tmp_path):
     wavelengths = ds["wavelength_nm"].values
     assert np.all(np.diff(wavelengths) > 0)
     assert 380 <= wavelengths[0] < wavelengths[-1] <= 2510
-    assert ds.attrs["units"] == "W·m^-2·sr^-1·nm^-1"
+    assert ds.attrs["units"] == RadianceUnits.W_M2_SR_NM.value
     assert ds.attrs["quantity"] == "radiance"
     np.testing.assert_allclose(ds["fwhm_nm"].values, np.sort(fwhm) * 1_000.0)
 
@@ -78,7 +79,7 @@ def test_units_conversion_nm_avirisng(tmp_path):
     pixel = ds["radiance"].sel(y=0, x=0).values
     expected = np.full(3, 150.0e-6 * 1e4, dtype=np.float64)
     np.testing.assert_allclose(pixel, expected)
-    assert ds.attrs["units"] == "W·m^-2·sr^-1·nm^-1"
+    assert ds.attrs["units"] == RadianceUnits.W_M2_SR_NM.value
 
 
 def test_mask_water_bands_avirisng(tmp_path):

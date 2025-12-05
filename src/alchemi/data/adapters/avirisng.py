@@ -8,6 +8,8 @@ import xarray as xr
 from alchemi.data.io import avirisng_pixel
 from alchemi.spectral import Sample
 
+from .aviris_ng import _build_sample
+
 __all__ = ["load_avirisng_pixel"]
 
 
@@ -16,20 +18,6 @@ def load_avirisng_pixel(ds: xr.Dataset, position: tuple[int, int]) -> Sample:
 
     y, x = position
     spectrum = avirisng_pixel(ds, y=y, x=x)
-    wavelengths = np.asarray(ds["wavelength_nm"].values, dtype=float)
-    fwhm = np.asarray(ds["fwhm_nm"].values, dtype=float) if "fwhm_nm" in ds else np.full_like(wavelengths, np.nan)
-    band_mask = np.asarray(ds["band_mask"].values, dtype=bool) if "band_mask" in ds else np.ones_like(wavelengths, dtype=bool)
-
-    return Sample(
-        spectrum=spectrum,
-        sensor_id=ds.attrs.get("sensor", "aviris-ng"),
-        acquisition_time=ds.attrs.get("datetime"),
-        band_meta={
-            "center_nm": wavelengths,
-            "width_nm": fwhm,
-            "valid_mask": band_mask,
-            "srf_source": np.array(["mission"] * wavelengths.size),
-        },
-        quality_masks={"band_mask": band_mask},
-        ancillary={"source_path": str(getattr(ds, "encoding", {}).get("source", "")), "y": int(y), "x": int(x)},
-    )
+    values = np.asarray(spectrum.values, dtype=np.float64)
+    path = str(getattr(ds, "encoding", {}).get("source", ""))
+    return _build_sample(ds=ds, path=path, y=y, x=x, values=values, spectrum_kind=str(spectrum.kind))
