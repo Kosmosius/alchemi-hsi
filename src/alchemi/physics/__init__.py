@@ -7,7 +7,13 @@ from .resampling import convolve_to_bands, generate_gaussian_srf, interpolate_to
 from .continuum import compute_band_depth, compute_convex_hull_continuum
 from .rt_regime import classify_rt_regime
 from .tes import tes_lwirt
-from .solar import get_E0_nm, sun_earth_factor
+from .solar import (
+    earth_sun_distance_au,
+    earth_sun_distance_for_sample,
+    esun_for_sample,
+    get_reference_esun,
+    project_esun_to_bands,
+)
 from .swir import (
     band_depth,
     continuum_remove,
@@ -35,7 +41,7 @@ __all__ = [
     "convolve_to_bands",
     "continuum_remove",
     "generate_gaussian_srf",
-    "get_E0_nm",
+    "get_reference_esun",
     "interpolate_to_centers",
     "radiance_to_bt",
     "radiance_to_bt_K",
@@ -47,6 +53,9 @@ __all__ = [
     "reflectance_to_radiance",
     "reflectance_to_radiance_avirisng",
     "tes_lwirt",
+    "earth_sun_distance_au",
+    "earth_sun_distance_for_sample",
+    "project_esun_to_bands",
+    "esun_for_sample",
     "toa_reflectance_to_radiance",
-    "sun_earth_factor",
 ]

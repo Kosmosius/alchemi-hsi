@@ -43,10 +43,10 @@ def convolve_to_bands(high_res: Spectrum, srf: SRFMatrix) -> Spectrum:
     centers = np.asarray(srf.centers_nm, dtype=np.float64)
 
     return Spectrum(
-        WavelengthGrid(centers),
-        band_array,
-        high_res.kind,
-        high_res.units,
+        wavelengths=WavelengthGrid(centers),
+        values=band_array,
+        kind=high_res.kind,
+        units=high_res.units,
         mask=srf.bad_band_mask,
         meta=high_res.meta.copy(),
     )
@@ -82,10 +82,10 @@ def interpolate_to_centers(
             interp_vals = spline(centers)
 
     return Spectrum(
-        WavelengthGrid(centers),
-        np.asarray(interp_vals, dtype=np.float64),
-        high_res.kind,
-        high_res.units,
+        wavelengths=WavelengthGrid(centers),
+        values=np.asarray(interp_vals, dtype=np.float64),
+        kind=high_res.kind,
+        units=high_res.units,
         mask=None,
         meta=high_res.meta.copy(),
     )
