@@ -24,7 +24,13 @@ from .rad_reflectance import (
     toa_reflectance_to_radiance,
 )
 from .resampling import convolve_to_bands, generate_gaussian_srf, interpolate_to_centers, simulate_virtual_sensor
-from .continuum import compute_band_depth, compute_convex_hull_continuum
+from .continuum import (
+    build_continuum,
+    compute_band_depth,
+    compute_band_metrics,
+    compute_convex_hull_continuum,
+    continuum_remove,
+)
 from .rt_regime import (
     SWIRRegime,
     attach_swir_regime,
@@ -49,12 +55,7 @@ from .solar import (
     get_reference_esun,
     project_esun_to_bands,
 )
-from .swir import (
-    band_depth,
-    continuum_remove,
-    radiance_to_reflectance,
-    reflectance_to_radiance,
-)
+from .swir import band_depth, radiance_to_reflectance, reflectance_to_radiance
 from .swir_avirisng import (
     avirisng_bad_band_mask,
     radiance_to_reflectance_avirisng,
@@ -68,6 +69,7 @@ __all__ = [
     "augment_radiance",
     "avirisng_bad_band_mask",
     "band_depth",
+    "build_continuum",
     "band_averaged_radiance",
     "bt_K_to_radiance",
     "bt_sample_to_radiance_sample",
@@ -79,6 +81,7 @@ __all__ = [
     "classify_swir_regime",
     "compute_band_depth",
     "compute_convex_hull_continuum",
+    "compute_band_metrics",
     "compute_lwir_emissivity_proxy",
     "convolve_to_bands",
     "continuum_remove",
