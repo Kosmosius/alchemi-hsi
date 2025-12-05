@@ -11,6 +11,7 @@ from typing import Any, Iterable
 import numpy as np
 from numpy.typing import NDArray
 
+from alchemi.wavelengths import check_monotonic, ensure_nm
 from alchemi.utils.integrate import np_integrate as _np_integrate
 
 logger = logging.getLogger(__name__)
@@ -102,11 +103,20 @@ def _wavelength_unit_scale(units: str | None) -> float:
     if units is None:
         return 1.0
     token = units.strip().lower().replace(" ", "")
-    if token in {"nm", "nanometer", "nanometre"}:
+    if token in {"nm", "nanometer", "nanometers", "nanometre", "nanometres"}:
         return 1.0
-    if token in {"um", "µm", "micrometer", "micrometre"}:
+    if token in {
+        "um",
+        "µm",
+        "micron",
+        "microns",
+        "micrometer",
+        "micrometers",
+        "micrometre",
+        "micrometres",
+    }:
         return 1e3
-    if token in {"ang", "angstrom", "å", "a"}:
+    if token in {"ang", "angstrom", "angstroms", "å", "a"}:
         return 0.1
     msg = f"Unsupported wavelength unit: {units!r}"
     raise ValueError(msg)
@@ -201,9 +211,8 @@ class WavelengthGrid:
             raise ValueError("Wavelength grid must contain at least one entry")
 
         if a.size > 1:
+            check_monotonic(a, eps=WAVELENGTH_GRID_MONOTONICITY_EPS)
             diffs = np.diff(a)
-            if np.any(diffs <= WAVELENGTH_GRID_MONOTONICITY_EPS):
-                raise ValueError("Wavelength grid must be strictly increasing (nm)")
             if np.any(np.isclose(diffs, 0.0, atol=WAVELENGTH_GRID_DUPLICATE_EPS)):
                 raise ValueError("Wavelength grid must not contain repeated bands")
 
@@ -223,8 +232,7 @@ class WavelengthGrid:
             ``ValueError`` to avoid silent guesses.
         """
 
-        scale = _wavelength_unit_scale(units)
-        nm_values = np.asarray(values, dtype=np.float64) * scale
+        nm_values = ensure_nm(values, units)
         return cls(nm_values)
 
     def to(self, unit: str) -> NDArray[np.float64]:

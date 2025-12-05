@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+from alchemi.wavelengths import check_monotonic
 from alchemi.types import QuantityKind, Spectrum, TemperatureUnits, WavelengthGrid
 
 HYTES_BAND_COUNT = 256
@@ -20,6 +21,7 @@ HYTES_WAVELENGTHS_NM = np.linspace(
     HYTES_BAND_COUNT,
     dtype=np.float64,
 )
+check_monotonic(HYTES_WAVELENGTHS_NM)
 
 _BT_VAR_CANDIDATES: tuple[str, ...] = (
     "brightness_temp",

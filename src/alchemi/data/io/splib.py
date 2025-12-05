@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
+from alchemi.wavelengths import check_monotonic, ensure_nm
 from alchemi.types import Spectrum, SpectrumKind, WavelengthGrid
 
 __all__ = ["SPLIBCatalog", "load_splib"]
@@ -362,25 +363,10 @@ def _detect_unit(metadata: Mapping[str, str], keys: Iterable[str]) -> str | None
 
 
 def _normalize_wavelengths(values: np.ndarray, unit: str | None) -> np.ndarray:
-    arr = np.asarray(values, dtype=np.float64)
-    unit_norm = (unit or "").strip().lower()
-    if unit_norm in {"", "nm", "nanometer", "nanometers"}:
-        pass
-    elif unit_norm in {"micron", "microns", "micrometer", "micrometers", "um", "μm"}:
-        arr = arr * 1000.0
-    elif unit_norm in {"angstrom", "angstroms", "å", "a"}:
-        arr = arr * 0.1
-    else:
-        # Heuristic: if values look like microns, convert; otherwise bail out.
-        if np.nanmax(arr) < 100:
-            arr = arr * 1000.0
-        else:
-            msg = f"Unsupported wavelength unit: {unit}"
-            raise ValueError(msg)
+    arr = ensure_nm(values, unit)
     if arr.ndim != 1:
         raise ValueError("Wavelength data must be one-dimensional")
-    if np.any(np.diff(arr) <= 0):
-        raise ValueError("Wavelength grid must be strictly increasing")
+    check_monotonic(arr)
     return arr.astype(np.float64)
 
 
