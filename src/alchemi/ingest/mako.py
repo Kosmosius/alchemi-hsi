@@ -21,7 +21,7 @@ __all__ = ["from_mako_l2s", "from_mako_l3"]
 
 def _prepare(
     dataset: xr.Dataset, variable: str
-) -> tuple[np.ndarray, np.ndarray, dict[str, object]]:
+) -> tuple[np.ndarray, np.ndarray, dict[str, object], np.ndarray | None]:
     if variable not in dataset:
         raise KeyError(f"Dataset must contain '{variable}'")
     if "wavelength_nm" not in dataset.coords:
@@ -35,13 +35,17 @@ def _prepare(
     if "units" not in attrs and "units" in var_attrs:
         attrs["units"] = var_attrs["units"]
 
-    return data, axis, attrs
+    band_mask = None
+    if "band_mask" in dataset:
+        band_mask = np.asarray(dataset["band_mask"].values, dtype=bool)
+
+    return data, axis, attrs, band_mask
 
 
 def from_mako_l2s(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
     """Convert a Mako L2S radiance dataset into a :class:`Cube`."""
 
-    data, axis, attrs = _prepare(dataset, "radiance")
+    data, axis, attrs, band_mask = _prepare(dataset, "radiance")
 
     sensor = srf_id or attrs.get("sensor")
     sensor_id = str(sensor) if sensor is not None else None
@@ -54,13 +58,14 @@ def from_mako_l2s(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
         srf_id=sensor_id,
         geo=geo_from_attrs(dataset.attrs),
         attrs=attrs,
+        band_mask=band_mask,
     )
 
 
 def from_mako_l3(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
     """Convert a Mako Level-3 BTEMP dataset into a :class:`Cube`."""
 
-    data, axis, attrs = _prepare(dataset, "bt")
+    data, axis, attrs, band_mask = _prepare(dataset, "bt")
 
     sensor = srf_id or attrs.get("sensor")
     sensor_id = str(sensor) if sensor is not None else None
@@ -73,4 +78,5 @@ def from_mako_l3(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
         srf_id=sensor_id,
         geo=geo_from_attrs(dataset.attrs),
         attrs=attrs,
+        band_mask=band_mask,
     )
