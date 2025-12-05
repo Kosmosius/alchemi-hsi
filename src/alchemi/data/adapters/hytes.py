@@ -1,66 +1,210 @@
-"""Adapter stub for HyTES brightness-temperature chips."""
+"""Adapters for HyTES brightness-temperature and radiance products."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import numpy as np
 import xarray as xr
 
+from alchemi.physics import planck
 from alchemi.registry import srfs
-from alchemi.spectral import Sample, Spectrum
+from alchemi.spectral import BandMetadata, Sample, Spectrum
+from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
+from alchemi.types import SRFMatrix as LegacySRFMatrix, ValueUnits
 
-from ..io import load_hytes_l1b
+from ..io.hytes import _ensure_kelvin, load_hytes_l1b_bt
 
-__all__ = ["iter_hytes_pixels", "load_hytes_scene"]
+__all__ = [
+    "iter_hytes_pixels",
+    "load_hytes_scene",
+    "iter_hytes_radiance_pixels",
+    "load_hytes_radiance_scene",
+]
+
+
+_EDGE_BAND_COUNT = 2
 
 
 def _load_ds(path: str) -> xr.Dataset:
+    return load_hytes_l1b_bt(path)
+
+
+def _coerce_srf_matrix(wavelengths_nm: np.ndarray) -> tuple[DenseSRFMatrix | None, str, np.ndarray | None, list[tuple[float, float]] | None]:
     try:
-        return load_hytes_l1b(path)
-    except Exception:  # pragma: no cover - placeholder for optional dependency errors
-        # TODO: Implement HDF5/GeoTIFF parsing once HyTES documentation is wired in.
-        return xr.open_dataset(path)
+        raw: LegacySRFMatrix | None = srfs.get_srf("hytes")
+    except Exception:
+        raw = None
+
+    if raw is None:
+        return None, "none", None, None
+
+    centers = np.asarray(raw.centers_nm, dtype=np.float64)
+    if centers.shape[0] != wavelengths_nm.shape[0]:
+        return None, "none", raw.bad_band_mask, raw.bad_band_windows_nm
+
+    matrix = np.zeros((centers.shape[0], wavelengths_nm.shape[0]), dtype=np.float64)
+    areas: list[float] = []
+    for idx, (nm, resp) in enumerate(zip(raw.bands_nm, raw.bands_resp, strict=True)):
+        nm_arr = np.asarray(nm, dtype=np.float64)
+        resp_arr = np.asarray(resp, dtype=np.float64)
+        matrix[idx, :] = np.interp(wavelengths_nm, nm_arr, resp_arr, left=0.0, right=0.0)
+        area = float(np.trapz(matrix[idx, :], x=wavelengths_nm))
+        areas.append(area)
+        if area > 0:
+            matrix[idx, :] /= area
+
+    if not areas or np.any(np.asarray(areas) <= 0.0):
+        return None, "none", raw.bad_band_mask, raw.bad_band_windows_nm
+
+    dense = DenseSRFMatrix(wavelength_nm=wavelengths_nm, matrix=matrix)
+    provenance = "official"
+    version = str(getattr(raw, "version", ""))
+    if "gaussian" in version.lower():
+        provenance = "gaussian"
+    return dense, provenance, raw.bad_band_mask, raw.bad_band_windows_nm
+
+
+def _edge_mask(length: int) -> np.ndarray:
+    mask = np.zeros(length, dtype=bool)
+    if length == 0:
+        return mask
+    span = min(_EDGE_BAND_COUNT, max(1, length))
+    mask[:span] = True
+    mask[-span:] = True
+    return mask
+
+
+def _valid_band_mask(
+    wavelengths: np.ndarray,
+    *,
+    dataset_mask: np.ndarray | None,
+    srf_mask: np.ndarray | None,
+    srf_windows: list[tuple[float, float]] | None,
+    detector_mask: np.ndarray | None,
+) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
+    valid = np.ones_like(wavelengths, dtype=bool)
+    quality: Dict[str, np.ndarray] = {}
+
+    if dataset_mask is not None:
+        dataset_mask = np.asarray(dataset_mask, dtype=bool)
+        valid &= dataset_mask
+        quality["band_mask"] = dataset_mask
+
+    if srf_mask is not None:
+        srf_mask = ~np.asarray(srf_mask, dtype=bool)
+        valid &= srf_mask
+        quality["srf_band_mask"] = srf_mask
+
+    edge_mask = _edge_mask(wavelengths.size)
+    if np.any(edge_mask):
+        valid &= ~edge_mask
+        quality["edge_band"] = ~edge_mask
+
+    if srf_windows is not None:
+        window_mask = np.ones_like(valid, dtype=bool)
+        for start, end in srf_windows:
+            window_mask &= ~((wavelengths >= start) & (wavelengths <= end))
+        valid &= window_mask
+        quality["srf_bad_window"] = window_mask
+
+    if detector_mask is not None:
+        detector_mask = np.asarray(detector_mask, dtype=bool)
+        valid &= ~detector_mask
+        quality["bad_detector"] = ~detector_mask
+
+    quality["valid_band"] = valid
+    return valid, quality
+
+
+def _extract_detector_mask(ds: xr.Dataset) -> np.ndarray | None:
+    for key in ("detector_mask", "bad_detector_mask", "bad_detector"):
+        if key in ds:
+            return np.asarray(ds[key].values, dtype=bool)
+    if isinstance(ds.attrs.get("bad_detector_mask"), (list, np.ndarray)):
+        return np.asarray(ds.attrs["bad_detector_mask"], dtype=bool)
+    return None
+
+
+def _band_metadata(wavelengths: np.ndarray, valid: np.ndarray, *, srf_source: str) -> BandMetadata:
+    return BandMetadata(
+        center_nm=np.asarray(wavelengths, dtype=np.float64),
+        width_nm=np.full_like(wavelengths, np.nan, dtype=np.float64),
+        valid_mask=np.asarray(valid, dtype=bool),
+        srf_source=np.full_like(wavelengths, srf_source, dtype=object),
+    )
 
 
 def iter_hytes_pixels(path: str) -> Iterable[Sample]:
-    """Yield HyTES pixels as :class:`Sample` objects.
-
-    HyTES products are typically stored as brightness temperature in Kelvin. No
-    unit conversion is applied here besides a defensive cast to ``float64``.
-    """
+    """Yield HyTES brightness-temperature pixels as :class:`Sample` objects."""
 
     ds = _load_ds(path)
-    bt = ds["brightness_temperature"] if "brightness_temperature" in ds else ds["bt"]
+    bt = ds["brightness_temp"] if "brightness_temp" in ds else ds["bt"]
     wavelengths = np.asarray(ds["wavelength_nm"].values, dtype=np.float64)
+    values = np.asarray(bt.values, dtype=np.float64)
+    units = bt.attrs.get("units") or ds.attrs.get("brightness_temp_units")
+    if isinstance(units, str):
+        units = units.strip().lower()
+    values = _ensure_kelvin(values, units)
 
-    srfs_for_sensor = None
-    try:
-        srfs_for_sensor = srfs.get_srf("hytes")
-    except Exception:
-        srfs_for_sensor = None
     band_mask = np.asarray(ds["band_mask"].values, dtype=bool) if "band_mask" in ds else None
+    detector_mask = _extract_detector_mask(ds)
 
-    quality_base: Dict[str, np.ndarray] = {}
-    if band_mask is not None:
-        quality_base["band_mask"] = np.broadcast_to(band_mask, bt.shape)
+    srf_matrix, srf_source, srf_bad_mask, srf_windows = _coerce_srf_matrix(wavelengths)
+    valid, quality_base = _valid_band_mask(
+        wavelengths,
+        dataset_mask=band_mask,
+        srf_mask=srf_bad_mask,
+        srf_windows=srf_windows,
+        detector_mask=detector_mask,
+    )
+    band_meta = _band_metadata(wavelengths, valid, srf_source=srf_source)
 
-    for y in range(bt.shape[0]):
-        for x in range(bt.shape[1]):
-            values = np.asarray(bt[y, x, :], dtype=np.float64)
-            spectrum = Spectrum(wavelength_nm=wavelengths, values=values, kind="BT")
-            quality_masks = {name: mask[y, x, :] for name, mask in quality_base.items()}
-            yield Sample(
-                spectrum=spectrum,
-                sensor_id="hytes",
-                quality_masks=quality_masks,
-                srf_matrix=srfs_for_sensor,
-                ancillary={"source_path": path, "y": int(y), "x": int(x)},
+    for y in range(values.shape[0]):
+        for x in range(values.shape[1]):
+            spec = Spectrum(
+                wavelength_nm=wavelengths,
+                values=values[y, x, :],
+                kind="BT",
+                units=ValueUnits.TEMPERATURE_K,
             )
+            quality_masks = {name: mask.copy() for name, mask in quality_base.items()}
+            sample = Sample(
+                spectrum=spec,
+                sensor_id="hytes",
+                band_meta=band_meta,
+                srf_matrix=srf_matrix,
+                quality_masks=quality_masks,
+                ancillary={
+                    "source_path": path,
+                    "y": int(y),
+                    "x": int(x),
+                    "srf_source": srf_source,
+                },
+            )
+            yield sample
+
+
+def iter_hytes_radiance_pixels(path: str) -> Iterable[Sample]:
+    """Yield HyTES pixels converted to radiance via Planck inversion."""
+
+    for sample in iter_hytes_pixels(path):
+        rad_sample = planck.bt_sample_to_radiance_sample(sample)
+        rad_sample.ancillary.setdefault("source_path", sample.ancillary.get("source_path"))
+        rad_sample.ancillary.setdefault("y", sample.ancillary.get("y"))
+        rad_sample.ancillary.setdefault("x", sample.ancillary.get("x"))
+        rad_sample.ancillary.setdefault("srf_source", sample.ancillary.get("srf_source"))
+        yield rad_sample
 
 
 def load_hytes_scene(path: str) -> List[Sample]:
-    """Materialise an iterator of HyTES pixels into memory."""
+    """Materialise brightness-temperature pixels into memory."""
 
     return list(iter_hytes_pixels(path))
+
+
+def load_hytes_radiance_scene(path: str) -> List[Sample]:
+    """Materialise radiance pixels into memory."""
+
+    return list(iter_hytes_radiance_pixels(path))

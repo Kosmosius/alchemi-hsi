@@ -5,6 +5,7 @@ import numpy as np
 import xarray as xr
 
 import alchemi.data.io as data_io
+from alchemi.data.io.hytes import HYTES_BAND_COUNT, HYTES_WAVELENGTHS_NM
 
 
 def _stub_dataset(wavelengths: np.ndarray, values: np.ndarray, key: str) -> xr.Dataset:
@@ -41,17 +42,16 @@ def test_enmap_adapter_preserves_masks_and_units(tmp_path, monkeypatch):
 
 
 def test_hytes_adapter_emits_bt_samples(tmp_path, monkeypatch):
-    wavelengths = np.array([8000.0, 8100.0])
-    bt = np.array([[[290.0, 295.0]]])
-    ds = _stub_dataset(wavelengths, bt, "brightness_temperature")
+    bt = np.full((1, 1, HYTES_BAND_COUNT), 295.0)
+    ds = _stub_dataset(HYTES_WAVELENGTHS_NM, bt, "brightness_temp")
     path = tmp_path / "hytes.nc"
     ds.to_netcdf(path)
 
-    monkeypatch.setattr(data_io, "load_hytes_l1b", lambda _path: xr.open_dataset(_path))
+    monkeypatch.setattr(data_io, "load_hytes_l1b_bt", lambda _path: xr.open_dataset(_path))
     hytes_module = importlib.import_module("alchemi.data.adapters.hytes")
     monkeypatch.setattr(hytes_module.srfs, "get_srf", lambda *_args, **_kwargs: None)
     samples = list(hytes_module.iter_hytes_pixels(path))
     assert len(samples) == 1
     sample = samples[0]
-    assert sample.spectrum.kind == "BT"
+    assert sample.spectrum.kind.value == "brightness_temperature"
     assert str(sample.ancillary["source_path"]) == str(path)
