@@ -8,9 +8,11 @@ from typing import Any
 __all__ = [
     "MAKO_BAND_COUNT",
     "ProjectedSpectrum",
+    "SensorSRF",
     "SRFRegistry",
     "SensorSRFRegistry",
     "GLOBAL_SRF_REGISTRY",
+    "normalize_srf_rows",
     "SyntheticSensorConfig",
     "avirisng_bad_band_mask",
     "avirisng_srf_matrix",
@@ -41,6 +43,8 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "SensorSRFRegistry": ("alchemi.srf.registry", "SensorSRFRegistry"),
     "GLOBAL_SRF_REGISTRY": ("alchemi.srf.registry", "GLOBAL_SRF_REGISTRY"),
     "get_srf": ("alchemi.srf.registry", "get_srf"),
+    "SensorSRF": ("alchemi.srf.sensor", "SensorSRF"),
+    "normalize_srf_rows": ("alchemi.srf.sensor", "normalize_srf_rows"),
     "avirisng_bad_band_mask": ("alchemi.srf.avirisng", "avirisng_bad_band_mask"),
     "avirisng_srf_matrix": ("alchemi.srf.avirisng", "avirisng_srf_matrix"),
     "batch_convolve_lab_to_sensor": (
