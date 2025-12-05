@@ -43,6 +43,7 @@ def test_enmap_l1b_samples_include_srf_and_masks(tmp_path):
     assert sample.srf_matrix is not None
     row_area = np.trapz(sample.srf_matrix.matrix, x=sample.srf_matrix.wavelength_nm, axis=1)
     np.testing.assert_allclose(row_area, np.ones_like(row_area))
+    assert sample.ancillary.get("srf_mode") == "srf-aware"
 
     valid = sample.quality_masks["valid_band"]
     assert valid.shape[0] == wavelengths.shape[0]
@@ -85,3 +86,19 @@ def test_iterators_stream_pixels(tmp_path):
     l2a_samples = list(iter_enmap_l2a_pixels(refl_path))
     assert len(l2a_samples) == 1
     assert l2a_samples[0].spectrum.kind == "reflectance"
+
+
+def test_enmap_srf_blind_uses_gaussian(tmp_path, monkeypatch):
+    wavelengths = np.array([430.0, 900.0], dtype=np.float64)
+    cube_path = tmp_path / "l1c.nc"
+    _write_enmap_cube(cube_path, wavelengths)
+
+    monkeypatch.setattr(srfs, "get_srf", lambda *_args, **_kwargs: srfs.get_srf("enmap"))
+
+    samples = list(iter_enmap_pixels(cube_path, srf_blind=True))
+    assert len(samples) == 1
+    sample = samples[0]
+    assert sample.ancillary.get("srf_mode") == "srf-blind"
+    assert sample.band_meta is not None
+    assert sample.band_meta.srf_source[0] == "gaussian"
+    assert sample.srf_matrix is not None
