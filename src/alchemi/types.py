@@ -11,7 +11,6 @@ from typing import Any, Iterable
 import numpy as np
 from numpy.typing import NDArray
 
-from alchemi.spectral import Sample as CanonicalSample
 from alchemi.wavelengths import check_monotonic, ensure_nm
 from alchemi.utils.integrate import np_integrate as _np_integrate
 
@@ -757,4 +756,6 @@ class SampleMeta:
 
 
 # Backwards-compatible alias for the canonical Sample type.
+from alchemi.spectral import Sample as CanonicalSample  # Late import to avoid circular dependency
+
 Sample = CanonicalSample
