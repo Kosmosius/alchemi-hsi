@@ -5,3 +5,4 @@ This index tracks Architecture Decision Records (ADRs) for the project. ADRs cap
 | ID | Title | Status | Summary |
 | --- | --- | --- | --- |
 | 0001 | Repository layout, tooling, and CI | Accepted | Defines the src/ layout, tooling stack, and GitHub Actions CI for ALCHEMI-HSI. |
+| 0002 | Canonical cube and ingest/physics architecture | Accepted | Defines Cube/Spectrum/Sample/SRFMatrix and the separation of ingest and physics helpers. |
