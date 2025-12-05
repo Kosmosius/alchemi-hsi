@@ -52,13 +52,16 @@ class SRFMatrix:
     def assert_flat_spectrum_preserved(self, spectrum: Spectrum, *, tol: float = 1e-6) -> None:
         """Verify a flat spectrum remains flat after SRF convolution."""
 
-        if spectrum.values.shape[0] != self.wavelength_nm.shape[0]:
+        if spectrum.band_count != self.wavelength_nm.shape[0]:
             raise ValueError("Spectrum length must match SRF wavelength grid")
-        span = float(np.ptp(spectrum.values))
-        baseline = float(np.mean(spectrum.values))
+        values = np.asarray(spectrum.values, dtype=float)
+        if values.ndim != 1:
+            values = values.reshape(-1, spectrum.band_count)[0]
+        span = float(np.ptp(values))
+        baseline = float(np.mean(values))
         if span > tol:
             raise ValueError("Spectrum must be approximately flat for this check")
-        band_values = np.trapz(self.matrix * spectrum.values, x=self.wavelength_nm, axis=1)
+        band_values = np.trapz(self.matrix * values, x=self.wavelength_nm, axis=1)
         allowed = tol * max(1.0, abs(baseline))
         if np.any(np.abs(band_values - baseline) > allowed):
             raise ValueError("Flat spectrum is not preserved by SRF matrix")

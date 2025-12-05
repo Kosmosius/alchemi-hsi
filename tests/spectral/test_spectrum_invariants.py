@@ -1,4 +1,5 @@
 import numpy as np
+import numpy as np
 import pytest
 
 from alchemi.spectral import Spectrum
