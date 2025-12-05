@@ -34,7 +34,14 @@ from .rt_regime import (
     swir_regime_for_scene,
     trusted_swir,
 )
-from .tes import tes_lwirt
+from .tes import (
+    bt_spectrum_to_radiance_spectrum,
+    compute_lwir_emissivity_proxy,
+    lwir_pipeline_for_sample,
+    radiance_sample_to_bt_sample,
+    radiance_spectrum_to_bt_spectrum,
+    tes_lwirt,
+)
 from .solar import (
     earth_sun_distance_au,
     earth_sun_distance_for_sample,
@@ -72,16 +79,20 @@ __all__ = [
     "classify_swir_regime",
     "compute_band_depth",
     "compute_convex_hull_continuum",
+    "compute_lwir_emissivity_proxy",
     "convolve_to_bands",
     "continuum_remove",
     "generate_gaussian_srf",
     "get_reference_esun",
     "interpolate_to_centers",
     "inverse_planck_central_lambda",
+    "lwir_pipeline_for_sample",
     "planck_radiance_wavelength",
+    "bt_spectrum_to_radiance_spectrum",
     "radiance_to_bt",
     "radiance_sample_to_bt_sample",
     "radiance_spectrum_to_bt",
+    "radiance_spectrum_to_bt_spectrum",
     "radiance_to_bt_K",
     "radiance_to_toa_reflectance",
     "radiance_to_reflectance",
