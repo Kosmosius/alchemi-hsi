@@ -2,6 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 
+from alchemi.physics.continuum import (
+    build_continuum as _build_continuum,
+    continuum_remove as _continuum_remove,
+    compute_band_metrics as _compute_band_metrics,
+)
+from alchemi.types import Spectrum, WavelengthGrid
+
 
 def reflectance_to_radiance(
     R: np.ndarray, E0: np.ndarray, cos_sun: float, tau: float, Lpath: float
@@ -19,12 +26,20 @@ def radiance_to_reflectance(
 def continuum_remove(
     wavelength_nm: np.ndarray, reflectance: np.ndarray, left_nm: float, right_nm: float
 ) -> tuple[np.ndarray, np.ndarray]:
-    l_idx = np.searchsorted(wavelength_nm, left_nm)
-    r_idx = np.searchsorted(wavelength_nm, right_nm)
-    l_ref, r_ref = reflectance[l_idx], reflectance[r_idx]
-    slope = (r_ref - l_ref) / (right_nm - left_nm + 1e-12)
-    cont = np.clip(l_ref + slope * (wavelength_nm - left_nm), 1e-6, None)
-    return cont, reflectance / cont
+    wl = np.asarray(wavelength_nm, dtype=np.float64)
+    refl = np.asarray(reflectance, dtype=np.float64)
+
+    if wl.ndim != 1:
+        raise ValueError("Wavelength grid must be one-dimensional")
+    if refl.shape[-1] != wl.size:
+        msg = "Last dimension of reflectance must match wavelength grid length"
+        raise ValueError(msg)
+
+    anchors = [(float(left_nm), float(right_nm))]
+    spectrum = Spectrum.from_reflectance(WavelengthGrid(wl), refl)
+    continuum = _build_continuum(spectrum, method="anchors", anchors=anchors)
+    removed = _continuum_remove(spectrum, method="anchors", anchors=anchors).values
+    return continuum, removed
 
 
 def band_depth(
@@ -34,6 +49,27 @@ def band_depth(
     left_nm: float,
     right_nm: float,
 ) -> float:
-    _cont, removed = continuum_remove(wavelength_nm, reflectance, left_nm, right_nm)
-    c_idx = np.searchsorted(wavelength_nm, center_nm)
-    return float(1.0 - removed[c_idx])
+    wl = np.asarray(wavelength_nm, dtype=np.float64)
+    refl = np.asarray(reflectance, dtype=np.float64)
+
+    spectrum = Spectrum.from_reflectance(WavelengthGrid(wl), refl)
+    flat_vals = spectrum.values.reshape(-1, wl.size)
+    depths = np.empty(flat_vals.shape[0], dtype=np.float64)
+
+    for idx, spec_vals in enumerate(flat_vals):
+        spec = Spectrum.from_reflectance(WavelengthGrid(wl), spec_vals)
+        metrics = _compute_band_metrics(
+            spec,
+            lambda_left_nm=float(left_nm),
+            lambda_center_nm=float(center_nm),
+            lambda_right_nm=float(right_nm),
+            method="anchors",
+            anchors=[(float(left_nm), float(right_nm))],
+        )
+        depths[idx] = metrics.depth
+
+    return (
+        float(depths.reshape(refl.shape[:-1]))
+        if depths.size == 1
+        else depths.reshape(refl.shape[:-1])
+    )

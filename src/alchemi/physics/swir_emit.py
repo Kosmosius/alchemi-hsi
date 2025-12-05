@@ -12,6 +12,9 @@ from collections.abc import Iterable
 
 import numpy as np
 
+from alchemi.physics.continuum import build_continuum, compute_band_metrics
+from alchemi.types import Spectrum, WavelengthGrid
+
 _MIN_TAU = 1e-3
 _MIN_COS_SUN = 1e-3
 _MIN_DENOM = 1e-9
@@ -89,21 +92,19 @@ def continuum_removed(
 ) -> np.ndarray:
     """Compute continuum-removed reflectance for EMIT-style SWIR spectra."""
 
-    R_b, wl_b = np.broadcast_arrays(_as_float64(R), _as_float64(wl_nm))
+    wl = _as_float64(wl_nm)
+    R_b = _as_float64(R)
 
-    if wl_b.ndim != 1:
+    if wl.ndim != 1:
         raise ValueError("wl_nm must be a one-dimensional wavelength grid")
+    if R_b.shape[-1] != wl.size:
+        msg = "Last dimension of R must match wavelength grid length"
+        raise ValueError(msg)
 
-    spectra = R_b.reshape(-1, R_b.shape[-1])
-    continuum = np.empty_like(spectra)
-
-    for idx, spec in enumerate(spectra):
-        continuum[idx] = _upper_hull_continuum(wl_b, spec)
-
-    continuum = continuum.reshape(R_b.shape)
+    spectrum = Spectrum.from_reflectance(WavelengthGrid(wl), R_b)
+    continuum = build_continuum(spectrum, method="convex_hull")
     continuum = np.clip(continuum, _MIN_DENOM, None)
-    removed = R_b / continuum
-    return removed
+    return R_b / continuum
 
 
 def band_depth(
@@ -118,54 +119,29 @@ def band_depth(
     if not (left_nm < center_nm < right_nm):
         raise ValueError("Expected left_nm < center_nm < right_nm for band depth")
 
-    R_b, wl_b = np.broadcast_arrays(_as_float64(R), _as_float64(wl_nm))
+    wl = _as_float64(wl_nm)
+    R_b = _as_float64(R)
 
-    if wl_b.ndim != 1:
+    if wl.ndim != 1:
         raise ValueError("wl_nm must be a one-dimensional wavelength grid")
+    if R_b.shape[-1] != wl.size:
+        msg = "Last dimension of R must match wavelength grid length"
+        raise ValueError(msg)
 
-    spectra = R_b.reshape(-1, R_b.shape[-1])
-    n_spec = spectra.shape[0]
+    spectrum = Spectrum.from_reflectance(WavelengthGrid(wl), R_b)
+    flat_vals = spectrum.values.reshape(-1, wl.size)
+    depths = np.empty(flat_vals.shape[0], dtype=np.float64)
 
-    left_vals = np.empty(n_spec, dtype=np.float64)
-    center_vals = np.empty(n_spec, dtype=np.float64)
-    right_vals = np.empty(n_spec, dtype=np.float64)
+    for idx, spec_vals in enumerate(flat_vals):
+        spec = Spectrum.from_reflectance(WavelengthGrid(wl), spec_vals)
+        metrics = compute_band_metrics(
+            spec,
+            lambda_left_nm=float(left_nm),
+            lambda_center_nm=float(center_nm),
+            lambda_right_nm=float(right_nm),
+            method="anchors",
+            anchors=[(float(left_nm), float(right_nm))],
+        )
+        depths[idx] = metrics.depth
 
-    for idx, spec in enumerate(spectra):
-        left_vals[idx] = np.interp(left_nm, wl_b, spec)
-        center_vals[idx] = np.interp(center_nm, wl_b, spec)
-        right_vals[idx] = np.interp(right_nm, wl_b, spec)
-
-    slope = (right_vals - left_vals) / (right_nm - left_nm)
-    continuum_center = left_vals + slope * (center_nm - left_nm)
-    continuum_center = np.clip(continuum_center, _MIN_DENOM, None)
-
-    depth = 1.0 - center_vals / continuum_center
-    depth = depth.reshape(R_b.shape[:-1])
-    return depth
-
-
-def _upper_hull_continuum(wavelengths: np.ndarray, spectrum: np.ndarray) -> np.ndarray:
-    """Construct a simple upper hull continuum for a single spectrum."""
-
-    hull_x: list[float] = []
-    hull_y: list[float] = []
-
-    for x, y in zip(wavelengths, spectrum, strict=True):
-        hull_x.append(float(x))
-        hull_y.append(float(y))
-        while len(hull_x) >= 3:
-            x0, y0 = hull_x[-3], hull_y[-3]
-            x1, y1 = hull_x[-2], hull_y[-2]
-            x2, y2 = hull_x[-1], hull_y[-1]
-            cross = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
-            if cross >= 0.0:
-                hull_x.pop(-2)
-                hull_y.pop(-2)
-            else:
-                break
-
-    hull_x_arr = np.asarray(hull_x, dtype=np.float64)
-    hull_y_arr = np.asarray(hull_y, dtype=np.float64)
-
-    continuum = np.interp(wavelengths, hull_x_arr, hull_y_arr)
-    return continuum
+    return depths.reshape(R_b.shape[:-1])
