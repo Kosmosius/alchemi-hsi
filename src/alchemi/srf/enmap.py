@@ -9,7 +9,9 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from ..spectral.srf import SensorSRF, SRFProvenance
 from alchemi.types import SRFMatrix
+from .registry import register_sensor_srf, sensor_srf_from_legacy
 
 _ENMAP_SENSOR = "enmap"
 _ENMAP_VERSION = "v1"
@@ -129,3 +131,16 @@ def enmap_srf_matrix(*, cache_dir: str | Path = "data/srf", force: bool = False)
 
     _persist(cache_dir, srf)
     return srf
+
+
+def build_enmap_sensor_srf(cache_dir: str | Path = "data/srf") -> SensorSRF:
+    legacy = enmap_srf_matrix(cache_dir=cache_dir)
+    mask = getattr(legacy, "bad_band_mask", None)
+    return sensor_srf_from_legacy(
+        legacy,
+        provenance=SRFProvenance.OFFICIAL,
+        valid_mask=None if mask is None else ~np.asarray(mask, dtype=bool),
+    )
+
+
+register_sensor_srf(build_enmap_sensor_srf())

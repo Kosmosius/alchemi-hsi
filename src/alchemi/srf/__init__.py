@@ -9,6 +9,9 @@ __all__ = [
     "MAKO_BAND_COUNT",
     "ProjectedSpectrum",
     "SRFRegistry",
+    "GLOBAL_SRF_REGISTRY",
+    "SensorSRF",
+    "SRFProvenance",
     "SyntheticSensorConfig",
     "avirisng_bad_band_mask",
     "avirisng_srf_matrix",
@@ -33,6 +36,9 @@ __all__ = [
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "SRFRegistry": ("alchemi.srf.registry", "SRFRegistry"),
+    "GLOBAL_SRF_REGISTRY": ("alchemi.srf.registry", "GLOBAL_SRF_REGISTRY"),
+    "SensorSRF": ("alchemi.spectral.srf", "SensorSRF"),
+    "SRFProvenance": ("alchemi.spectral.srf", "SRFProvenance"),
     "get_srf": ("alchemi.srf.registry", "get_srf"),
     "avirisng_bad_band_mask": ("alchemi.srf.avirisng", "avirisng_bad_band_mask"),
     "avirisng_srf_matrix": ("alchemi.srf.avirisng", "avirisng_srf_matrix"),

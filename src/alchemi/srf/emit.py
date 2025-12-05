@@ -12,11 +12,14 @@ import numpy as np
 from numpy.typing import NDArray
 
 from alchemi.types import SRFMatrix
+from ..spectral.srf import SensorSRF, SRFProvenance
+from .registry import register_sensor_srf, sensor_srf_from_legacy
 
 _RESOURCE_PACKAGE = __package__ + ".data"
 _RESOURCE_NAME = "emit_srf_v01.json"
 _SENSOR = "EMIT"
 _VERSION = "v01"
+_DEFAULT_GRID = np.linspace(380.0, 2500.0, 2000, dtype=np.float64)
 
 
 class _EmitSRFArchive(Sequence[NDArray[np.float64]]):
@@ -130,6 +133,15 @@ def emit_srf_matrix(highres_wl_nm: np.ndarray) -> SRFMatrix:
     srf = srf.normalize_trapz()
     srf.cache_key = _compute_cache_key(srf.centers_nm, srf.bands_nm, srf.bands_resp)
     return srf
+
+
+def build_emit_sensor_srf(wavelength_grid_nm: np.ndarray | None = None) -> SensorSRF:
+    grid = _DEFAULT_GRID if wavelength_grid_nm is None else np.asarray(wavelength_grid_nm, dtype=np.float64)
+    legacy = emit_srf_matrix(grid)
+    return sensor_srf_from_legacy(legacy, grid=grid, provenance=SRFProvenance.OFFICIAL)
+
+
+register_sensor_srf(build_emit_sensor_srf())
 
 
 __all__ = ["emit_srf_matrix"]
