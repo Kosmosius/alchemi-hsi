@@ -16,8 +16,27 @@ from alchemi.utils.integrate import np_integrate as _np_integrate
 
 if TYPE_CHECKING:
     from alchemi.spectral import Sample as CanonicalSample
+else:  # pragma: no cover - avoid circular import at runtime
+    CanonicalSample = Any
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "QuantityKind",
+    "RadianceUnits",
+    "ReflectanceUnits",
+    "TemperatureUnits",
+    "ValueUnits",
+    "SpectrumKind",
+    "WavelengthGrid",
+    "Spectrum",
+    "SRFMatrix",
+    "REFLECTANCE_MAX_EPS",
+    "BT_PLAUSIBLE_MIN_K",
+    "BT_PLAUSIBLE_MAX_K",
+    "WAVELENGTH_GRID_MONOTONICITY_EPS",
+    "WAVELENGTH_GRID_DUPLICATE_EPS",
+]
 
 
 class QuantityKind(str, Enum):
@@ -325,7 +344,7 @@ class Spectrum:
         self.meta = {} if meta is None else meta
 
         self.__post_init__()
-    
+
     def __post_init__(self) -> None:
         if not isinstance(self.wavelengths, WavelengthGrid):
             self.wavelengths = WavelengthGrid.from_any(self.wavelengths)
@@ -468,7 +487,7 @@ class Spectrum:
         units: RadianceUnits | ValueUnits | str = RadianceUnits.W_M2_SR_NM,
         mask: NDArray[np.bool_] | None = None,
         meta: dict[str, Any] | None = None,
-        ) -> Spectrum:
+    ) -> Spectrum:
         return cls(
             wavelengths=wavelengths,
             values=values,
@@ -487,7 +506,7 @@ class Spectrum:
         units: ReflectanceUnits | ValueUnits | str = ReflectanceUnits.FRACTION,
         mask: NDArray[np.bool_] | None = None,
         meta: dict[str, Any] | None = None,
-        ) -> Spectrum:
+    ) -> Spectrum:
         return cls(
             wavelengths=wavelengths,
             values=values,
@@ -709,6 +728,12 @@ class SRFMatrix:
         return self.normalize_trapz()
 
 
+def _resolve_canonical_sample():
+    from alchemi.spectral import Sample as _Sample
+
+    return _Sample
+
+
 # TODO: Legacy SampleMeta retained for compatibility; prefer alchemi.spectral.Sample.
 @dataclass
 class SampleMeta:
@@ -733,11 +758,10 @@ class SampleMeta:
         data.update(self.extras)
         return data
 
-    def to_sample(self, spectrum: Any, **kwargs: Any) -> Any:
-        from alchemi.spectral import Sample as CanonicalSample
-
+    def to_sample(self, spectrum: Any, **kwargs: Any):
         ancillary = {"row": int(self.row), "col": int(self.col), **self.extras}
         acquisition_time = self.datetime
+        CanonicalSample = _resolve_canonical_sample()
         return CanonicalSample(
             spectrum=spectrum,
             sensor_id=self.sensor_id,
@@ -748,8 +772,9 @@ class SampleMeta:
 
     @classmethod
     def from_sample(cls, sample: Any) -> "SampleMeta":
-        from alchemi.spectral import Sample as CanonicalSample
-
+        CanonicalSample = _resolve_canonical_sample()
+        if not isinstance(sample, CanonicalSample):
+            raise TypeError("sample must be a canonical Sample instance")
         ancillary = dict(sample.ancillary)
         row = ancillary.pop("row", ancillary.pop("y", 0))
         col = ancillary.pop("col", ancillary.pop("x", 0))
@@ -763,4 +788,4 @@ class SampleMeta:
 
 
 # Backwards-compatible alias for the canonical Sample type.
-from alchemi.spectral import Sample as Sample  # noqa: E402
+Sample = _resolve_canonical_sample()

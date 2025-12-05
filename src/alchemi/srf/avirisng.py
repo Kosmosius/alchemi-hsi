@@ -11,7 +11,9 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
+from ..spectral.srf import SensorSRF, SRFProvenance
 from alchemi.types import SRFMatrix
+from .registry import register_sensor_srf, sensor_srf_from_legacy
 
 __all__ = ["avirisng_bad_band_mask", "avirisng_srf_matrix"]
 
@@ -218,3 +220,16 @@ def _clone_matrix(matrix: SRFMatrix) -> SRFMatrix:
         if matrix.bad_band_windows_nm is not None:
             clone.bad_band_windows_nm = tuple(matrix.bad_band_windows_nm)
     return clone
+
+
+def build_avirisng_sensor_srf(cache_dir: str | Path | None = None) -> SensorSRF:
+    legacy = avirisng_srf_matrix(cache_dir=cache_dir)
+    mask = avirisng_bad_band_mask(np.asarray(legacy.centers_nm, dtype=np.float64))
+    return sensor_srf_from_legacy(
+        legacy,
+        provenance=SRFProvenance.OFFICIAL,
+        valid_mask=mask,
+    )
+
+
+register_sensor_srf(build_avirisng_sensor_srf())

@@ -7,7 +7,9 @@ convolution.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -65,3 +67,58 @@ class SRFMatrix:
         allowed = tol * max(1.0, abs(baseline))
         if np.any(np.abs(band_values - baseline) > allowed):
             raise ValueError("Flat spectrum is not preserved by SRF matrix")
+
+
+class SRFProvenance(str, Enum):
+    """Provenance flag for SRF construction."""
+
+    OFFICIAL = "official"
+    GAUSSIAN = "gaussian"
+    NONE = "none"
+
+
+@dataclass
+class SensorSRF:
+    """Canonical SRF payload shared across sensor loaders and registry."""
+
+    sensor_id: str
+    wavelength_grid_nm: NDArray[np.floating]
+    srfs: NDArray[np.floating]
+    band_centers_nm: NDArray[np.floating]
+    band_widths_nm: NDArray[np.floating] | None = None
+    provenance: SRFProvenance = SRFProvenance.OFFICIAL
+    valid_mask: NDArray[np.bool_] | None = None
+    meta: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.sensor_id = str(self.sensor_id).lower()
+        self.wavelength_grid_nm = np.asarray(self.wavelength_grid_nm, dtype=float)
+        self.srfs = np.asarray(self.srfs, dtype=float)
+        self.band_centers_nm = np.asarray(self.band_centers_nm, dtype=float)
+        if self.band_widths_nm is not None:
+            self.band_widths_nm = np.asarray(self.band_widths_nm, dtype=float)
+        if self.valid_mask is not None:
+            self.valid_mask = np.asarray(self.valid_mask, dtype=bool)
+
+        if self.wavelength_grid_nm.ndim != 1:
+            raise ValueError("wavelength_grid_nm must be 1-D")
+        if self.srfs.ndim != 2:
+            raise ValueError("srfs must be 2-D (bands x wavelengths)")
+        if self.srfs.shape[1] != self.wavelength_grid_nm.shape[0]:
+            raise ValueError("srfs column count must match wavelength grid length")
+        band_count = self.srfs.shape[0]
+        if self.band_centers_nm.shape[0] != band_count:
+            raise ValueError("band_centers_nm length must match SRF band count")
+        if self.band_widths_nm is not None and self.band_widths_nm.shape[0] != band_count:
+            raise ValueError("band_widths_nm length must match SRF band count")
+        if self.valid_mask is not None and self.valid_mask.shape[0] != band_count:
+            raise ValueError("valid_mask length must match SRF band count")
+
+    @property
+    def band_count(self) -> int:
+        return int(self.srfs.shape[0])
+
+    def as_matrix(self) -> SRFMatrix:
+        """Return a dense :class:`SRFMatrix` view of the SRFs."""
+
+        return SRFMatrix(wavelength_nm=self.wavelength_grid_nm, matrix=self.srfs)

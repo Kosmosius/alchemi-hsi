@@ -1,206 +1,138 @@
 from __future__ import annotations
 
-import hashlib
-import json
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from enum import Enum
-from pathlib import Path
-from typing import Any
+"""Process-wide SRF registry backed by canonical :class:`SensorSRF` objects."""
+
+from typing import Iterable
 
 import numpy as np
 
-from ..types import SRFMatrix
-from ..utils.logging import get_logger
-from .emit import emit_srf_matrix
-from .mako import build_mako_srf_from_header, mako_lwir_grid_nm
-
-_LOG = get_logger(__name__)
-
-_DEFAULT_MAKO_WAVELENGTHS_NM = np.linspace(7600.0, 13200.0, 128, dtype=np.float64)
-_DEFAULT_MAKO_VERSION = "comex-l2s-gaussian-v1"
-_DEFAULT_MAKO_FWHM = 44.0
-_DEFAULT_EMIT_GRID = np.linspace(380.0, 2500.0, 2000, dtype=np.float64)
+from ..spectral.srf import SensorSRF, SRFProvenance
+from ..types import SRFMatrix as LegacySRFMatrix
 
 
-class SRFProvenance(Enum):
-    MEASURED = "measured"
-    GAUSSIAN = "gaussian"
-    SYNTHETIC = "synthetic"
-    UNKNOWN = "unknown"
+def _to_dense_matrix(
+    legacy: LegacySRFMatrix,
+    grid: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert a legacy :class:`~alchemi.types.SRFMatrix` to a dense matrix.
+
+    Parameters
+    ----------
+    legacy:
+        Legacy SRF container using per-band wavelength supports.
+    grid:
+        Optional wavelength grid in nanometres. When omitted, the union of band
+        supports is used.
+    """
+    base_grid = (
+        np.unique(np.concatenate([np.asarray(b, dtype=np.float64) for b in legacy.bands_nm]))
+        if grid is None
+        else np.asarray(grid, dtype=np.float64)
+    )
+    base_grid.setflags(write=False)
+
+    matrix = np.zeros((len(legacy.bands_nm), base_grid.shape[0]), dtype=np.float64)
+
+    for idx, (nm, resp) in enumerate(zip(legacy.bands_nm, legacy.bands_resp, strict=True)):
+        nm_arr = np.asarray(nm, dtype=np.float64)
+        resp_arr = np.asarray(resp, dtype=np.float64)
+
+        matrix[idx] = np.interp(base_grid, nm_arr, resp_arr, left=0.0, right=0.0)
+
+        area = float(np.trapz(matrix[idx], x=base_grid))
+        if area > 0.0:
+            matrix[idx] /= area
+
+    return base_grid, matrix
 
 
-@dataclass
-class SensorSRF:
-    sensor_id: str
-    wavelength_grid_nm: np.ndarray
-    srfs: np.ndarray
-    band_centers_nm: np.ndarray
-    band_widths_nm: np.ndarray
-    provenance: SRFProvenance = SRFProvenance.UNKNOWN
-    meta: dict[str, Any] = field(default_factory=dict)
+def sensor_srf_from_legacy(
+    legacy: LegacySRFMatrix,
+    *,
+    grid: np.ndarray | None = None,
+    provenance: SRFProvenance = SRFProvenance.OFFICIAL,
+    band_widths_nm: Iterable[float] | None = None,
+    valid_mask: np.ndarray | None = None,
+) -> SensorSRF:
+    """Wrap a legacy SRF matrix into the canonical :class:`SensorSRF`."""
 
-    def __post_init__(self) -> None:
-        wl = np.asarray(self.wavelength_grid_nm, dtype=np.float64)
-        srfs = np.asarray(self.srfs, dtype=np.float64)
-        centers = np.asarray(self.band_centers_nm, dtype=np.float64)
-        widths = np.asarray(self.band_widths_nm, dtype=np.float64)
+    wavelength_grid, matrix = _to_dense_matrix(legacy, grid)
 
-        if wl.ndim != 1:
-            msg = "wavelength_grid_nm must be 1-D"
-            raise ValueError(msg)
-        if srfs.ndim != 2:
-            msg = "srfs must be a 2-D array"
-            raise ValueError(msg)
-        if srfs.shape[1] != wl.shape[0]:
-            msg = "SRF matrix column count must match wavelength grid length"
-            raise ValueError(msg)
-        if centers.ndim != 1 or widths.ndim != 1:
-            msg = "band centers and widths must be 1-D"
-            raise ValueError(msg)
-        if centers.shape[0] != srfs.shape[0] or widths.shape[0] != srfs.shape[0]:
-            msg = "Band metadata must align with SRF rows"
-            raise ValueError(msg)
-        if np.any(widths <= 0):
-            msg = "Band widths must be positive"
-            raise ValueError(msg)
-
-        self.wavelength_grid_nm = wl
-        self.srfs = srfs
-        self.band_centers_nm = centers
-        self.band_widths_nm = widths
-
-    @property
-    def band_count(self) -> int:
-        return int(self.band_centers_nm.shape[0])
-
-    def as_matrix(self) -> SRFMatrix:
-        bands_nm = [self.wavelength_grid_nm.copy() for _ in range(self.band_count)]
-        bands_resp = [row.astype(np.float64, copy=True) for row in self.srfs]
-        return SRFMatrix(
-            sensor=self.sensor_id,
-            centers_nm=self.band_centers_nm.copy(),
-            bands_nm=bands_nm,
-            bands_resp=bands_resp,
-            version=self.meta.get("version", "v1"),
-            cache_key=self.meta.get("cache_key"),
+    if band_widths_nm is not None:
+        widths = np.asarray(list(band_widths_nm), dtype=np.float64)
+    else:
+        widths = np.asarray(
+            [np.ptp(np.asarray(b, dtype=np.float64)) for b in legacy.bands_nm],
+            dtype=np.float64,
         )
+
+    return SensorSRF(
+        sensor_id=legacy.sensor,
+        wavelength_grid_nm=wavelength_grid,
+        srfs=matrix,
+        band_centers_nm=np.asarray(legacy.centers_nm, dtype=np.float64),
+        band_widths_nm=widths,
+        provenance=provenance,
+        valid_mask=valid_mask,
+        meta={
+            "version": getattr(legacy, "version", None),
+            "cache_key": getattr(legacy, "cache_key", None),
+        },
+    )
 
 
 class SRFRegistry:
-    def __init__(self, root: str | Path = "data/srf"):
-        self.root = Path(root)
-        self._cache: dict[str, SRFMatrix] = {}
+    """Registry keyed by ``sensor_id`` that returns :class:`SensorSRF` payloads."""
 
-    def _hash(self, payload: str) -> str:
-        return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
+    def __init__(self) -> None:
+        self._by_sensor: dict[str, SensorSRF] = {}
 
-    def register(self, sensor: SensorSRF | SRFMatrix) -> None:
-        matrix = sensor.as_matrix() if isinstance(sensor, SensorSRF) else sensor
-        matrix = matrix.normalize_trapz()
-        self._cache[matrix.sensor.lower()] = matrix
+    def register(self, sensor_srf: SensorSRF) -> None:
+        key = sensor_srf.sensor_id.lower()
+        self._by_sensor[key] = sensor_srf
 
-    def get(self, sensor: str) -> SRFMatrix:
-        k = sensor.lower()
-        if k in self._cache:
-            return self._cache[k]
-        path = self.root / f"{k}.json"
-        if not path.exists():
-            raise FileNotFoundError(f"SRF file not found: {path}")
-        obj = json.loads(path.read_text())
-        centers = np.array(obj["centers_nm"], dtype=np.float64)
-        bands_nm = [np.array(b["nm"], dtype=np.float64) for b in obj["bands"]]
-        bands_resp = [np.array(b["resp"], dtype=np.float64) for b in obj["bands"]]
-        srf = SRFMatrix(
-            obj["sensor"],
-            centers,
-            bands_nm,
-            bands_resp,
-            version=obj.get("version", "v1"),
-            cache_key=obj.get("cache_key"),
-        )
-        srf = srf.normalize_trapz()
-        if not srf.cache_key:
-            srf.cache_key = self._hash(path.read_text()[:2048])
-        self._cache[k] = srf
-        _LOG.info("Loaded SRF for %s (%d bands)", k, len(centers))
-        return srf
+    def has(self, sensor_id: str) -> bool:
+        return sensor_id.lower() in self._by_sensor
 
+    def get(self, sensor_id: str) -> SensorSRF | None:
+        return self._by_sensor.get(sensor_id.lower())
 
-def _mako_builder(
-    *,
-    version: str | None,
-    wavelengths_nm: np.ndarray | None,
-    fwhm_nm: float | None,
-) -> tuple[SRFMatrix, np.ndarray]:
-    centers = (
-        _DEFAULT_MAKO_WAVELENGTHS_NM
-        if wavelengths_nm is None
-        else np.asarray(wavelengths_nm, dtype=np.float64)
-    )
-    fwhm = float(_DEFAULT_MAKO_FWHM if fwhm_nm is None else fwhm_nm)
-    srf = build_mako_srf_from_header(centers, fwhm_nm=fwhm)
-    srf.version = version or _DEFAULT_MAKO_VERSION
-    grid = mako_lwir_grid_nm()
-    return srf, grid
+    def require(self, sensor_id: str) -> SensorSRF:
+        key = sensor_id.lower()
+        try:
+            return self._by_sensor[key]
+        except KeyError as exc:  # pragma: no cover - defensive guard
+            raise KeyError(f"No SRF registered for sensor_id={sensor_id!r}") from exc
 
-
-def _emit_builder(
-    *,
-    version: str | None,
-    wavelengths_nm: np.ndarray | None,
-    fwhm_nm: float | None,
-) -> tuple[SRFMatrix, np.ndarray]:
-    if fwhm_nm is not None:
-        _LOG.warning("Ignoring FWHM override for EMIT SRFs")
-    grid = (
-        _DEFAULT_EMIT_GRID
-        if wavelengths_nm is None
-        else np.asarray(wavelengths_nm, dtype=np.float64)
-    )
-    srf = emit_srf_matrix(grid)
-    if version is not None:
-        srf.version = version
-    return srf, grid
-
-
-_BUILTIN_BUILDERS: dict[str, Callable[..., tuple[SRFMatrix, np.ndarray]]] = {
-    "mako": _mako_builder,
-    "emit": _emit_builder,
-}
+    def all_sensors(self) -> list[str]:
+        return sorted(self._by_sensor.keys())
 
 
 GLOBAL_SRF_REGISTRY = SRFRegistry()
 
 
+def get_srf(sensor_id: str, **_: object) -> SensorSRF | None:
+    """Backwards-compatible helper that proxies the global registry."""
+    return GLOBAL_SRF_REGISTRY.get(sensor_id)
+
+
+def register_sensor_srf(sensor_srf: SensorSRF) -> None:
+    GLOBAL_SRF_REGISTRY.register(sensor_srf)
+
+
 def register_virtual_sensor(sensor_srf: SensorSRF, *, registry: SRFRegistry | None = None) -> None:
+    """Compatibility alias for registering synthetic/virtual sensors."""
     target = registry or GLOBAL_SRF_REGISTRY
     target.register(sensor_srf)
 
 
-def get_srf(
-    sensor: str,
-    *,
-    version: str | None = None,
-    wavelengths_nm: np.ndarray | None = None,
-    fwhm_nm: float | None = None,
-) -> tuple[SRFMatrix, np.ndarray]:
-    """Return a builtin SRF matrix together with its canonical wavelength grid."""
-
-    key = sensor.lower()
-    try:
-        builder = _BUILTIN_BUILDERS[key]
-    except KeyError as exc:  # pragma: no cover - defensive guard
-        msg = f"Unsupported builtin SRF sensor: {sensor!r}"
-        raise ValueError(msg) from exc
-    return builder(version=version, wavelengths_nm=wavelengths_nm, fwhm_nm=fwhm_nm)
-
-
 __all__ = [
     "GLOBAL_SRF_REGISTRY",
+    "SRFRegistry",
     "SensorSRF",
     "SRFProvenance",
-    "SRFRegistry",
     "get_srf",
+    "register_sensor_srf",
     "register_virtual_sensor",
+    "sensor_srf_from_legacy",
 ]
