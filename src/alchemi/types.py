@@ -344,7 +344,7 @@ class Spectrum:
         self.meta = {} if meta is None else meta
 
         self.__post_init__()
-    
+
     def __post_init__(self) -> None:
         if not isinstance(self.wavelengths, WavelengthGrid):
             self.wavelengths = WavelengthGrid.from_any(self.wavelengths)
@@ -487,7 +487,7 @@ class Spectrum:
         units: RadianceUnits | ValueUnits | str = RadianceUnits.W_M2_SR_NM,
         mask: NDArray[np.bool_] | None = None,
         meta: dict[str, Any] | None = None,
-        ) -> Spectrum:
+    ) -> Spectrum:
         return cls(
             wavelengths=wavelengths,
             values=values,
@@ -506,7 +506,7 @@ class Spectrum:
         units: ReflectanceUnits | ValueUnits | str = ReflectanceUnits.FRACTION,
         mask: NDArray[np.bool_] | None = None,
         meta: dict[str, Any] | None = None,
-        ) -> Spectrum:
+    ) -> Spectrum:
         return cls(
             wavelengths=wavelengths,
             values=values,

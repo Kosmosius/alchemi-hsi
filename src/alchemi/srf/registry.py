@@ -120,6 +120,12 @@ def register_sensor_srf(sensor_srf: SensorSRF) -> None:
     GLOBAL_SRF_REGISTRY.register(sensor_srf)
 
 
+def register_virtual_sensor(sensor_srf: SensorSRF, *, registry: SRFRegistry | None = None) -> None:
+    """Compatibility alias for registering synthetic/virtual sensors."""
+    target = registry or GLOBAL_SRF_REGISTRY
+    target.register(sensor_srf)
+
+
 __all__ = [
     "GLOBAL_SRF_REGISTRY",
     "SRFRegistry",
@@ -127,5 +133,6 @@ __all__ = [
     "SRFProvenance",
     "get_srf",
     "register_sensor_srf",
+    "register_virtual_sensor",
     "sensor_srf_from_legacy",
 ]

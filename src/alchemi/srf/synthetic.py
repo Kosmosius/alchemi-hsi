@@ -9,8 +9,10 @@ from typing import Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ..types import SRFMatrix
+from ..spectral.srf import SRFMatrix as DenseSRFMatrix
+from ..types import QuantityKind, SRFMatrix, Spectrum, ValueUnits
 from ..utils.integrate import np_integrate as _np_integrate
+from .registry import SensorSRF, SRFProvenance
 from .resample import project_to_sensor
 
 ShapeKind = Literal["gaussian", "box", "hamming"]
@@ -47,6 +49,33 @@ class _RandomSpec:
     centers_nm: NDArray[np.float64]
     fwhm_nm: NDArray[np.float64]
     dense_resp: NDArray[np.float64]
+
+
+def make_gaussian_srf(
+    centers_nm: np.ndarray,
+    fwhm_nm: np.ndarray,
+    *,
+    wavelength_grid_nm: np.ndarray,
+) -> np.ndarray:
+    """Construct a dense Gaussian SRF matrix from band metadata."""
+
+    centers = np.asarray(centers_nm, dtype=np.float64)
+    widths = np.asarray(fwhm_nm, dtype=np.float64)
+    wl = np.asarray(wavelength_grid_nm, dtype=np.float64)
+
+    if centers.ndim != 1 or widths.ndim != 1:
+        raise ValueError("centers_nm and fwhm_nm must be 1-D arrays")
+    if centers.shape[0] != widths.shape[0]:
+        raise ValueError("centers_nm and fwhm_nm must have matching lengths")
+    if wl.ndim != 1:
+        raise ValueError("wavelength_grid_nm must be 1-D")
+    if centers.size == 0:
+        return np.empty((0, wl.shape[0]), dtype=np.float64)
+
+    sigma = widths / (2.0 * np.sqrt(2.0 * np.log(2.0)))
+    sigma = sigma[:, None]
+    shifted = wl[None, :] - centers[:, None]
+    return np.exp(-0.5 * (shifted / sigma) ** 2)
 
 
 def rand_srf_grid(
@@ -300,10 +329,143 @@ def estimate_fwhm(band_wl_nm: np.ndarray, band_resp: np.ndarray) -> float:
     return float(right_pos - left_pos)
 
 
+def _normalize_and_validate_srf(
+    wavelength_grid_nm: np.ndarray, srfs: np.ndarray, *, tol: float = 1e-6
+) -> np.ndarray:
+    wl = np.asarray(wavelength_grid_nm, dtype=np.float64)
+    matrix = DenseSRFMatrix(wl, np.maximum(srfs, 0.0))
+    matrix.assert_nonnegative(tol=0.0)
+    matrix.normalize_rows_trapz()
+
+    flat = Spectrum(
+        wavelength_nm=wl,
+        values=np.ones(wl.shape[0], dtype=np.float64),
+        kind=QuantityKind.REFLECTANCE,
+        units=ValueUnits.REFLECTANCE_FRACTION,
+    )
+    matrix.assert_flat_spectrum_preserved(flat, tol=tol)
+    return np.asarray(matrix.matrix, dtype=np.float64)
+
+
+def make_virtual_sensor(
+    *,
+    sensor_id: str = "virtual",
+    wavelength_min_nm: float,
+    wavelength_max_nm: float,
+    band_count: int,
+    base_fwhm_nm: float | None = None,
+    center_jitter_nm: float = 0.0,
+    width_jitter_frac: float = 0.0,
+    grid_step_nm: float = 1.0,
+    rng: np.random.Generator | None = None,
+) -> SensorSRF:
+    rng = rng or np.random.default_rng()
+    if band_count <= 0:
+        raise ValueError("band_count must be positive")
+    if wavelength_max_nm <= wavelength_min_nm:
+        raise ValueError("wavelength_max_nm must exceed wavelength_min_nm")
+    if grid_step_nm <= 0:
+        raise ValueError("grid_step_nm must be positive")
+    if center_jitter_nm < 0:
+        raise ValueError("center_jitter_nm must be non-negative")
+    if width_jitter_frac < 0:
+        raise ValueError("width_jitter_frac must be non-negative")
+
+    wavelength_grid_nm = np.arange(
+        wavelength_min_nm,
+        wavelength_max_nm + grid_step_nm / 2.0,
+        grid_step_nm,
+        dtype=np.float64,
+    )
+
+    centers = rng.uniform(wavelength_min_nm, wavelength_max_nm, size=band_count)
+    centers.sort()
+
+    span = wavelength_max_nm - wavelength_min_nm
+    default_width = span / max(band_count * 1.5, 1.0)
+    widths = np.full(band_count, base_fwhm_nm or default_width, dtype=np.float64)
+
+    if center_jitter_nm > 0:
+        centers += rng.uniform(-center_jitter_nm, center_jitter_nm, size=centers.shape)
+        np.clip(centers, wavelength_min_nm, wavelength_max_nm, out=centers)
+
+    if width_jitter_frac > 0:
+        jitter = rng.uniform(1.0 - width_jitter_frac, 1.0 + width_jitter_frac, size=widths.shape)
+        widths *= jitter
+
+    widths = np.clip(widths, np.finfo(np.float64).eps, None)
+
+    raw_srfs = make_gaussian_srf(centers, widths, wavelength_grid_nm=wavelength_grid_nm)
+    normalized = _normalize_and_validate_srf(wavelength_grid_nm, raw_srfs)
+
+    meta = {"virtual": True, "grid_step_nm": grid_step_nm}
+    return SensorSRF(
+        sensor_id=sensor_id,
+        wavelength_grid_nm=wavelength_grid_nm,
+        srfs=normalized,
+        band_centers_nm=centers,
+        band_widths_nm=widths,
+        provenance=SRFProvenance.GAUSSIAN,
+        meta=meta,
+    )
+
+
+def perturb_sensor_srf(
+    sensor_srf: SensorSRF,
+    *,
+    center_jitter_nm: float = 0.0,
+    width_jitter_frac: float = 0.0,
+    shape_noise_frac: float = 0.0,
+    rng: np.random.Generator | None = None,
+) -> SensorSRF:
+    rng = rng or np.random.default_rng()
+
+    if center_jitter_nm < 0:
+        raise ValueError("center_jitter_nm must be non-negative")
+    if width_jitter_frac < 0:
+        raise ValueError("width_jitter_frac must be non-negative")
+    if shape_noise_frac < 0:
+        raise ValueError("shape_noise_frac must be non-negative")
+
+    centers = np.asarray(sensor_srf.band_centers_nm, dtype=np.float64).copy()
+    widths = np.asarray(sensor_srf.band_widths_nm, dtype=np.float64).copy()
+    srfs = np.asarray(sensor_srf.srfs, dtype=np.float64).copy()
+
+    if center_jitter_nm > 0:
+        centers += rng.uniform(-center_jitter_nm, center_jitter_nm, size=centers.shape)
+        np.clip(centers, sensor_srf.wavelength_grid_nm[0], sensor_srf.wavelength_grid_nm[-1], out=centers)
+
+    if width_jitter_frac > 0:
+        widths *= rng.uniform(1.0 - width_jitter_frac, 1.0 + width_jitter_frac, size=widths.shape)
+        widths = np.clip(widths, np.finfo(np.float64).eps, None)
+
+    if shape_noise_frac > 0:
+        noise = rng.normal(scale=shape_noise_frac, size=srfs.shape) * srfs
+        srfs = np.clip(srfs + noise, 0.0, None)
+
+    normalized = _normalize_and_validate_srf(sensor_srf.wavelength_grid_nm, srfs)
+
+    meta = dict(sensor_srf.meta)
+    meta["perturbed"] = True
+
+    return SensorSRF(
+        sensor_id=f"{sensor_srf.sensor_id}_perturbed",
+        wavelength_grid_nm=sensor_srf.wavelength_grid_nm.copy(),
+        srfs=normalized,
+        band_centers_nm=centers,
+        band_widths_nm=widths,
+        provenance=sensor_srf.provenance,
+        meta=meta,
+    )
+
+
 __all__ = [
     "ProjectedSpectrum",
     "SyntheticSensorConfig",
     "estimate_fwhm",
+    "make_gaussian_srf",
+    "make_virtual_sensor",
+    "perturb_sensor_srf",
     "project_lab_to_synthetic",
     "rand_srf_grid",
 ]
