@@ -11,7 +11,6 @@ from typing import Any, Iterable
 import numpy as np
 from numpy.typing import NDArray
 
-from alchemi.spectral import Sample as CanonicalSample
 from alchemi.wavelengths import check_monotonic, ensure_nm
 from alchemi.utils.integrate import np_integrate as _np_integrate
 
@@ -705,6 +704,9 @@ class SRFMatrix:
         """
 
         return self.normalize_trapz()
+
+
+from alchemi.spectral import Sample as CanonicalSample
 
 
 # TODO: Legacy SampleMeta retained for compatibility; prefer alchemi.spectral.Sample.

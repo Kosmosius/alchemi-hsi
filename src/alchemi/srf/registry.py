@@ -11,6 +11,7 @@ from ..types import SRFMatrix
 from ..utils.logging import get_logger
 from .emit import emit_srf_matrix
 from .mako import build_mako_srf_from_header, mako_lwir_grid_nm
+from .sensor import SensorSRF
 
 _LOG = get_logger(__name__)
 
@@ -116,4 +117,27 @@ def get_srf(
     return builder(version=version, wavelengths_nm=wavelengths_nm, fwhm_nm=fwhm_nm)
 
 
-__all__ = ["SRFRegistry", "get_srf"]
+class SensorSRFRegistry:
+    """Lightweight registry for already constructed :class:`SensorSRF` objects."""
+
+    def __init__(self) -> None:
+        self._cache: dict[str, SensorSRF] = {}
+
+    def register(self, sensor_id: str, sensor_srf: SensorSRF) -> None:
+        self._cache[sensor_id.lower()] = sensor_srf
+
+    def get(self, sensor_id: str) -> SensorSRF | None:
+        return self._cache.get(sensor_id.lower())
+
+    def require(self, sensor_id: str) -> SensorSRF:
+        try:
+            return self._cache[sensor_id.lower()]
+        except KeyError as exc:
+            msg = f"SRF not registered for sensor_id={sensor_id!r}"
+            raise KeyError(msg) from exc
+
+
+GLOBAL_SRF_REGISTRY = SensorSRFRegistry()
+
+
+__all__ = ["SRFRegistry", "SensorSRFRegistry", "GLOBAL_SRF_REGISTRY", "get_srf"]
