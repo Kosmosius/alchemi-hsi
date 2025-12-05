@@ -21,6 +21,23 @@ else:  # pragma: no cover - avoid circular import at runtime
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "QuantityKind",
+    "RadianceUnits",
+    "ReflectanceUnits",
+    "TemperatureUnits",
+    "ValueUnits",
+    "SpectrumKind",
+    "WavelengthGrid",
+    "Spectrum",
+    "SRFMatrix",
+    "REFLECTANCE_MAX_EPS",
+    "BT_PLAUSIBLE_MIN_K",
+    "BT_PLAUSIBLE_MAX_K",
+    "WAVELENGTH_GRID_MONOTONICITY_EPS",
+    "WAVELENGTH_GRID_DUPLICATE_EPS",
+]
+
 
 class QuantityKind(str, Enum):
     RADIANCE = "radiance"
@@ -618,10 +635,6 @@ class Spectrum:
         )
 
 
-# Delayed import to avoid circular dependency during module initialisation.
-from alchemi.spectral import Sample as CanonicalSample
-
-
 # TODO: Legacy SRFMatrix retained for compatibility; prefer alchemi.spectral.SRFMatrix.
 @dataclass
 class SRFMatrix:
@@ -775,6 +788,4 @@ class SampleMeta:
 
 
 # Backwards-compatible alias for the canonical Sample type.
-from alchemi.spectral import Sample as CanonicalSample  # Late import to avoid circular dependency
-
 Sample = _resolve_canonical_sample()

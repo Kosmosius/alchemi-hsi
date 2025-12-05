@@ -2,7 +2,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..types import SRFMatrix
-from ..utils.integrate import np_integrate as _np_integrate
+from .resample import resample_values_with_srf
+from .sensor import SensorSRF
 
 
 def batch_convolve_lab_to_sensor(
@@ -15,10 +16,14 @@ def batch_convolve_lab_to_sensor(
     """
     lab_nm = np.asarray(lab_nm, dtype=np.float64)
     lab_values = np.asarray(lab_values, dtype=np.float64)
-    M, _ = lab_values.shape
-    B = len(srf.centers_nm)
-    out = np.zeros((M, B), dtype=np.float64)
-    for b, (nm, resp) in enumerate(zip(srf.bands_nm, srf.bands_resp, strict=True)):
-        interpolated = np.vstack([np.interp(nm, lab_nm, sample) for sample in lab_values])
-        out[:, b] = _np_integrate(interpolated * resp[None, :], nm, axis=1)
-    return np.asarray(out, dtype=np.float64)
+    srfs = np.vstack(
+        [np.interp(lab_nm, nm, resp, left=0.0, right=0.0) for nm, resp in zip(srf.bands_nm, srf.bands_resp, strict=True)]
+    )
+    sensor_srf = SensorSRF(
+        wavelength_grid_nm=lab_nm,
+        srfs=srfs,
+        band_centers_nm=np.asarray(srf.centers_nm, dtype=np.float64),
+        meta={"sensor": getattr(srf, "sensor", None)},
+    )
+    band_values, _ = resample_values_with_srf(lab_values, lab_nm, sensor_srf)
+    return np.asarray(band_values, dtype=np.float64)
