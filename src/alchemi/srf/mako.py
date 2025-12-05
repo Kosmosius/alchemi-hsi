@@ -7,8 +7,10 @@ import hashlib
 import numpy as np
 from numpy.typing import NDArray
 
+from ..spectral.srf import SensorSRF, SRFProvenance
 from alchemi.types import SRFMatrix
 from alchemi.utils.integrate import np_integrate as _np_integrate
+from .registry import register_sensor_srf, sensor_srf_from_legacy
 
 __all__ = [
     "MAKO_BAND_COUNT",
@@ -90,3 +92,16 @@ def build_mako_srf_from_header(
     srf = srf.normalize_trapz()
     srf.cache_key = _compute_cache_key(centers_nm, grid_nm, float(fwhm_nm), srf.version)
     return srf
+
+
+def build_mako_sensor_srf(
+    wavelengths_nm: np.ndarray | None = None, *, fwhm_nm: float = _DEFAULT_FWHM_NM
+) -> SensorSRF:
+    legacy = build_mako_srf_from_header(
+        mako_lwir_grid_nm() if wavelengths_nm is None else np.asarray(wavelengths_nm, dtype=np.float64),
+        fwhm_nm=fwhm_nm,
+    )
+    return sensor_srf_from_legacy(legacy, provenance=SRFProvenance.GAUSSIAN)
+
+
+register_sensor_srf(build_mako_sensor_srf())
