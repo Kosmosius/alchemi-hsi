@@ -8,6 +8,7 @@ import numpy as np
 import rasterio
 import xarray as xr
 
+from alchemi.wavelengths import check_monotonic, ensure_nm
 from alchemi.types import QuantityKind, RadianceUnits, Spectrum, WavelengthGrid
 
 TARGET_RADIANCE_UNITS = RadianceUnits.W_M2_SR_NM
@@ -157,7 +158,8 @@ def _extract_wavelengths(src: rasterio.io.DatasetReader) -> np.ndarray:
             if unit_value:
                 break
 
-    wavelengths_nm = _ensure_nanometers(np.asarray(raw, dtype=np.float64), unit_value)
+    wavelengths_nm = ensure_nm(np.asarray(raw, dtype=np.float64), unit_value)
+    check_monotonic(wavelengths_nm)
     return wavelengths_nm
 
 
@@ -199,22 +201,6 @@ def _radiance_scale(units: str | None) -> float:
     if any(token in normalized for token in tokens):
         return 1.0 / 1000.0
     return 1.0
-
-
-def _ensure_nanometers(values: np.ndarray, unit: str | None) -> np.ndarray:
-    normalized = _normalize_units(unit) if unit is not None else None
-    out: np.ndarray = values.astype(np.float64, copy=True)
-    if normalized is None:
-        if np.nanmax(out) < 10.0:
-            out *= 1000.0
-    elif any(token in normalized for token in ("um", "microm", "micron")):
-        out *= 1000.0
-    elif "nm" not in normalized and "nanom" not in normalized:
-        msg = f"Unsupported wavelength units: {unit}"
-        raise ValueError(msg)
-    if np.any(np.diff(out) <= 0):
-        raise ValueError("Wavelengths must be strictly increasing")
-    return out
 
 
 def _parse_float_list(value: str) -> np.ndarray:
