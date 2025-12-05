@@ -6,13 +6,18 @@ import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 import numpy as np
 from numpy.typing import NDArray
 
 from alchemi.wavelengths import check_monotonic, ensure_nm
 from alchemi.utils.integrate import np_integrate as _np_integrate
+
+if TYPE_CHECKING:
+    from alchemi.spectral import Sample as CanonicalSample
+else:  # pragma: no cover - avoid circular import at runtime
+    CanonicalSample = Any
 
 logger = logging.getLogger(__name__)
 
@@ -613,6 +618,10 @@ class Spectrum:
         )
 
 
+# Delayed import to avoid circular dependency during module initialisation.
+from alchemi.spectral import Sample as CanonicalSample
+
+
 # TODO: Legacy SRFMatrix retained for compatibility; prefer alchemi.spectral.SRFMatrix.
 @dataclass
 class SRFMatrix:
@@ -706,6 +715,12 @@ class SRFMatrix:
         return self.normalize_trapz()
 
 
+def _resolve_canonical_sample():
+    from alchemi.spectral import Sample as _Sample
+
+    return _Sample
+
+
 # TODO: Legacy SampleMeta retained for compatibility; prefer alchemi.spectral.Sample.
 @dataclass
 class SampleMeta:
@@ -730,9 +745,10 @@ class SampleMeta:
         data.update(self.extras)
         return data
 
-    def to_sample(self, spectrum: Any, **kwargs: Any) -> CanonicalSample:
+    def to_sample(self, spectrum: Any, **kwargs: Any):
         ancillary = {"row": int(self.row), "col": int(self.col), **self.extras}
         acquisition_time = self.datetime
+        CanonicalSample = _resolve_canonical_sample()
         return CanonicalSample(
             spectrum=spectrum,
             sensor_id=self.sensor_id,
@@ -742,7 +758,10 @@ class SampleMeta:
         )
 
     @classmethod
-    def from_sample(cls, sample: CanonicalSample) -> "SampleMeta":
+    def from_sample(cls, sample: Any) -> "SampleMeta":
+        CanonicalSample = _resolve_canonical_sample()
+        if not isinstance(sample, CanonicalSample):
+            raise TypeError("sample must be a canonical Sample instance")
         ancillary = dict(sample.ancillary)
         row = ancillary.pop("row", ancillary.pop("y", 0))
         col = ancillary.pop("col", ancillary.pop("x", 0))
@@ -758,4 +777,4 @@ class SampleMeta:
 # Backwards-compatible alias for the canonical Sample type.
 from alchemi.spectral import Sample as CanonicalSample  # Late import to avoid circular dependency
 
-Sample = CanonicalSample
+Sample = _resolve_canonical_sample()

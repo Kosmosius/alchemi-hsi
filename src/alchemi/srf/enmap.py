@@ -10,9 +10,14 @@ import numpy as np
 from numpy.typing import NDArray
 
 from alchemi.types import SRFMatrix
+from ..spectral.srf import SensorSRF, SRFProvenance
+from .registry import register_sensor_srf, sensor_srf_from_legacy
+from .utils import normalize_srf_rows, validate_srf
+
 
 _ENMAP_SENSOR = "enmap"
 _ENMAP_VERSION = "v1"
+_ENMAP_GRID_NM = np.linspace(420.0, 2450.0, 2048, dtype=np.float64)
 
 
 def _band_centers_nm() -> NDArray[np.float64]:
@@ -28,29 +33,27 @@ def _band_centers_nm() -> NDArray[np.float64]:
     return np.asarray(np.concatenate([vnir, swir]), dtype=np.float64)
 
 
-def _band_grid(center: float, *, points: int, width: float) -> NDArray[np.float64]:
-    half = width / 2.0
-    return np.linspace(center - half, center + half, points, dtype=np.float64)
-
-
 def _band_response(nm: NDArray[np.float64], center: float, sigma: float) -> NDArray[np.float64]:
     return np.asarray(np.exp(-0.5 * ((nm - center) / sigma) ** 2), dtype=np.float64)
 
 
 def _synthesize_srf() -> SRFMatrix:
     centers = _band_centers_nm()
-    bands_nm: list[NDArray[np.float64]] = []
-    bands_resp: list[NDArray[np.float64]] = []
+    responses: list[NDArray[np.float64]] = []
     for c in centers:
         if c <= 999.0:  # VNIR
-            grid = _band_grid(c, points=9, width=6.0)
-            resp = _band_response(grid, c, sigma=1.4)
+            resp = _band_response(_ENMAP_GRID_NM, c, sigma=1.4)
         else:  # SWIR
-            grid = _band_grid(c, points=11, width=10.0)
-            resp = _band_response(grid, c, sigma=2.5)
-        bands_nm.append(grid)
-        bands_resp.append(resp)
-    return SRFMatrix(_ENMAP_SENSOR, centers, bands_nm, bands_resp, version=_ENMAP_VERSION)
+            resp = _band_response(_ENMAP_GRID_NM, c, sigma=2.5)
+        responses.append(resp)
+
+    resp_matrix = np.asarray(responses, dtype=np.float64)
+    normalized = normalize_srf_rows(_ENMAP_GRID_NM, resp_matrix, atol=1e-6)
+    validate_srf(_ENMAP_GRID_NM, normalized, allow_negative_eps=1e-9)
+
+    nm_bands = [np.asarray(_ENMAP_GRID_NM, dtype=np.float64) for _ in centers]
+    resp_bands = [row.copy() for row in normalized]
+    return SRFMatrix(_ENMAP_SENSOR, centers, nm_bands, resp_bands, version=_ENMAP_VERSION)
 
 
 def _cache_key_payload(srf: SRFMatrix) -> Iterable[bytes]:
@@ -129,3 +132,16 @@ def enmap_srf_matrix(*, cache_dir: str | Path = "data/srf", force: bool = False)
 
     _persist(cache_dir, srf)
     return srf
+
+
+def build_enmap_sensor_srf(cache_dir: str | Path = "data/srf") -> SensorSRF:
+    legacy = enmap_srf_matrix(cache_dir=cache_dir)
+    mask = getattr(legacy, "bad_band_mask", None)
+    return sensor_srf_from_legacy(
+        legacy,
+        provenance=SRFProvenance.OFFICIAL,
+        valid_mask=None if mask is None else ~np.asarray(mask, dtype=bool),
+    )
+
+
+register_sensor_srf(build_enmap_sensor_srf())

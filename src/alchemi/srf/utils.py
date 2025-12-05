@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 
 from ..types import SRFMatrix
 from ..utils.integrate import np_integrate as _np_integrate
-from .registry import SRFRegistry, get_srf
 from .synthetic import estimate_fwhm
+
+if TYPE_CHECKING:
+    from .registry import SRFRegistry
 
 _KNOWN_SENSORS = {"emit", "enmap", "avirisng", "hytes"}
 _DEFAULT_SRF_DIR = Path("data") / "srf"
@@ -24,9 +27,11 @@ def _ensure_cache_dir() -> Path:
 
 
 def load_sensor_srf(
-    sensor_id: str | None, *, registry: SRFRegistry | None = None
+    sensor_id: str | None, *, registry: "SRFRegistry" | None = None
 ) -> SRFMatrix | None:
     """Best-effort retrieval of an SRF matrix for ``sensor_id``."""
+
+    from .registry import SRFRegistry, get_srf
 
     if not sensor_id:
         return None
@@ -55,11 +60,110 @@ def load_sensor_srf(
     return None
 
 
+def _coerce_srf_inputs(
+    wavelength_nm: np.ndarray, srfs: np.ndarray
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    wl = np.asarray(wavelength_nm, dtype=np.float64)
+    responses = np.asarray(srfs, dtype=np.float64)
+    if wl.ndim != 1:
+        raise ValueError("wavelength_nm must be one-dimensional")
+    if responses.ndim != 2:
+        raise ValueError("srfs must be two-dimensional with shape [bands, wavelengths]")
+    if responses.shape[1] != wl.shape[0]:
+        raise ValueError("srfs column count must match wavelength grid length")
+    return wl, responses
+
+
+def normalize_srf_rows(
+    wavelength_nm: np.ndarray, srfs: np.ndarray, *, atol: float = 1e-3
+) -> NDArray[np.float64]:
+    """Normalize SRF rows with trapezoidal integration over ``wavelength_nm``.
+
+    Parameters
+    ----------
+    wavelength_nm:
+        Shared wavelength grid for the SRF samples (shape ``[L_srf]``).
+    srfs:
+        Response matrix shaped ``[bands, L_srf]``.
+    atol:
+        Minimum absolute area allowed before normalization. Rows whose area falls
+        below this threshold are treated as invalid and raise a ``ValueError``.
+    """
+
+    wl, responses = _coerce_srf_inputs(wavelength_nm, srfs)
+    areas = _np_integrate(responses, wl, axis=1)
+    normalized = np.asarray(responses, dtype=np.float64).copy()
+
+    for idx, area in enumerate(areas):
+        if not np.isfinite(area):
+            raise ValueError(f"SRF row {idx} integrates to a non-finite area ({area})")
+        if abs(area) <= atol:
+            raise ValueError(f"SRF row {idx} has near-zero area ({area}); cannot normalize")
+        normalized[idx] = responses[idx] / area
+
+    return normalized
+
+
+def validate_srf(
+    wavelength_nm: np.ndarray,
+    srfs: np.ndarray,
+    *,
+    area_tol: float = 1e-3,
+    allow_negative_eps: float = 0.0,
+    min_area: float = 1e-6,
+) -> None:
+    """Validate SRF normalization, support, and sign constraints.
+
+    Raises a ``ValueError`` with a descriptive message when any band violates the
+    specified tolerance bounds.
+    """
+
+    wl, responses = _coerce_srf_inputs(wavelength_nm, srfs)
+    areas = _np_integrate(responses, wl, axis=1)
+
+    for idx, (row, area) in enumerate(zip(responses, areas, strict=True)):
+        if not np.isfinite(area):
+            raise ValueError(f"SRF row {idx} integrates to a non-finite area ({area})")
+        if area < min_area:
+            raise ValueError(f"SRF row {idx} area {area:.3e} is below minimum {min_area}")
+        if abs(area - 1.0) > area_tol:
+            raise ValueError(
+                f"SRF row {idx} area {area:.3f} deviates from 1.0 beyond tolerance {area_tol}"
+            )
+        min_val = float(np.min(row))
+        if min_val < -allow_negative_eps:
+            raise ValueError(
+                f"SRF row {idx} contains negative entries (min={min_val}) below allowed"
+                f" epsilon {allow_negative_eps}"
+            )
+
+
+def check_flat_spectrum_invariant(
+    wavelength_nm: np.ndarray,
+    srfs: np.ndarray,
+    *,
+    c: float = 1.0,
+    tol: float = 1e-3,
+) -> None:
+    """Assert that a flat spectrum remains flat after SRF convolution."""
+
+    wl, responses = _coerce_srf_inputs(wavelength_nm, srfs)
+    spectrum = np.full_like(wl, fill_value=float(c), dtype=np.float64)
+    areas = _np_integrate(responses, wl, axis=1)
+    if np.any(areas <= 0.0):
+        raise AssertionError("SRF areas must be positive before convolution check")
+    convolved = _np_integrate(responses * spectrum[None, :], wl, axis=1) / areas
+    if not np.allclose(convolved, c, atol=tol):
+        raise AssertionError(
+            "Flat spectrum invariant violated: convolved values differ from input constant"
+        )
+
+
 def default_band_widths(
     sensor_id: str | None,
     axis_nm: np.ndarray,
     *,
-    registry: SRFRegistry | None = None,
+    registry: "SRFRegistry" | None = None,
     srf: SRFMatrix | None = None,
 ) -> NDArray[np.float64]:
     """Return estimated FWHM values aligned with ``axis_nm``."""
@@ -165,5 +269,8 @@ def _band_spacing(axis_nm: np.ndarray) -> NDArray[np.float64]:
 __all__ = [
     "build_srf_band_embeddings",
     "default_band_widths",
+    "check_flat_spectrum_invariant",
     "load_sensor_srf",
+    "normalize_srf_rows",
+    "validate_srf",
 ]
