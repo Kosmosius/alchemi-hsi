@@ -1,9 +1,9 @@
 """Canonical hyperspectral cube representation and helpers.
 
 This module defines the :class:`Cube` type that holds spatial hyperspectral
-data. Individual pixel spectra can be extracted as :class:`alchemi.types.Sample`
-instances via :meth:`Cube.sample_at`, preserving wavelength grids, quantity
-kinds, and relevant sensor metadata.
+data. Individual pixel spectra can be extracted as
+:class:`alchemi.spectral.Sample` instances via :meth:`Cube.sample_at`,
+preserving wavelength grids, quantity kinds, and relevant sensor metadata.
 """
 
 from __future__ import annotations
@@ -16,18 +16,10 @@ from typing import Any
 
 import numpy as np
 
+from alchemi.spectral import BandMetadata, Sample, Spectrum
 from alchemi.tokens.band_tokenizer import AxisUnit, BandTokenizer, Tokens
 from alchemi.tokens.registry import get_default_tokenizer
-from alchemi.types import (
-    QuantityKind,
-    Sample,
-    SampleMeta,
-    Spectrum,
-    ValueUnits,
-    WavelengthGrid,
-    _normalize_quantity_kind,
-    _normalize_value_units,
-)
+from alchemi.types import QuantityKind, ValueUnits, WavelengthGrid, _normalize_quantity_kind, _normalize_value_units
 
 __all__ = ["Cube", "GeoInfo", "geo_from_attrs"]
 
@@ -240,13 +232,12 @@ class Cube:
         raise ValueError(msg)
 
     def sample_at(self, row: int, col: int) -> Sample:
-        """Extract a :class:`~alchemi.types.Sample` for the pixel at ``(row, col)``.
+        """Extract a canonical :class:`alchemi.spectral.Sample` for ``(row, col)``.
 
         The returned sample shares the cube's spectral axis (converted to
-        nanometres) and :class:`~alchemi.types.SpectrumKind`. Sensor identifiers
-        are sourced from :attr:`sensor`, ``srf_id``, or ``attrs['sensor']`` in
-        that order. Band masks (if present) are propagated into the sample
-        spectrum.
+        nanometres) and value kind. Sensor identifiers are sourced from
+        :attr:`sensor`, ``srf_id``, or ``attrs['sensor']`` in that order. Band
+        masks (if present) are propagated into band metadata and quality masks.
         """
 
         height, width, _ = self.shape
@@ -256,28 +247,34 @@ class Cube:
             )
 
         spectrum_kind = self.value_kind
-        wavelengths_nm = WavelengthGrid(self._axis_wavelength_nm().copy())
+        wavelengths_nm = self._axis_wavelength_nm().copy()
         values = np.asarray(self.data[row, col, :], dtype=np.float64)
-        units_src = self.units if self.units is not None else self.attrs.get("units", "")
-        units = _normalize_value_units(units_src, spectrum_kind)
-
-        sensor_id = self.sensor or self.srf_id or self.attrs.get("sensor")
-        if sensor_id is None:
-            sensor_id = "unknown"
+        sensor_id = self.sensor or self.srf_id or self.attrs.get("sensor") or "unknown"
 
         extras = {k: v for k, v in self.attrs.items() if k not in {"sensor"}}
-
-        spectrum = Spectrum(
-            wavelengths=wavelengths_nm,
-            values=values,
-            kind=spectrum_kind,
-            units=units,
-            mask=self.band_mask,
-            meta={"cube_attrs": extras} if extras else {},
+        valid_mask = (
+            np.asarray(self.band_mask, dtype=bool) if self.band_mask is not None else np.ones_like(wavelengths_nm, dtype=bool)
+        )
+        band_meta = BandMetadata(
+            center_nm=wavelengths_nm,
+            width_nm=np.full_like(wavelengths_nm, np.nan, dtype=float),
+            valid_mask=valid_mask,
+            srf_source=np.array(["unknown"] * wavelengths_nm.shape[0], dtype=object),
         )
 
-        meta = SampleMeta(sensor_id=str(sensor_id), row=int(row), col=int(col), extras=extras)
-        return Sample(spectrum=spectrum, meta=meta)
+        quality_masks: dict[str, np.ndarray] = {}
+        if self.band_mask is not None:
+            quality_masks["band_mask"] = valid_mask
+
+        spectrum = Spectrum(wavelength_nm=wavelengths_nm, values=values, kind=spectrum_kind.value)
+
+        return Sample(
+            spectrum=spectrum,
+            sensor_id=str(sensor_id),
+            band_meta=band_meta,
+            quality_masks=quality_masks,
+            ancillary={"row": int(row), "col": int(col), "cube_attrs": extras},
+        )
 
     @property
     def axes(self) -> tuple[str, ...]:

@@ -11,6 +11,7 @@ from typing import Any, Iterable
 import numpy as np
 from numpy.typing import NDArray
 
+from alchemi.spectral import Sample as CanonicalSample
 from alchemi.utils.integrate import np_integrate as _np_integrate
 
 logger = logging.getLogger(__name__)
@@ -497,12 +498,12 @@ class SRFMatrix:
 # TODO: Legacy SampleMeta retained for compatibility; prefer alchemi.spectral.Sample.
 @dataclass
 class SampleMeta:
-    """Metadata describing a per-pixel measurement.
+    """Lightweight metadata wrapper kept for backward compatibility.
 
-    ``Sample`` instances created from a :class:`~alchemi.data.cube.Cube` should
-    carry the originating sensor identifier (or SRF id), the source row/column
-    indices, and any additional cube attributes that are meaningful at the
-    pixel level.
+    The canonical representation is :class:`alchemi.spectral.sample.Sample`.
+    ``SampleMeta`` exists to bridge older adapters and cubes that still emit
+    row/col metadata in a separate structure. New code should construct
+    :class:`~alchemi.spectral.sample.Sample` instances directly.
     """
 
     sensor_id: str
@@ -518,25 +519,30 @@ class SampleMeta:
         data.update(self.extras)
         return data
 
+    def to_sample(self, spectrum: Any, **kwargs: Any) -> CanonicalSample:
+        ancillary = {"row": int(self.row), "col": int(self.col), **self.extras}
+        acquisition_time = self.datetime
+        return CanonicalSample(
+            spectrum=spectrum,
+            sensor_id=self.sensor_id,
+            acquisition_time=acquisition_time,
+            ancillary=ancillary,
+            **kwargs,
+        )
 
-# TODO: Legacy Sample retained for compatibility; prefer alchemi.spectral.Sample.
-@dataclass
-class Sample:
-    """A single measured spectrum (e.g. a pixel extracted from a cube).
+    @classmethod
+    def from_sample(cls, sample: CanonicalSample) -> "SampleMeta":
+        ancillary = dict(sample.ancillary)
+        row = ancillary.pop("row", ancillary.pop("y", 0))
+        col = ancillary.pop("col", ancillary.pop("x", 0))
+        return cls(
+            sensor_id=sample.sensor_id,
+            row=int(row) if row is not None else 0,
+            col=int(col) if col is not None else 0,
+            datetime=sample.acquisition_time,
+            extras=ancillary,
+        )
 
-    ``Sample`` is intentionally lightweight to accommodate lab-style spectra
-    that may not originate from an image. When a ``Sample`` is derived from a
-    :class:`~alchemi.data.cube.Cube` the spectrum's wavelength grid and
-    :class:`SpectrumKind` **must** match the cube's spectral axis and
-    value_kind. Spatial provenance (``row``/``col``) and sensor identifiers are
-    captured in :class:`SampleMeta`.
-    """
 
-    spectrum: Spectrum
-    meta: SampleMeta | dict[str, Any]
-
-    def __post_init__(self) -> None:
-        if isinstance(self.meta, SampleMeta):
-            self.meta = self.meta.as_dict()
-        else:
-            self.meta = dict(self.meta)
+# Backwards-compatible alias for the canonical Sample type.
+Sample = CanonicalSample

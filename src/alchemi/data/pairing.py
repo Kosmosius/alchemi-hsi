@@ -7,7 +7,7 @@ from joblib import Memory
 from numpy.typing import NDArray
 
 from ..srf import SRFRegistry, batch_convolve_lab_to_sensor
-from ..types import Sample, Spectrum, SpectrumKind, WavelengthGrid
+from ..types import Sample, SampleMeta, Spectrum, SpectrumKind, WavelengthGrid
 
 
 class LabSensorCache:
@@ -44,7 +44,7 @@ class PairBuilder:
         self, sensor: str, field: list[Sample], lab_samples: list[Sample], seed: int = 42
     ) -> tuple[list[Sample], list[Sample]]:
         assert len(lab_samples) >= len(field)
-        lab_nm = lab_samples[0].spectrum.wavelengths.nm
+        lab_nm = lab_samples[0].spectrum.wavelength_nm
         lab_vals = np.stack([s.spectrum.values for s in lab_samples], axis=0)
         conv = self.cache.convolve(lab_nm, lab_vals, sensor, self.reg)
         centers = self.reg.get(sensor).centers_nm
@@ -59,5 +59,6 @@ class PairBuilder:
                 None,
                 {"sensor": sensor, "source": "lab_convolved"},
             )
-            lab_conv.append(Sample(spec, lab_samples[i].meta))
+            meta = SampleMeta.from_sample(lab_samples[i])
+            lab_conv.append(meta.to_sample(spec))
         return field, lab_conv

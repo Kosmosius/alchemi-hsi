@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, is_dataclass
-
 import numpy as np
 
 from alchemi.data.cube import Cube
-from alchemi.types import Sample
+from alchemi.spectral import Sample
 
 __all__ = ["cube_from_sample"]
 
@@ -22,18 +20,9 @@ def cube_from_sample(sample: Sample) -> Cube:
     """
 
     values = np.asarray(sample.spectrum.values, dtype=np.float64).reshape(1, 1, -1)
-    axis = np.asarray(sample.spectrum.wavelengths.nm, dtype=np.float64)
+    axis = np.asarray(sample.spectrum.wavelength_nm, dtype=np.float64)
 
-    sensor = None
-    meta = sample.meta
-    if is_dataclass(meta):
-        attrs = asdict(meta)
-    elif isinstance(meta, dict):
-        attrs = dict(meta)
-    else:
-        attrs = dict(meta)
-    if "sensor" in attrs:
-        sensor = str(attrs["sensor"])
+    attrs = {"sensor": sample.sensor_id, **sample.ancillary}
 
     cube = Cube(
         data=values,
@@ -42,7 +31,6 @@ def cube_from_sample(sample: Sample) -> Cube:
         value_kind=sample.spectrum.kind,
         attrs=attrs,
     )
-    if sensor is not None:
-        cube.sensor = sensor
-    cube.units = sample.spectrum.units
+    cube.sensor = sample.sensor_id
+    cube.units = None
     return cube

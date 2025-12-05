@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from typing import Any, Callable, Iterable, List
 
@@ -9,10 +7,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from alchemi.spectral import Sample as SpectralSample
-from alchemi.spectral import Spectrum
-
-from ..types import Sample
+from alchemi.spectral import Sample
 from .adapters import iter_aviris_ng_pixels, iter_emit_pixels, iter_enmap_pixels, iter_hytes_pixels
 from .catalog import SceneCatalog
 from .tiling import iter_tiles
@@ -30,20 +25,20 @@ class SpectrumDataset(Dataset[dict[str, Any]]):
 
     def __getitem__(self, i: int) -> dict[str, Any]:
         s = self.samples[i]
-        w = torch.from_numpy(s.spectrum.wavelengths.nm.astype("float32"))
+        w = torch.from_numpy(s.spectrum.wavelength_nm.astype("float32"))
         v = torch.from_numpy(s.spectrum.values.astype("float32"))
-        mask_source = (
-            s.spectrum.mask
-            if s.spectrum.mask is not None
-            else np.ones_like(s.spectrum.values, dtype=bool)
-        )
-        m = torch.from_numpy(mask_source.astype("bool"))
+        band_mask = None
+        if s.band_meta is not None:
+            band_mask = s.band_meta.valid_mask
+        if band_mask is None:
+            band_mask = np.ones_like(s.spectrum.values, dtype=bool)
+        m = torch.from_numpy(band_mask.astype("bool"))
         return {
             "wavelengths": w,
             "values": v,
             "mask": m,
-            "kind": s.spectrum.kind.value,
-            "meta": s.meta,
+            "kind": s.spectrum.kind,
+            "meta": {"sensor_id": s.sensor_id, **s.ancillary},
         }
 
 
@@ -62,20 +57,20 @@ class PairingDataset(Dataset[dict[str, dict[str, Any]]]):
 
     def __getitem__(self, i: int) -> dict[str, dict[str, Any]]:
         def pack(s: Sample) -> dict[str, Any]:
-            w = torch.from_numpy(s.spectrum.wavelengths.nm.astype("float32"))
+            w = torch.from_numpy(s.spectrum.wavelength_nm.astype("float32"))
             v = torch.from_numpy(s.spectrum.values.astype("float32"))
-            mask_source = (
-                s.spectrum.mask
-                if s.spectrum.mask is not None
-                else np.ones_like(s.spectrum.values, dtype=bool)
-            )
-            m = torch.from_numpy(mask_source.astype("bool"))
+            band_mask = None
+            if s.band_meta is not None:
+                band_mask = s.band_meta.valid_mask
+            if band_mask is None:
+                band_mask = np.ones_like(s.spectrum.values, dtype=bool)
+            m = torch.from_numpy(band_mask.astype("bool"))
             return {
                 "wavelengths": w,
                 "values": v,
                 "mask": m,
-                "kind": s.spectrum.kind.value,
-                "meta": s.meta,
+                "kind": s.spectrum.kind,
+                "meta": {"sensor_id": s.sensor_id, **s.ancillary},
             }
 
         return {"field": pack(self.field[i]), "lab": pack(self.lab[i])}
@@ -149,7 +144,7 @@ class RealMAEDataset(Dataset[dict[str, torch.Tensor]]):
 # Catalog-backed datasets
 
 
-def _pack_spectral_sample(sample: SpectralSample, transform: Callable[[torch.Tensor], torch.Tensor] | None) -> dict[str, Any]:
+def _pack_spectral_sample(sample: Sample, transform: Callable[[torch.Tensor], torch.Tensor] | None) -> dict[str, Any]:
     values = torch.from_numpy(sample.spectrum.values.astype("float32"))
     if transform is not None:
         values = transform(values)
