@@ -18,9 +18,11 @@ __all__ = [
     "boxcar_resample",
     "convolve_to_bands",
     "gaussian_resample",
+    "interpolate_values",
+    "resample_by_interpolation",
+    "resample_with_srf",
     "project_to_sensor",
     "resample_values_with_srf",
-    "resample_with_srf",
     "resample_to_sensor",
 ]
 
@@ -253,6 +255,68 @@ def gaussian_resample(
     return np.asarray(result, dtype=np.float64)
 
 
+def interpolate_values(
+    values: np.ndarray,
+    wavelengths_nm: np.ndarray,
+    target_centers_nm: np.ndarray,
+    *,
+    mode: Literal["nearest", "linear", "spline"] = "linear",
+) -> NDArray[np.float64]:
+    """Interpolate spectral values onto target centers.
+
+    Parameters
+    ----------
+    values:
+        Spectral values shaped ``[L]`` or ``[N, L]`` where ``L`` is the number
+        of wavelengths.
+    wavelengths_nm:
+        Source wavelength grid in **nanometres**, strictly increasing and
+        matching the last dimension of ``values``.
+    target_centers_nm:
+        Target wavelength coordinates (nm) to sample at. This function performs
+        *center-based interpolation* only; no bandpass integration is applied.
+    mode:
+        Interpolation strategy: ``"nearest"``, ``"linear"``, or ``"spline"``.
+        ``"spline"`` uses SciPy's :class:`~scipy.interpolate.CubicSpline` when
+        available and raises ``RuntimeError`` otherwise.
+    """
+
+    wl = _validate_wavelengths(np.asarray(wavelengths_nm, dtype=np.float64))
+    spectra, squeezed = _as_2d(np.asarray(values, dtype=np.float64), wl.shape[0])
+
+    centers = np.asarray(target_centers_nm, dtype=np.float64)
+    if centers.ndim != 1:
+        raise ValueError("Target band centers must be 1-D")
+
+    mode = str(mode).lower()
+    if mode not in {"nearest", "linear", "spline"}:
+        raise ValueError("mode must be one of 'nearest', 'linear', or 'spline'")
+
+    if mode == "nearest":
+        right_idx = np.searchsorted(wl, centers, side="left")
+        left_idx = np.clip(right_idx - 1, 0, wl.shape[0] - 1)
+        right_idx = np.clip(right_idx, 0, wl.shape[0] - 1)
+        choose_right = np.abs(wl[right_idx] - centers) <= np.abs(wl[left_idx] - centers)
+        indices = np.where(choose_right, right_idx, left_idx)
+        out = spectra[:, indices]
+    elif mode == "linear":
+        out = np.vstack([np.interp(centers, wl, row) for row in spectra])
+    else:
+        try:
+            from scipy.interpolate import CubicSpline
+        except Exception as exc:  # pragma: no cover - exercised via tests
+            msg = (
+                "Spline interpolation requires SciPy; install scipy or choose "
+                "mode='linear'"
+            )
+            raise RuntimeError(msg) from exc
+
+        out = np.vstack([CubicSpline(wl, row, extrapolate=True)(centers) for row in spectra])
+
+    result = out[0] if squeezed else out
+    return np.asarray(result, dtype=np.float64)
+
+
 def project_to_sensor(
     wl_nm: np.ndarray,
     vals: np.ndarray,
@@ -295,3 +359,53 @@ def project_to_sensor(
         return boxcar_resample(wl_nm, vals, centers, width_nm)
 
     raise ValueError(f"Unsupported fallback method '{fallback}'")
+
+
+def resample_with_srf(
+    wl_nm: np.ndarray,
+    vals: np.ndarray,
+    srf: SRFMatrix,
+) -> NDArray[np.float64]:
+    """Explicit SRF-based resampling wrapper.
+
+    This convenience function keeps SRF-based projection distinct from the
+    interpolation-only helpers, avoiding silent fallbacks when bandpass effects
+    matter.
+    """
+
+    return convolve_to_bands(wl_nm, vals, srf)
+
+
+def resample_by_interpolation(
+    spectrum: Spectrum,
+    target_centers_nm: np.ndarray,
+    *,
+    mode: Literal["nearest", "linear", "spline"] = "linear",
+) -> Spectrum:
+    """Resample a :class:`~alchemi.spectral.Spectrum` by band-center interpolation.
+
+    This performs *center sampling* only; no SRF/bandpass convolution is
+    applied. Callers must choose this explicitly when SRFs are unavailable or
+    intentionally ignored.
+    """
+
+    new_values = interpolate_values(
+        spectrum.values,
+        spectrum.wavelengths.nm,
+        target_centers_nm,
+        mode=mode,
+    )
+
+    target_grid = WavelengthGrid.from_any(target_centers_nm, units="nm")
+    meta = dict(spectrum.meta)
+    meta["resample_mode"] = "center_interp"
+    meta["interp_mode"] = mode
+
+    return Spectrum(
+        wavelengths=target_grid,
+        values=new_values,
+        kind=spectrum.kind,
+        units=spectrum.units,
+        mask=None,
+        meta=meta,
+    )
