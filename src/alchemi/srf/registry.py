@@ -3,7 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable
+from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -20,6 +23,70 @@ _DEFAULT_MAKO_FWHM = 44.0
 _DEFAULT_EMIT_GRID = np.linspace(380.0, 2500.0, 2000, dtype=np.float64)
 
 
+class SRFProvenance(Enum):
+    MEASURED = "measured"
+    GAUSSIAN = "gaussian"
+    SYNTHETIC = "synthetic"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class SensorSRF:
+    sensor_id: str
+    wavelength_grid_nm: np.ndarray
+    srfs: np.ndarray
+    band_centers_nm: np.ndarray
+    band_widths_nm: np.ndarray
+    provenance: SRFProvenance = SRFProvenance.UNKNOWN
+    meta: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        wl = np.asarray(self.wavelength_grid_nm, dtype=np.float64)
+        srfs = np.asarray(self.srfs, dtype=np.float64)
+        centers = np.asarray(self.band_centers_nm, dtype=np.float64)
+        widths = np.asarray(self.band_widths_nm, dtype=np.float64)
+
+        if wl.ndim != 1:
+            msg = "wavelength_grid_nm must be 1-D"
+            raise ValueError(msg)
+        if srfs.ndim != 2:
+            msg = "srfs must be a 2-D array"
+            raise ValueError(msg)
+        if srfs.shape[1] != wl.shape[0]:
+            msg = "SRF matrix column count must match wavelength grid length"
+            raise ValueError(msg)
+        if centers.ndim != 1 or widths.ndim != 1:
+            msg = "band centers and widths must be 1-D"
+            raise ValueError(msg)
+        if centers.shape[0] != srfs.shape[0] or widths.shape[0] != srfs.shape[0]:
+            msg = "Band metadata must align with SRF rows"
+            raise ValueError(msg)
+        if np.any(widths <= 0):
+            msg = "Band widths must be positive"
+            raise ValueError(msg)
+
+        self.wavelength_grid_nm = wl
+        self.srfs = srfs
+        self.band_centers_nm = centers
+        self.band_widths_nm = widths
+
+    @property
+    def band_count(self) -> int:
+        return int(self.band_centers_nm.shape[0])
+
+    def as_matrix(self) -> SRFMatrix:
+        bands_nm = [self.wavelength_grid_nm.copy() for _ in range(self.band_count)]
+        bands_resp = [row.astype(np.float64, copy=True) for row in self.srfs]
+        return SRFMatrix(
+            sensor=self.sensor_id,
+            centers_nm=self.band_centers_nm.copy(),
+            bands_nm=bands_nm,
+            bands_resp=bands_resp,
+            version=self.meta.get("version", "v1"),
+            cache_key=self.meta.get("cache_key"),
+        )
+
+
 class SRFRegistry:
     def __init__(self, root: str | Path = "data/srf"):
         self.root = Path(root)
@@ -27,6 +94,11 @@ class SRFRegistry:
 
     def _hash(self, payload: str) -> str:
         return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
+
+    def register(self, sensor: SensorSRF | SRFMatrix) -> None:
+        matrix = sensor.as_matrix() if isinstance(sensor, SensorSRF) else sensor
+        matrix = matrix.normalize_trapz()
+        self._cache[matrix.sensor.lower()] = matrix
 
     def get(self, sensor: str) -> SRFMatrix:
         k = sensor.lower()
@@ -98,6 +170,14 @@ _BUILTIN_BUILDERS: dict[str, Callable[..., tuple[SRFMatrix, np.ndarray]]] = {
 }
 
 
+GLOBAL_SRF_REGISTRY = SRFRegistry()
+
+
+def register_virtual_sensor(sensor_srf: SensorSRF, *, registry: SRFRegistry | None = None) -> None:
+    target = registry or GLOBAL_SRF_REGISTRY
+    target.register(sensor_srf)
+
+
 def get_srf(
     sensor: str,
     *,
@@ -116,4 +196,11 @@ def get_srf(
     return builder(version=version, wavelengths_nm=wavelengths_nm, fwhm_nm=fwhm_nm)
 
 
-__all__ = ["SRFRegistry", "get_srf"]
+__all__ = [
+    "GLOBAL_SRF_REGISTRY",
+    "SensorSRF",
+    "SRFProvenance",
+    "SRFRegistry",
+    "get_srf",
+    "register_virtual_sensor",
+]

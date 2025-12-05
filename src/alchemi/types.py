@@ -6,14 +6,16 @@ import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 import numpy as np
 from numpy.typing import NDArray
 
-from alchemi.spectral import Sample as CanonicalSample
 from alchemi.wavelengths import check_monotonic, ensure_nm
 from alchemi.utils.integrate import np_integrate as _np_integrate
+
+if TYPE_CHECKING:
+    from alchemi.spectral import Sample as CanonicalSample
 
 logger = logging.getLogger(__name__)
 
@@ -731,7 +733,9 @@ class SampleMeta:
         data.update(self.extras)
         return data
 
-    def to_sample(self, spectrum: Any, **kwargs: Any) -> CanonicalSample:
+    def to_sample(self, spectrum: Any, **kwargs: Any) -> Any:
+        from alchemi.spectral import Sample as CanonicalSample
+
         ancillary = {"row": int(self.row), "col": int(self.col), **self.extras}
         acquisition_time = self.datetime
         return CanonicalSample(
@@ -743,7 +747,9 @@ class SampleMeta:
         )
 
     @classmethod
-    def from_sample(cls, sample: CanonicalSample) -> "SampleMeta":
+    def from_sample(cls, sample: Any) -> "SampleMeta":
+        from alchemi.spectral import Sample as CanonicalSample
+
         ancillary = dict(sample.ancillary)
         row = ancillary.pop("row", ancillary.pop("y", 0))
         col = ancillary.pop("col", ancillary.pop("x", 0))
@@ -757,4 +763,4 @@ class SampleMeta:
 
 
 # Backwards-compatible alias for the canonical Sample type.
-Sample = CanonicalSample
+from alchemi.spectral import Sample as Sample  # noqa: E402
