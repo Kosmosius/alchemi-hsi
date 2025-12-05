@@ -26,22 +26,30 @@ class QuantityKind(str, Enum):
 
 class RadianceUnits(str, Enum):
     W_M2_SR_NM = "W·m⁻²·sr⁻¹·nm⁻¹"
+    W_M2_SR_UM = "W·m⁻²·sr⁻¹·µm⁻¹"
 
 
 class ReflectanceUnits(str, Enum):
     FRACTION = "fraction"
+    PERCENT = "percent"
 
 
 class TemperatureUnits(str, Enum):
     KELVIN = "K"
+    CELSIUS = "C"
+    FAHRENHEIT = "F"
 
 
 class ValueUnits(str, Enum):
     """Canonical value units across supported quantity kinds."""
 
     RADIANCE_W_M2_SR_NM = RadianceUnits.W_M2_SR_NM.value
+    RADIANCE_W_M2_SR_UM = RadianceUnits.W_M2_SR_UM.value
     REFLECTANCE_FRACTION = ReflectanceUnits.FRACTION.value
+    REFLECTANCE_PERCENT = ReflectanceUnits.PERCENT.value
     TEMPERATURE_K = TemperatureUnits.KELVIN.value
+    TEMPERATURE_C = TemperatureUnits.CELSIUS.value
+    TEMPERATURE_F = TemperatureUnits.FAHRENHEIT.value
 
 
 # Backwards-compatible alias; prefer QuantityKind going forward.
@@ -83,17 +91,36 @@ _UNIT_ALIASES: dict[ValueUnits, Iterable[str]] = {
         "",
         "1",
     ),
+    ValueUnits.REFLECTANCE_PERCENT: (
+        ReflectanceUnits.PERCENT.value,
+        "%",
+        "percent",
+    ),
     ValueUnits.TEMPERATURE_K: (
         TemperatureUnits.KELVIN.value,
         "kelvin",
         "k",
     ),
+    ValueUnits.TEMPERATURE_C: (
+        TemperatureUnits.CELSIUS.value,
+        "celsius",
+        "c",
+    ),
+    ValueUnits.TEMPERATURE_F: (
+        TemperatureUnits.FAHRENHEIT.value,
+        "fahrenheit",
+        "f",
+    ),
 }
 
 _EXPECTED_UNITS: dict[QuantityKind, set[ValueUnits]] = {
-    QuantityKind.RADIANCE: {ValueUnits.RADIANCE_W_M2_SR_NM},
-    QuantityKind.REFLECTANCE: {ValueUnits.REFLECTANCE_FRACTION},
-    QuantityKind.BRIGHTNESS_T: {ValueUnits.TEMPERATURE_K},
+    QuantityKind.RADIANCE: {ValueUnits.RADIANCE_W_M2_SR_NM, ValueUnits.RADIANCE_W_M2_SR_UM},
+    QuantityKind.REFLECTANCE: {ValueUnits.REFLECTANCE_FRACTION, ValueUnits.REFLECTANCE_PERCENT},
+    QuantityKind.BRIGHTNESS_T: {
+        ValueUnits.TEMPERATURE_K,
+        ValueUnits.TEMPERATURE_C,
+        ValueUnits.TEMPERATURE_F,
+    },
 }
 
 
@@ -295,7 +322,7 @@ class Spectrum:
         self.meta = {} if meta is None else meta
 
         self.__post_init__()
-
+    
     def __post_init__(self) -> None:
         if not isinstance(self.wavelengths, WavelengthGrid):
             self.wavelengths = WavelengthGrid.from_any(self.wavelengths)
@@ -315,12 +342,34 @@ class Spectrum:
             self.mask = m
 
         self.kind = _normalize_quantity_kind(self.kind)
-        if self.units is None:
+
+        # Normalize units / values using shared utilities, with a
+        # backward-compatible default + legacy string/enum handling.
+        from alchemi.physics import units as qty_units
+
+        # Legacy behaviour: if units are omitted, pick the first expected unit
+        # for this quantity kind.
+        units = self.units
+        if units is None:
             expected = _EXPECTED_UNITS.get(self.kind)
             if not expected:
                 raise ValueError("Units must be provided for this spectrum kind")
-            self.units = next(iter(expected))
-        self.units = _normalize_value_units(self.units, self.kind)
+            units = next(iter(expected))
+
+        # Prefer the shared units normaliser, but fall back to the local
+        # alias-handling implementation for legacy spellings.
+        try:
+            normalized_units = qty_units.normalize_units(units, self.kind)
+        except Exception:
+            normalized_units = _normalize_value_units(units, self.kind)
+
+        # Convert values into canonical units for this quantity kind.
+        values, canonical_units = qty_units.normalize_values_to_canonical(
+            v, normalized_units, self.kind
+        )
+        self.values = np.asarray(values, dtype=np.float64)
+        self.units = canonical_units
+
         self.meta = dict(self.meta)
 
         self._validate_values()
