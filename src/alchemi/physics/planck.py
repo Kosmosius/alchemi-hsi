@@ -1,23 +1,38 @@
-"""Planck-law utilities for spectral radiance and brightness temperature."""
+"""Planck-law utilities for spectral radiance and brightness temperature.
+
+This module implements wavelength-form Planck conversions, their inverses, and
+helpers for band-averaged brightness temperatures consistent with the ALCHEMI
+design doc (Section 5.1). Functions operate on canonical
+``alchemi.spectral.Spectrum``/``Sample`` payloads and dense SRF matrices without
+relying on SciPy.
+"""
 
 from __future__ import annotations
 
 import numpy as np
 
+from alchemi.spectral.sample import Sample
+from alchemi.spectral.srf import SRFMatrix
 from alchemi.types import (
     QuantityKind,
     RadianceUnits,
     Spectrum,
-    SRFMatrix,
     TemperatureUnits,
     WavelengthGrid,
 )
-from alchemi.utils.integrate import np_integrate
 
 __all__ = [
     "K_B",
     "C",
     "H",
+    "planck_radiance_wavelength",
+    "inverse_planck_central_lambda",
+    "band_averaged_radiance",
+    "invert_band_averaged_radiance_to_bt",
+    "radiance_spectrum_to_bt",
+    "bt_spectrum_to_radiance",
+    "radiance_sample_to_bt_sample",
+    "bt_sample_to_radiance_sample",
     "bt_K_to_radiance",
     "bt_to_radiance",
     "radiance_to_bt",
@@ -46,11 +61,139 @@ _MAX_T_K: float = 1e4
 _MAX_RATIO: float = 1e300
 _MIN_LOG_OFFSET: float = 1e-12
 
+# Temperature brackets used for numerical inversion (Kelvin).
+_DEFAULT_T_MIN: float = 150.0
+_DEFAULT_T_MAX: float = 400.0
+_ABS_TOL: float = 1e-6
+_REL_TOL: float = 1e-8
+_MAX_ITER: int = 100
+
 
 def _as_float64_arrays(*arrays: np.ndarray) -> tuple[np.ndarray, ...]:
     """Cast inputs to ``np.float64`` ndarrays without unnecessary copies."""
 
     return tuple(np.asarray(arr, dtype=np.float64) for arr in arrays)
+
+
+# ---------------------------------------------------------------------------
+# Low-level Planck helpers
+# ---------------------------------------------------------------------------
+
+def planck_radiance_wavelength(
+    wavelength_nm: np.ndarray | float,
+    temperature_K: np.ndarray | float,
+) -> np.ndarray:
+    """Evaluate Planck's law in wavelength form.
+
+    Parameters
+    ----------
+    wavelength_nm:
+        Wavelength(s) in nanometres. Must be strictly positive.
+    temperature_K:
+        Blackbody temperature(s) in Kelvin. Must be strictly positive.
+
+    Returns
+    -------
+    np.ndarray
+        Spectral radiance in W·m⁻²·sr⁻¹·nm⁻¹ with shape broadcast from the
+        inputs.
+    """
+
+    wl_arr, temp_arr = _as_float64_arrays(wavelength_nm, temperature_K)
+    wl_b, temp_b = np.broadcast_arrays(wl_arr, temp_arr)
+
+    if np.any(wl_b <= 0):
+        raise ValueError("Wavelengths must be strictly positive")
+    if np.any(temp_b <= 0):
+        raise ValueError("Temperatures must be strictly positive")
+
+    lam_m = wl_b * _NM_TO_M
+    prefactor = (2.0 * H * C**2) / (lam_m**5)
+    exponent = (H * C) / (lam_m * K_B * temp_b)
+    exponent = np.clip(exponent, 0.0, 700.0)
+
+    with np.errstate(over="ignore", under="ignore", divide="ignore", invalid="ignore"):
+        expm1_term = np.expm1(exponent)
+
+    tiny_exponent = exponent < 1e-6
+    if np.any(tiny_exponent):
+        expm1_term = np.where(
+            tiny_exponent,
+            exponent + 0.5 * exponent**2,
+            expm1_term,
+        )
+
+    radiance_m = prefactor / expm1_term
+    return radiance_m * _NM_TO_M
+
+
+def _binary_search_temperature(
+    target_radiance: float,
+    wavelength_nm: float,
+    *,
+    evaluator,
+    t_min: float = _DEFAULT_T_MIN,
+    t_max: float = _DEFAULT_T_MAX,
+) -> float:
+    """Invert a monotonic radiance evaluator using bracketed binary search."""
+
+    if target_radiance <= 0:
+        raise ValueError("Radiance must be positive for inversion")
+    if wavelength_nm <= 0:
+        raise ValueError("Wavelengths must be strictly positive")
+
+    low = max(_MIN_T_K, float(t_min))
+    high = max(low * 1.01, float(t_max))
+
+    rad_low = evaluator(low)
+    rad_high = evaluator(high)
+
+    # Expand the bracket upwards if necessary.
+    while target_radiance > rad_high and high < _MAX_T_K:
+        low, rad_low = high, rad_high
+        high = min(high * 1.5, _MAX_T_K)
+        rad_high = evaluator(high)
+
+    # Expand downward if target falls below the initial lower bound.
+    while target_radiance < rad_low and low > 1.0:
+        high, rad_high = low, rad_low
+        low = max(1.0, low * 0.5)
+        rad_low = evaluator(low)
+
+    for _ in range(_MAX_ITER):
+        mid = 0.5 * (low + high)
+        rad_mid = evaluator(mid)
+
+        if rad_mid < target_radiance:
+            low = mid
+        else:
+            high = mid
+
+        if abs(high - low) <= max(_ABS_TOL, _REL_TOL * high):
+            break
+
+    return 0.5 * (low + high)
+
+
+def inverse_planck_central_lambda(
+    radiance_W_m2_sr_nm: np.ndarray | float,
+    wavelength_nm: np.ndarray | float,
+    *,
+    t_min: float = _DEFAULT_T_MIN,
+    t_max: float = _DEFAULT_T_MAX,
+) -> np.ndarray:
+    """Numerically invert Planck's law at fixed wavelength(s)."""
+
+    L_arr, wl_arr = _as_float64_arrays(radiance_W_m2_sr_nm, wavelength_nm)
+    L_b, wl_b = np.broadcast_arrays(L_arr, wl_arr)
+
+    out = np.empty_like(L_b, dtype=np.float64)
+    it = np.nditer([L_b, wl_b, out], flags=["multi_index"], op_flags=[["readonly"], ["readonly"], ["writeonly"]])
+    for L_val, wl_val, out_ref in it:
+        evaluator = lambda temp: float(planck_radiance_wavelength(float(wl_val), temp))
+        out_ref[...] = _binary_search_temperature(float(L_val), float(wl_val), evaluator=evaluator, t_min=t_min, t_max=t_max)
+
+    return out
 
 
 # ----------------------------------------------------------------------------
@@ -140,33 +283,7 @@ def bt_K_to_radiance(
     The returned radiance is expressed in W·m^-2·sr^-1·nm^-1.
     """
 
-    Tk_arr, wl_arr = _as_float64_arrays(Tk, wl_nm)
-    Tk_broadcast, wl_broadcast = np.broadcast_arrays(Tk_arr, wl_arr)
-
-    if np.any(wl_broadcast <= 0):
-        raise ValueError("Wavelengths must be strictly positive.")
-
-    Tk_safe = np.clip(Tk_broadcast, _MIN_T_K, _MAX_T_K)
-    lam_m = wl_broadcast * _NM_TO_M
-    prefactor = (2.0 * H * C**2) / (lam_m**5)
-    exponent = (H * C) / (lam_m * K_B * Tk_safe)
-    exponent = np.clip(exponent, 0.0, 700.0)
-
-    with np.errstate(over="ignore", under="ignore", divide="ignore", invalid="ignore"):
-        expm1_term = np.expm1(exponent)
-
-    tiny_exponent = exponent < 1e-6
-    if np.any(tiny_exponent):
-        # For very small exponents, use series expansion of expm1(x) ≈ x + x^2/2.
-        expm1_term = np.where(
-            tiny_exponent,
-            exponent + 0.5 * exponent**2,
-            expm1_term,
-        )
-
-    radiance_m = prefactor / expm1_term
-
-    radiance_nm = radiance_m * _NM_TO_M
+    radiance_nm = planck_radiance_wavelength(wl_nm, Tk)
 
     if out is not None:
         if out.shape != radiance_nm.shape:
@@ -177,106 +294,269 @@ def bt_K_to_radiance(
     return radiance_nm
 
 
-def _band_averaged(values: np.ndarray, wavelengths: np.ndarray, srf: SRFMatrix) -> tuple[np.ndarray, np.ndarray]:
-    """Convolve spectral values to sensor bands using an SRF matrix.
+def band_averaged_radiance(
+    temperature_K: float | np.ndarray,
+    srf_matrix: np.ndarray,
+    srf_wavelength_nm: np.ndarray,
+) -> np.ndarray:
+    """Compute band-averaged radiance for each SRF band."""
 
-    Returns
-    -------
-    tuple[np.ndarray, np.ndarray]
-        Band-averaged values and the SRF centers.
-    """
+    temps = np.asarray(temperature_K, dtype=np.float64)
+    srfs = np.asarray(srf_matrix, dtype=np.float64)
+    wl = np.asarray(srf_wavelength_nm, dtype=np.float64)
 
-    band_values: list[float] = []
-    for nm_band, resp in zip(srf.bands_nm, srf.bands_resp, strict=True):
-        nm_arr = np.asarray(nm_band, dtype=np.float64)
-        resp_arr = np.asarray(resp, dtype=np.float64)
-        interp_vals = np.interp(nm_arr, wavelengths, values)
-        area = float(np_integrate(resp_arr, nm_arr))
-        if not np.isfinite(area) or area <= 0.0:
-            raise ValueError("SRF band responses must integrate to a positive value")
-        numerator = float(np_integrate(interp_vals * resp_arr, nm_arr))
-        band_values.append(numerator / area)
+    if wl.ndim != 1:
+        raise ValueError("SRF wavelength grid must be 1-D")
+    if srfs.ndim != 2:
+        raise ValueError("SRF matrix must be 2-D (bands x wavelengths)")
+    if srfs.shape[1] != wl.shape[0]:
+        raise ValueError("SRF matrix column count must match wavelength grid length")
+    if np.any(wl <= 0):
+        raise ValueError("SRF wavelengths must be strictly positive")
 
-    return np.asarray(band_values, dtype=np.float64), np.asarray(srf.centers_nm, dtype=np.float64)
+    temps_arr = np.asarray(temps, dtype=np.float64)
+
+    if temps_arr.ndim == 1 and temps_arr.shape[0] == srfs.shape[0]:
+        return np.asarray(
+            [band_averaged_radiance(temp, srfs[i : i + 1], wl)[0] for i, temp in enumerate(temps_arr)],
+            dtype=np.float64,
+        )
+
+    temps_b = temps_arr[..., None]
+    radiance = planck_radiance_wavelength(wl, temps_b)
+
+    numerator = np.trapezoid(srfs * radiance[..., None, :], x=wl, axis=-1)
+    denominator = np.trapezoid(srfs, x=wl, axis=-1)
+
+    if np.any(~np.isfinite(denominator)) or np.any(denominator <= 0):
+        raise ValueError("SRF rows must integrate to a positive finite area")
+
+    averaged = numerator / denominator
+    return averaged
 
 
-def _srf_centers(srf: SRFMatrix) -> np.ndarray:
-    centers = np.asarray(srf.centers_nm, dtype=np.float64)
-    if centers.ndim != 1:
-        raise ValueError("SRF centers must be 1-D")
-    if centers.size == 0:
-        raise ValueError("SRF must contain at least one band")
-    return centers
+def invert_band_averaged_radiance_to_bt(
+    band_radiance_W_m2_sr_nm: np.ndarray,
+    srf_matrix: np.ndarray,
+    srf_wavelength_nm: np.ndarray,
+    *,
+    t_min: float = _DEFAULT_T_MIN,
+    t_max: float = _DEFAULT_T_MAX,
+) -> np.ndarray:
+    """Invert band-averaged radiances to brightness temperatures."""
+
+    band_radiance = np.asarray(band_radiance_W_m2_sr_nm, dtype=np.float64)
+    srfs = np.asarray(srf_matrix, dtype=np.float64)
+    wl = np.asarray(srf_wavelength_nm, dtype=np.float64)
+
+    if wl.ndim != 1:
+        raise ValueError("SRF wavelength grid must be 1-D")
+    if srfs.ndim != 2:
+        raise ValueError("SRF matrix must be 2-D (bands x wavelengths)")
+    if srfs.shape[1] != wl.shape[0]:
+        raise ValueError("SRF matrix column count must match wavelength grid length")
+    if np.any(wl <= 0):
+        raise ValueError("SRF wavelengths must be strictly positive")
+
+    if band_radiance.ndim != 1:
+        raise ValueError("Band radiance must be 1-D over bands")
+    if band_radiance.shape[0] != srfs.shape[0]:
+        raise ValueError("Band radiance length must match SRF band count")
+
+    out = np.empty_like(band_radiance, dtype=np.float64)
+
+    for idx, L_val in enumerate(band_radiance):
+        row = srfs[idx : idx + 1, :]
+        lam_eff = float(_effective_wavelengths(row, wl)[0])
+
+        def evaluator(temp: float) -> float:
+            return float(band_averaged_radiance(temp, row, wl)[0])
+
+        out[idx] = _binary_search_temperature(L_val, lam_eff, evaluator=evaluator, t_min=t_min, t_max=t_max)
+
+    return out
 
 
-# ---------------------------------------------------------------------------
-# Spectrum-aware wrappers
-# ---------------------------------------------------------------------------
+def _resolve_srf_inputs(
+    srf_matrix: np.ndarray | SRFMatrix | None, srf_wavelength_nm: np.ndarray | None
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    if srf_matrix is None:
+        return None, srf_wavelength_nm
+    if isinstance(srf_matrix, SRFMatrix):
+        return srf_matrix.matrix, srf_matrix.wavelength_nm
+    return np.asarray(srf_matrix, dtype=np.float64), srf_wavelength_nm
 
-def radiance_to_bt(spectrum: Spectrum, srf: SRFMatrix | None = None) -> Spectrum:
-    """Convert a radiance :class:`~alchemi.types.Spectrum` to brightness temperature.
 
-    Parameters
-    ----------
-    spectrum:
-        Radiance spectrum with wavelengths in nanometres and radiance units
-        of W·m⁻²·sr⁻¹·nm⁻¹.
-    srf:
-        Optional spectral response matrix. When provided, radiance is first
-        band-averaged using the SRF rows before converting each band centre to
-        brightness temperature.
-    """
+def _effective_wavelengths(srfs: np.ndarray, wl: np.ndarray) -> np.ndarray:
+    numerator = np.trapezoid(srfs * wl[None, :], x=wl, axis=1)
+    denominator = np.trapezoid(srfs, x=wl, axis=1)
+    if np.any(~np.isfinite(denominator)) or np.any(denominator <= 0):
+        raise ValueError("SRF rows must integrate to a positive finite area")
+    return numerator / denominator
+
+
+def radiance_spectrum_to_bt(
+    spectrum: Spectrum,
+    *,
+    srf_matrix: np.ndarray | SRFMatrix | None = None,
+    srf_wavelength_nm: np.ndarray | None = None,
+    method: str = "central_lambda",
+) -> Spectrum:
+    """Convert a radiance spectrum to brightness temperature."""
 
     if spectrum.kind != QuantityKind.RADIANCE:
         raise ValueError("Input spectrum must represent radiance")
 
-    wavelengths = np.asarray(spectrum.wavelengths.nm, dtype=np.float64)
+    srfs, srf_wl = _resolve_srf_inputs(srf_matrix, srf_wavelength_nm)
+
     radiance_vals = np.asarray(spectrum.values, dtype=np.float64)
+    wavelengths = np.asarray(spectrum.wavelengths.nm, dtype=np.float64)
 
-    if srf is not None:
-        radiance_vals, wavelengths = _band_averaged(radiance_vals, wavelengths, srf)
-        mask = srf.bad_band_mask
+    if method == "central_lambda":
+        if srfs is not None:
+            if srf_wl is None:
+                raise ValueError("srf_wavelength_nm must accompany srf_matrix")
+            lambda_eff = _effective_wavelengths(np.asarray(srfs, dtype=np.float64), np.asarray(srf_wl, dtype=np.float64))
+            if lambda_eff.shape[0] != radiance_vals.shape[-1]:
+                raise ValueError("SRF band count must match spectrum length")
+        else:
+            lambda_eff = wavelengths
+
+        bt_vals = inverse_planck_central_lambda(radiance_vals, lambda_eff)
+    elif method == "band":
+        if srfs is None or srf_wl is None:
+            raise ValueError("Band-averaged inversion requires SRF matrix and wavelength grid")
+        bt_vals = invert_band_averaged_radiance_to_bt(radiance_vals, srfs, srf_wl)
     else:
-        mask = spectrum.mask
-
-    bt_vals = radiance_to_bt_K(radiance_vals, wavelengths)
+        raise ValueError("method must be 'central_lambda' or 'band'")
 
     return Spectrum.from_brightness_temperature(
         WavelengthGrid(wavelengths),
         bt_vals,
         units=TemperatureUnits.KELVIN,
-        mask=mask,
+        mask=spectrum.mask,
         meta=spectrum.meta.copy(),
     )
 
 
-def bt_to_radiance(spectrum: Spectrum, srf: SRFMatrix | None = None) -> Spectrum:
-    """Convert brightness temperature to spectral radiance.
+def bt_spectrum_to_radiance(
+    spectrum_bt: Spectrum,
+    *,
+    srf_matrix: np.ndarray | SRFMatrix | None = None,
+    srf_wavelength_nm: np.ndarray | None = None,
+    method: str = "central_lambda",
+) -> Spectrum:
+    """Convert brightness temperatures back to spectral radiance."""
 
-    When an SRF is provided, the returned radiance spectrum is defined on the
-    SRF band centres to remain consistent with band-averaged BT inputs.
-    """
-
-    if spectrum.kind != QuantityKind.BRIGHTNESS_T:
+    if spectrum_bt.kind != QuantityKind.BRIGHTNESS_T:
         raise ValueError("Input spectrum must represent brightness temperature")
 
-    bt_vals = np.asarray(spectrum.values, dtype=np.float64)
-    wavelengths = np.asarray(spectrum.wavelengths.nm, dtype=np.float64)
+    srfs, srf_wl = _resolve_srf_inputs(srf_matrix, srf_wavelength_nm)
 
-    if srf is not None:
-        wavelengths = _srf_centers(srf)
-        if bt_vals.shape[0] != wavelengths.shape[0]:
-            raise ValueError("Brightness temperature must align with SRF band centres")
-        mask = srf.bad_band_mask
+    bt_vals = np.asarray(spectrum_bt.values, dtype=np.float64)
+    wavelengths = np.asarray(spectrum_bt.wavelengths.nm, dtype=np.float64)
+
+    if method == "central_lambda":
+        if srfs is not None:
+            if srf_wl is None:
+                raise ValueError("srf_wavelength_nm must accompany srf_matrix")
+            lambda_eff = _effective_wavelengths(np.asarray(srfs, dtype=np.float64), np.asarray(srf_wl, dtype=np.float64))
+            if lambda_eff.shape[0] != bt_vals.shape[-1]:
+                raise ValueError("SRF band count must match spectrum length")
+        else:
+            lambda_eff = wavelengths
+        radiance_vals = planck_radiance_wavelength(lambda_eff, bt_vals)
+    elif method == "band":
+        if srfs is None or srf_wl is None:
+            raise ValueError("Band-averaged radiance requires SRF matrix and wavelength grid")
+        radiance_vals = band_averaged_radiance(bt_vals, srfs, srf_wl)
     else:
-        mask = spectrum.mask
-
-    radiance_vals = bt_K_to_radiance(bt_vals, wavelengths)
+        raise ValueError("method must be 'central_lambda' or 'band'")
 
     return Spectrum.from_radiance(
         WavelengthGrid(wavelengths),
-        radiance_vals,
+        np.asarray(radiance_vals, dtype=np.float64),
         units=RadianceUnits.W_M2_SR_NM,
-        mask=mask,
-        meta=spectrum.meta.copy(),
+        mask=spectrum_bt.mask,
+        meta=spectrum_bt.meta.copy(),
     )
+
+
+def radiance_sample_to_bt_sample(
+    sample: Sample,
+    *,
+    srf_matrix: np.ndarray | SRFMatrix | None = None,
+    srf_wavelength_nm: np.ndarray | None = None,
+    method: str = "central_lambda",
+) -> Sample:
+    """Convert a radiance :class:`Sample` to brightness temperature."""
+
+    matrix = srf_matrix
+    wl = srf_wavelength_nm
+    if matrix is None and sample.srf_matrix is not None:
+        matrix = sample.srf_matrix
+        wl = sample.srf_matrix.wavelength_nm
+
+    bt_spectrum = radiance_spectrum_to_bt(
+        sample.spectrum,
+        srf_matrix=matrix,
+        srf_wavelength_nm=wl,
+        method=method,
+    )
+    return Sample(
+        spectrum=bt_spectrum,
+        sensor_id=sample.sensor_id,
+        acquisition_time=sample.acquisition_time,
+        geo=sample.geo,
+        viewing_geometry=sample.viewing_geometry,
+        band_meta=sample.band_meta,
+        srf_matrix=sample.srf_matrix,
+        quality_masks=sample.quality_masks,
+        ancillary=sample.ancillary,
+    )
+
+
+def bt_sample_to_radiance_sample(
+    sample: Sample,
+    *,
+    srf_matrix: np.ndarray | SRFMatrix | None = None,
+    srf_wavelength_nm: np.ndarray | None = None,
+    method: str = "central_lambda",
+) -> Sample:
+    """Convert a brightness-temperature :class:`Sample` back to radiance."""
+
+    matrix = srf_matrix
+    wl = srf_wavelength_nm
+    if matrix is None and sample.srf_matrix is not None:
+        matrix = sample.srf_matrix
+        wl = sample.srf_matrix.wavelength_nm
+
+    radiance_spectrum = bt_spectrum_to_radiance(
+        sample.spectrum,
+        srf_matrix=matrix,
+        srf_wavelength_nm=wl,
+        method=method,
+    )
+    return Sample(
+        spectrum=radiance_spectrum,
+        sensor_id=sample.sensor_id,
+        acquisition_time=sample.acquisition_time,
+        geo=sample.geo,
+        viewing_geometry=sample.viewing_geometry,
+        band_meta=sample.band_meta,
+        srf_matrix=sample.srf_matrix,
+        quality_masks=sample.quality_masks,
+        ancillary=sample.ancillary,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Backwards-compatible wrappers
+# ---------------------------------------------------------------------------
+
+def radiance_to_bt(spectrum: Spectrum, srf: SRFMatrix | None = None) -> Spectrum:
+    return radiance_spectrum_to_bt(spectrum, srf_matrix=srf, srf_wavelength_nm=None, method="central_lambda")
+
+
+def bt_to_radiance(spectrum: Spectrum, srf: SRFMatrix | None = None) -> Spectrum:
+    return bt_spectrum_to_radiance(spectrum, srf_matrix=srf, srf_wavelength_nm=None, method="central_lambda")

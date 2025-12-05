@@ -1,7 +1,22 @@
 """Physics helper utilities for spectral conversions."""
 
 from .augment import augment_radiance, random_swirlike_atmosphere
-from .planck import K_B, C, H, bt_K_to_radiance, bt_to_radiance, radiance_to_bt, radiance_to_bt_K
+from .planck import (
+    K_B,
+    C,
+    H,
+    band_averaged_radiance,
+    bt_K_to_radiance,
+    bt_sample_to_radiance_sample,
+    bt_spectrum_to_radiance,
+    bt_to_radiance,
+    inverse_planck_central_lambda,
+    planck_radiance_wavelength,
+    radiance_sample_to_bt_sample,
+    radiance_spectrum_to_bt,
+    radiance_to_bt,
+    radiance_to_bt_K,
+)
 from .rad_reflectance import radiance_to_toa_reflectance, toa_reflectance_to_radiance
 from .resampling import convolve_to_bands, generate_gaussian_srf, interpolate_to_centers, simulate_virtual_sensor
 from .continuum import compute_band_depth, compute_convex_hull_continuum
@@ -33,7 +48,10 @@ __all__ = [
     "augment_radiance",
     "avirisng_bad_band_mask",
     "band_depth",
+    "band_averaged_radiance",
     "bt_K_to_radiance",
+    "bt_sample_to_radiance_sample",
+    "bt_spectrum_to_radiance",
     "bt_to_radiance",
     "classify_rt_regime",
     "compute_band_depth",
@@ -43,7 +61,11 @@ __all__ = [
     "generate_gaussian_srf",
     "get_reference_esun",
     "interpolate_to_centers",
+    "inverse_planck_central_lambda",
+    "planck_radiance_wavelength",
     "radiance_to_bt",
+    "radiance_sample_to_bt_sample",
+    "radiance_spectrum_to_bt",
     "radiance_to_bt_K",
     "radiance_to_toa_reflectance",
     "radiance_to_reflectance",
