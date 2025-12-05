@@ -715,6 +715,12 @@ class SRFMatrix:
         return self.normalize_trapz()
 
 
+def _resolve_canonical_sample():
+    from alchemi.spectral import Sample as _Sample
+
+    return _Sample
+
+
 # TODO: Legacy SampleMeta retained for compatibility; prefer alchemi.spectral.Sample.
 @dataclass
 class SampleMeta:
@@ -739,9 +745,10 @@ class SampleMeta:
         data.update(self.extras)
         return data
 
-    def to_sample(self, spectrum: Any, **kwargs: Any) -> CanonicalSample:
+    def to_sample(self, spectrum: Any, **kwargs: Any):
         ancillary = {"row": int(self.row), "col": int(self.col), **self.extras}
         acquisition_time = self.datetime
+        CanonicalSample = _resolve_canonical_sample()
         return CanonicalSample(
             spectrum=spectrum,
             sensor_id=self.sensor_id,
@@ -751,7 +758,10 @@ class SampleMeta:
         )
 
     @classmethod
-    def from_sample(cls, sample: CanonicalSample) -> "SampleMeta":
+    def from_sample(cls, sample: Any) -> "SampleMeta":
+        CanonicalSample = _resolve_canonical_sample()
+        if not isinstance(sample, CanonicalSample):
+            raise TypeError("sample must be a canonical Sample instance")
         ancillary = dict(sample.ancillary)
         row = ancillary.pop("row", ancillary.pop("y", 0))
         col = ancillary.pop("col", ancillary.pop("x", 0))
@@ -765,4 +775,4 @@ class SampleMeta:
 
 
 # Backwards-compatible alias for the canonical Sample type.
-Sample = CanonicalSample
+Sample = _resolve_canonical_sample()
