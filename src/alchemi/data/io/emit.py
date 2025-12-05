@@ -9,7 +9,9 @@ import rasterio
 import xarray as xr
 
 from alchemi.physics import units as qty_units
+from alchemi.wavelengths import check_monotonic, ensure_nm
 from alchemi.types import QuantityKind, RadianceUnits, Spectrum, ValueUnits, WavelengthGrid
+
 
 TARGET_RADIANCE_UNITS = RadianceUnits.W_M2_SR_NM
 WATER_VAPOR_WINDOWS_NM: tuple[tuple[float, float], ...] = (
@@ -163,7 +165,8 @@ def _extract_wavelengths(src: rasterio.io.DatasetReader) -> np.ndarray:
             if unit_value:
                 break
 
-    wavelengths_nm = _ensure_nanometers(np.asarray(raw, dtype=np.float64), unit_value)
+    wavelengths_nm = ensure_nm(np.asarray(raw, dtype=np.float64), unit_value)
+    check_monotonic(wavelengths_nm)
     return wavelengths_nm
 
 
@@ -198,9 +201,18 @@ def _compute_band_mask(wavelengths_nm: np.ndarray, enabled: bool) -> np.ndarray:
 
 
 def _ensure_nanometers(values: np.ndarray, unit: str | None) -> np.ndarray:
+    """Legacy wavelength normalisation helper (kept for compatibility).
+
+    Uses the same heuristics as before:
+    - If units are clearly microns, convert to nm.
+    - If units are missing and max(value) < 10, assume microns.
+    - Require strictly increasing wavelengths.
+    """
     normalized = _normalize_units(unit) if unit is not None else None
     out: np.ndarray = values.astype(np.float64, copy=True)
+
     if normalized is None:
+        # Heuristic: small max → probably microns
         if np.nanmax(out) < 10.0:
             out = qty_units.wavelength_um_to_nm(out)
     elif any(token in normalized for token in ("um", "microm", "micron")):
@@ -208,9 +220,29 @@ def _ensure_nanometers(values: np.ndarray, unit: str | None) -> np.ndarray:
     elif "nm" not in normalized and "nanom" not in normalized:
         msg = f"Unsupported wavelength units: {unit}"
         raise ValueError(msg)
+
     if np.any(np.diff(out) <= 0):
         raise ValueError("Wavelengths must be strictly increasing")
+
     return out
+
+
+def _radiance_scale(units: str | None) -> float:
+    """Legacy radiance scaling helper (kept for compatibility).
+
+    Returns a multiplicative factor to convert from per-µm to per-nm
+    when unit strings indicate microns; otherwise returns 1.0.
+    """
+    if units is None:
+        return 1.0
+
+    normalized = _normalize_units(units)
+    tokens = ("/um", "perum", "permicrom", "micrometer", "micrometre", "micron")
+    if any(token in normalized for token in tokens):
+        # W·m⁻²·sr⁻¹·µm⁻¹ → W·m⁻²·sr⁻¹·nm⁻¹
+        return 1.0 / 1000.0
+
+    return 1.0
 
 
 def _parse_float_list(value: str) -> np.ndarray:

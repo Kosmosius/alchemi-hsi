@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 import xarray as xr
 
+from alchemi.wavelengths import check_monotonic, ensure_nm
 from alchemi.types import QuantityKind, RadianceUnits, Spectrum, WavelengthGrid
 
 __all__ = ["avirisng_pixel", "load_avirisng_l1b"]
@@ -66,8 +67,7 @@ def load_avirisng_l1b(path: str | Path) -> xr.Dataset:
 
     dataset.attrs.update(quantity=QuantityKind.RADIANCE.value, sensor="avirisng", units=_RAD_UNITS.value)
 
-    if np.any(np.diff(wavelengths) <= 0):
-        raise ValueError("Wavelengths must be strictly increasing")
+    check_monotonic(wavelengths)
 
     return dataset
 
@@ -118,12 +118,12 @@ def _read_file_hdf5(path: Path) -> _SpectralData:
         if wavelengths is None:
             raise ValueError("Could not locate wavelength information in AVIRIS-NG file")
         wavelengths = np.asarray(wavelengths, dtype=np.float64)
-        wavelengths_nm = _convert_wavelengths(wavelengths, wavelength_units)
+        wavelengths_nm = ensure_nm(wavelengths, wavelength_units)
 
         fwhm, fwhm_units = _read_array_hdf5(handle, ["fwhm", "bandwidth"], h5py)
         if fwhm is not None:
             fwhm = np.asarray(fwhm, dtype=np.float64)
-            fwhm = _convert_wavelengths(fwhm, fwhm_units or wavelength_units)
+            fwhm = ensure_nm(fwhm, fwhm_units or wavelength_units)
 
         band_mask, _ = _read_array_hdf5(handle, ["band_mask", "Band_Mask", "good_bands"], h5py)
         bad_list, _ = _read_array_hdf5(handle, ["bad_band_list", "BadBands", "bad_bands"], h5py)
@@ -145,7 +145,7 @@ def _read_file_netcdf(path: Path) -> _SpectralData:
     if wavelengths_var is None:
         raise ValueError("Could not locate wavelength information in dataset")
 
-    wavelengths_nm = _convert_wavelengths(
+    wavelengths_nm = ensure_nm(
         np.asarray(wavelengths_var.values, dtype=np.float64),
         wavelengths_var.attrs.get("units"),
     )
@@ -153,7 +153,7 @@ def _read_file_netcdf(path: Path) -> _SpectralData:
     fwhm_var = _xr_find_variable(data, ["fwhm_nm", "fwhm", "bandwidth"])
     fwhm: np.ndarray | None = None
     if fwhm_var is not None:
-        fwhm = _convert_wavelengths(
+        fwhm = ensure_nm(
             np.asarray(fwhm_var.values, dtype=np.float64),
             fwhm_var.attrs.get("units") or wavelengths_var.attrs.get("units"),
         )
@@ -246,18 +246,6 @@ def _xr_find_variable(ds: xr.Dataset, names: Iterable[str]) -> xr.DataArray | No
         if any(token.lower() in var_name.lower() for token in names):
             return var
     return None
-
-
-def _convert_wavelengths(values: np.ndarray, units: str | None) -> np.ndarray:
-    if units is None:
-        return np.asarray(values, dtype=np.float64)
-    units_norm = units.strip().lower()
-    if units_norm in {"nm", "nanometer", "nanometers"}:
-        return np.asarray(values, dtype=np.float64)
-    if units_norm in {"um", "micrometer", "micrometers", "micron", "microns"}:
-        return np.asarray(values, dtype=np.float64) * 1_000.0
-    msg = f"Unsupported wavelength units: {units}"
-    raise ValueError(msg)
 
 
 def _convert_radiance(values: np.ndarray, units: str | None) -> np.ndarray:

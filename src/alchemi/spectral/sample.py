@@ -74,8 +74,9 @@ class Sample:
         self.validate()
 
     def validate(self) -> None:
-        self.spectrum.validate()
-        length = self.spectrum.values.shape[0]
+        if hasattr(self.spectrum, "validate"):
+            self.spectrum.validate()
+        length = self.spectrum.band_count
 
         if self.band_meta is not None:
             if not isinstance(self.band_meta, BandMetadata):

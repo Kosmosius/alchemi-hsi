@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+from alchemi.wavelengths import check_monotonic, ensure_nm
 from alchemi.types import QuantityKind, RadianceUnits, Spectrum, WavelengthGrid
 
 __all__ = ["enmap_pixel", "load_enmap_l1b"]
@@ -65,8 +66,7 @@ def load_enmap_l1b(path_vnir: str | Path, path_swir: str | Path) -> xr.Dataset:
     if mask_all is not None:
         mask_all = mask_all.astype(bool)[order]
 
-    if np.any(np.diff(wavelengths) <= 0):
-        raise ValueError("Merged wavelengths must be strictly increasing")
+    check_monotonic(wavelengths)
 
     dataset = xr.Dataset()
     dataset["radiance"] = radiance
@@ -159,10 +159,12 @@ def _standardize_dims(arr: xr.DataArray) -> tuple[xr.DataArray, str]:
 def _extract_wavelengths(ds: xr.Dataset, band_dim: str, arr: xr.DataArray) -> np.ndarray:
     band_coord = arr.coords.get("band")
     if band_coord is not None and band_coord.ndim == 1:
-        return _to_nm(
+        wavelengths_nm = ensure_nm(
             np.asarray(band_coord.values, dtype=np.float64),
             band_coord.attrs.get("units"),
         )
+        check_monotonic(wavelengths_nm)
+        return wavelengths_nm
 
     for name in list(ds.coords) + list(ds.data_vars):
         if name == band_dim:
@@ -170,11 +172,15 @@ def _extract_wavelengths(ds: xr.Dataset, band_dim: str, arr: xr.DataArray) -> np
         if "wave" in name.lower() or "lambda" in name.lower():
             var = ds[name]
             if band_dim in var.dims and var.ndim == 1:
-                return _to_nm(np.asarray(var.values, dtype=np.float64), var.attrs.get("units"))
+                wavelengths_nm = ensure_nm(np.asarray(var.values, dtype=np.float64), var.attrs.get("units"))
+                check_monotonic(wavelengths_nm)
+                return wavelengths_nm
 
     fallback = ds.coords.get(band_dim)
     if fallback is not None and fallback.ndim == 1:
-        return _to_nm(np.asarray(fallback.values, dtype=np.float64), fallback.attrs.get("units"))
+        wavelengths_nm = ensure_nm(np.asarray(fallback.values, dtype=np.float64), fallback.attrs.get("units"))
+        check_monotonic(wavelengths_nm)
+        return wavelengths_nm
 
     raise ValueError("Could not locate wavelength coordinate")
 
@@ -185,7 +191,7 @@ def _extract_fwhm(ds: xr.Dataset, band_dim: str) -> np.ndarray | None:
         if "fwhm" in low or "bandwidth" in low:
             var = ds[name]
             if band_dim in var.dims and var.ndim == 1:
-                return _to_nm(np.asarray(var.values, dtype=np.float64), var.attrs.get("units"))
+                return ensure_nm(np.asarray(var.values, dtype=np.float64), var.attrs.get("units"))
     return None
 
 
@@ -238,20 +244,3 @@ def _is_per_micrometer(units: str) -> bool:
     if any(ind in units for ind in indicators):
         return True
     return any(f"/{tok}" in units for tok in tokens)
-
-
-def _to_nm(values: np.ndarray, unit: str | None) -> np.ndarray:
-    if unit is None:
-        return _infer_nm(values)
-    unit_l = unit.lower()
-    if "um" in unit_l or "µm" in unit_l or "micrometer" in unit_l or "micrometre" in unit_l:
-        return values * 1e3
-    if "nm" in unit_l:
-        return values
-    return _infer_nm(values)
-
-
-def _infer_nm(values: np.ndarray) -> np.ndarray:
-    if np.nanmax(values) <= 10.0:
-        return values * 1e3
-    return values

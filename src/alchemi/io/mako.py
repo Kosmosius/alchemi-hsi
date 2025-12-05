@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import warnings
 
 import numpy as np
 import rasterio
 import xarray as xr
 
+from alchemi.wavelengths import check_monotonic, ensure_nm
 from alchemi.types import Spectrum, SpectrumKind, WavelengthGrid
 
 __all__ = [
@@ -315,7 +317,9 @@ def _wavelengths_from_header(header: dict[str, str]) -> np.ndarray:
     wavelengths = _parse_float_list(value)
 
     units = header.get("wavelength units")
-    return _ensure_nanometres(wavelengths, units)
+    wavelengths_nm = ensure_nm(wavelengths, units)
+    check_monotonic(wavelengths_nm)
+    return wavelengths_nm
 
 
 def _band_mask_from_header(header: dict[str, str]) -> np.ndarray | None:
@@ -345,15 +349,12 @@ def _parse_envi_list(value: str) -> list[str]:
 
 
 def _ensure_nanometres(wavelengths: np.ndarray, units: str | None) -> np.ndarray:
-    if units is None:
-        return wavelengths * 1000.0
-    normalized = units.strip().lower()
-    if normalized in {"nm", "nanometer", "nanometers", "nanometre", "nanometres"}:
-        return wavelengths
-    if normalized in {"um", "µm", "micron", "microns", "micrometer", "micrometers"}:
-        return wavelengths * 1000.0
-    msg = f"Unsupported wavelength units: {units}"
-    raise ValueError(msg)
+    warnings.warn(
+        "_ensure_nanometres is deprecated; use alchemi.wavelengths.ensure_nm",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return ensure_nm(wavelengths, units)
 
 
 def _ensure_kelvin(values: np.ndarray, units: str | None) -> np.ndarray:
