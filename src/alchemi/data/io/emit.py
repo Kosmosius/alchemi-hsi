@@ -8,7 +8,8 @@ import numpy as np
 import rasterio
 import xarray as xr
 
-from alchemi.types import QuantityKind, RadianceUnits, Spectrum, WavelengthGrid
+from alchemi.physics import units as qty_units
+from alchemi.types import QuantityKind, RadianceUnits, Spectrum, ValueUnits, WavelengthGrid
 
 TARGET_RADIANCE_UNITS = RadianceUnits.W_M2_SR_NM
 WATER_VAPOR_WINDOWS_NM: tuple[tuple[float, float], ...] = (
@@ -39,7 +40,11 @@ def load_emit_l1b(path: str, *, band_mask: bool = True) -> xr.Dataset:
     with rasterio.open(path) as src:
         wavelengths_nm, source_units = _extract_metadata(src)
         data = src.read(out_dtype=np.float64)
-        data *= _radiance_scale(source_units)
+        src_units = qty_units.normalize_units(source_units or TARGET_RADIANCE_UNITS, QuantityKind.RADIANCE)
+        if src_units != ValueUnits.RADIANCE_W_M2_SR_NM:
+            data = qty_units.scale_radiance_between_wavelength_units(
+                data, src_units, ValueUnits.RADIANCE_W_M2_SR_NM
+            )
 
         coords: dict[str, np.ndarray] = {
             "y": np.arange(src.height, dtype=np.int32),
@@ -85,7 +90,8 @@ def emit_pixel(ds: xr.Dataset, y: int, x: int) -> Spectrum:
     radiance = ds["radiance"].sel(y=y, x=x)
     units = radiance.attrs.get("units") or ds.attrs.get("radiance_units") or TARGET_RADIANCE_UNITS.value
     values = np.asarray(radiance.values, dtype=np.float64)
-    values *= _radiance_scale(units)
+    src_units = qty_units.normalize_units(units, QuantityKind.RADIANCE)
+    values = qty_units.scale_radiance_between_wavelength_units(values, src_units, ValueUnits.RADIANCE_W_M2_SR_NM)
 
     mask = None
     if "band_mask" in ds.data_vars:
@@ -191,24 +197,14 @@ def _compute_band_mask(wavelengths_nm: np.ndarray, enabled: bool) -> np.ndarray:
     return mask
 
 
-def _radiance_scale(units: str | None) -> float:
-    if units is None:
-        return 1.0
-    normalized = _normalize_units(units)
-    tokens = ("/um", "perum", "permicrom", "micrometer", "micrometre", "micron")
-    if any(token in normalized for token in tokens):
-        return 1.0 / 1000.0
-    return 1.0
-
-
 def _ensure_nanometers(values: np.ndarray, unit: str | None) -> np.ndarray:
     normalized = _normalize_units(unit) if unit is not None else None
     out: np.ndarray = values.astype(np.float64, copy=True)
     if normalized is None:
         if np.nanmax(out) < 10.0:
-            out *= 1000.0
+            out = qty_units.wavelength_um_to_nm(out)
     elif any(token in normalized for token in ("um", "microm", "micron")):
-        out *= 1000.0
+        out = qty_units.wavelength_um_to_nm(out)
     elif "nm" not in normalized and "nanom" not in normalized:
         msg = f"Unsupported wavelength units: {unit}"
         raise ValueError(msg)
