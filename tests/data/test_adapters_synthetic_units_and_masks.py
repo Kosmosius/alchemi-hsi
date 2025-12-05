@@ -55,3 +55,4 @@ def test_hytes_adapter_emits_bt_samples(tmp_path, monkeypatch):
     sample = samples[0]
     assert sample.spectrum.kind.value == "brightness_temperature"
     assert str(sample.ancillary["source_path"]) == str(path)
+    assert sample.ancillary.get("srf_mode") == "srf-aware"

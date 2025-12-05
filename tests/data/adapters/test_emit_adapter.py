@@ -79,3 +79,24 @@ def test_attach_emit_l2b_labels(monkeypatch, tmp_path):
         "mineral_group": "ILLITE_MUSCOVITE_GROUP",
         "fit_r2": 0.95,
     }
+
+
+def test_emit_srf_blind_gaussian(monkeypatch, tmp_path):
+    wavelengths = np.array([400.0, 500.0, 600.0])
+    radiance = np.ones((1, 1, wavelengths.size), dtype=np.float64)
+    band_mask = np.array([True, True, True])
+    ds = xr.Dataset(
+        {"radiance": (("y", "x", "band"), radiance, {"units": "W/m^2/sr/nm"}), "band_mask": (("band",), band_mask)},
+        coords={"wavelength_nm": ("band", wavelengths)},
+    )
+
+    monkeypatch.setattr(emit_adapter, "load_emit_l1b", lambda *_args, **_kwargs: ds)
+    monkeypatch.setattr(emit_adapter.srfs, "get_srf", lambda *_args, **_kwargs: _stub_srf())
+
+    samples = list(emit_adapter.iter_emit_pixels("dummy", srf_blind=True))
+    assert len(samples) == 1
+    sample = samples[0]
+    assert sample.ancillary.get("srf_mode") == "srf-blind"
+    assert sample.band_meta is not None
+    assert sample.band_meta.srf_source[0] == "gaussian"
+    assert sample.srf_matrix is not None

@@ -11,6 +11,8 @@ from numpy.typing import NDArray
 
 from ..types import SRFMatrix
 from ..utils.integrate import np_integrate as _np_integrate
+from .fallback import gaussian_srf
+from ..spectral.srf import SRFMatrix as DenseSRFMatrix
 from .synthetic import estimate_fwhm
 
 if TYPE_CHECKING:
@@ -43,8 +45,7 @@ def load_sensor_srf(
             pass
 
     if sensor == "emit":
-        srf, _ = get_srf("emit")
-        return srf
+        return get_srf("emit")
     if sensor == "enmap":
         from .enmap import enmap_srf_matrix
 
@@ -138,6 +139,33 @@ def validate_srf(
             )
 
 
+def validate_srf_alignment(
+    wavelength_nm: np.ndarray | DenseSRFMatrix,
+    srfs: np.ndarray | DenseSRFMatrix,
+    *,
+    centers_nm: np.ndarray | None = None,
+    center_tol: float = 0.75,
+    area_tol: float = 1e-3,
+) -> None:
+    """Validate SRF alignment with a target wavelength grid and band centers."""
+
+    wl = np.asarray(getattr(wavelength_nm, "wavelength_nm", wavelength_nm), dtype=np.float64)
+    matrix = np.asarray(getattr(srfs, "matrix", srfs), dtype=np.float64)
+    if matrix.ndim != 2:
+        raise ValueError("SRF matrix must be two-dimensional")
+    if matrix.shape[1] != wl.shape[0]:
+        raise ValueError("SRF wavelength dimension must match provided grid")
+
+    validate_srf(wl, matrix, area_tol=area_tol)
+
+    if centers_nm is not None:
+        centers = np.asarray(centers_nm, dtype=np.float64)
+        if centers.shape[0] != matrix.shape[0]:
+            raise ValueError("Band center count must match SRF band dimension")
+        if not np.allclose(centers, wl, atol=center_tol):
+            raise ValueError("SRF band centers do not align with wavelength grid within tolerance")
+
+
 def check_flat_spectrum_invariant(
     wavelength_nm: np.ndarray,
     srfs: np.ndarray,
@@ -206,6 +234,29 @@ def default_band_widths(
     return np.asarray(widths, dtype=np.float64)
 
 
+def build_gaussian_srf_matrix(
+    axis_nm: np.ndarray,
+    width_nm: np.ndarray,
+    *,
+    centers_nm: np.ndarray | None = None,
+    sensor: str = "gaussian",
+) -> DenseSRFMatrix:
+    """Construct a dense Gaussian SRF matrix aligned with ``axis_nm``."""
+
+    wl = np.asarray(axis_nm, dtype=np.float64)
+    widths = np.asarray(width_nm, dtype=np.float64)
+    centers = np.asarray(centers_nm if centers_nm is not None else wl, dtype=np.float64)
+    if wl.ndim != 1:
+        raise ValueError("axis_nm must be one-dimensional")
+    if centers.shape[0] != wl.shape[0] or widths.shape[0] != wl.shape[0]:
+        raise ValueError("centers_nm and width_nm must match axis_nm length")
+
+    rows = np.vstack([gaussian_srf(center, width, wl) for center, width in zip(centers, widths, strict=True)])
+    matrix = DenseSRFMatrix(wavelength_nm=wl, matrix=rows)
+    validate_srf_alignment(wl, matrix, centers_nm=centers)
+    return matrix
+
+
 def build_srf_band_embeddings(
     srf: SRFMatrix,
     *,
@@ -270,6 +321,8 @@ __all__ = [
     "build_srf_band_embeddings",
     "default_band_widths",
     "check_flat_spectrum_invariant",
+    "build_gaussian_srf_matrix",
+    "validate_srf_alignment",
     "load_sensor_srf",
     "normalize_srf_rows",
     "validate_srf",

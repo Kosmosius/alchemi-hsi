@@ -14,6 +14,7 @@ from alchemi.registry.sensors import DEFAULT_SENSOR_REGISTRY
 from alchemi.spectral import BandMetadata, Sample, Spectrum
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
 from alchemi.types import SRFMatrix as LegacySRFMatrix, ValueUnits
+from alchemi.srf.utils import build_gaussian_srf_matrix, default_band_widths, validate_srf_alignment
 
 from ..io import enmap as io_enmap
 from ..io import enmap_pixel, load_enmap_l1b
@@ -113,6 +114,7 @@ def _coerce_srf_matrix(raw_srf: LegacySRFMatrix | None, wavelengths_nm: np.ndarr
             matrix[idx, :] /= area
 
     dense = DenseSRFMatrix(wavelength_nm=wavelengths_nm, matrix=matrix)
+    validate_srf_alignment(wavelengths_nm, dense.matrix, centers_nm=wavelengths_nm)
     return dense, "official"
 
 
@@ -190,22 +192,48 @@ def _band_metadata(
     )
 
 
-def iter_enmap_pixels(path_or_pair: str | tuple[str, str]) -> Iterable[Sample]:
+def _resolve_enmap_srf(
+    wavelengths: np.ndarray,
+    fwhm: np.ndarray | None,
+    *,
+    srf_blind: bool,
+) -> tuple[DenseSRFMatrix | None, np.ndarray, str, str]:
+    widths = fwhm if fwhm is not None else default_band_widths("enmap", wavelengths)
+    srf_matrix: DenseSRFMatrix | None = None
+    srf_source = "none"
+    srf_mode = "srf-blind" if srf_blind else "srf-aware"
+
+    if not srf_blind:
+        try:
+            raw_srf = srfs.get_srf("enmap")
+        except Exception:
+            raw_srf = None
+        srf_matrix, srf_source = _coerce_srf_matrix(raw_srf, wavelengths)
+
+    if srf_matrix is None and widths is not None:
+        srf_matrix = build_gaussian_srf_matrix(wavelengths, widths, sensor="enmap")
+        srf_source = "gaussian"
+
+    return srf_matrix, widths, srf_source, srf_mode
+
+
+def iter_enmap_pixels(path_or_pair: str | tuple[str, str], *, srf_blind: bool = False) -> Iterable[Sample]:
     """Yield EnMAP L1B/L1C pixels as :class:`Sample` instances."""
 
     ds = _normalize_l1_dataset(path_or_pair)
     wavelengths = _ensure_wavelengths_nm(ds)
     radiance = ds["radiance"]
 
-    try:
-        raw_srf = srfs.get_srf("enmap")
-    except Exception:
-        raw_srf = None
-
     dataset_mask = np.asarray(ds["band_mask"].values, dtype=bool) if "band_mask" in ds else None
-    valid, deep_water_vapour = _valid_band_mask(wavelengths, dataset_mask=dataset_mask, srf=raw_srf)
-    srf_matrix, srf_source = _coerce_srf_matrix(raw_srf, wavelengths)
     fwhm = np.asarray(ds["fwhm_nm"].values, dtype=np.float64) if "fwhm_nm" in ds else None
+    srf_matrix, widths, srf_source, srf_mode = _resolve_enmap_srf(wavelengths, fwhm, srf_blind=srf_blind)
+    raw_srf = None
+    if not srf_blind:
+        try:
+            raw_srf = srfs.get_srf("enmap")
+        except Exception:
+            raw_srf = None
+    valid, deep_water_vapour = _valid_band_mask(wavelengths, dataset_mask=dataset_mask, srf=raw_srf)
 
     extra_masks: list[np.ndarray] = []
     if dataset_mask is not None:
@@ -228,7 +256,7 @@ def iter_enmap_pixels(path_or_pair: str | tuple[str, str]) -> Iterable[Sample]:
                 units=ValueUnits.RADIANCE_W_M2_SR_NM,
             )
             quality_masks = {name: mask.copy() for name, mask in quality_base.items()}
-            band_meta = _band_metadata(wavelengths, fwhm, quality_masks["valid_band"], srf_source=srf_source)
+            band_meta = _band_metadata(wavelengths, widths, quality_masks["valid_band"], srf_source=srf_source)
 
             yield Sample(
                 spectrum=spectrum,
@@ -236,7 +264,13 @@ def iter_enmap_pixels(path_or_pair: str | tuple[str, str]) -> Iterable[Sample]:
                 band_meta=band_meta,
                 quality_masks=quality_masks,
                 srf_matrix=srf_matrix,
-                ancillary={"source_path": str(path_or_pair), "y": int(y), "x": int(x), "srf_source": srf_source},
+                ancillary={
+                    "source_path": str(path_or_pair),
+                    "y": int(y),
+                    "x": int(x),
+                    "srf_source": srf_source,
+                    "srf_mode": srf_mode,
+                },
             )
 
 
@@ -253,7 +287,9 @@ def _normalize_reflectance(reflectance: xr.DataArray) -> np.ndarray:
     return values
 
 
-def iter_enmap_l2a_pixels(path_or_pair: str | tuple[str, str], *, include_quality: bool = True) -> Iterable[Sample]:
+def iter_enmap_l2a_pixels(
+    path_or_pair: str | tuple[str, str], *, include_quality: bool = True, srf_blind: bool = False
+) -> Iterable[Sample]:
     ds = xr.load_dataset(path_or_pair) if not isinstance(path_or_pair, tuple) else _normalize_l1_dataset(path_or_pair)
     wavelengths = _ensure_wavelengths_nm(ds)
 
@@ -263,15 +299,16 @@ def iter_enmap_l2a_pixels(path_or_pair: str | tuple[str, str], *, include_qualit
     if reflectance is None:
         raise KeyError("Dataset does not contain 'reflectance' or 'surface_reflectance'")
 
-    try:
-        raw_srf = srfs.get_srf("enmap")
-    except Exception:
-        raw_srf = None
-
     dataset_mask = np.asarray(ds["band_mask"].values, dtype=bool) if "band_mask" in ds else None
-    valid, deep_water_vapour = _valid_band_mask(wavelengths, dataset_mask=dataset_mask, srf=raw_srf)
-    srf_matrix, srf_source = _coerce_srf_matrix(raw_srf, wavelengths)
     fwhm = np.asarray(ds["fwhm_nm"].values, dtype=np.float64) if "fwhm_nm" in ds else None
+    srf_matrix, widths, srf_source, srf_mode = _resolve_enmap_srf(wavelengths, fwhm, srf_blind=srf_blind)
+    raw_srf = None
+    if not srf_blind:
+        try:
+            raw_srf = srfs.get_srf("enmap")
+        except Exception:
+            raw_srf = None
+    valid, deep_water_vapour = _valid_band_mask(wavelengths, dataset_mask=dataset_mask, srf=raw_srf)
 
     extra_masks: list[np.ndarray] = []
     if dataset_mask is not None:
@@ -294,7 +331,7 @@ def iter_enmap_l2a_pixels(path_or_pair: str | tuple[str, str], *, include_qualit
                 units=ValueUnits.REFLECTANCE_FRACTION,
             )
             quality_masks = {name: mask.copy() for name, mask in quality_base.items()}
-            band_meta = _band_metadata(wavelengths, fwhm, quality_masks["valid_band"], srf_source=srf_source)
+            band_meta = _band_metadata(wavelengths, widths, quality_masks["valid_band"], srf_source=srf_source)
 
             yield Sample(
                 spectrum=spectrum,
@@ -302,17 +339,27 @@ def iter_enmap_l2a_pixels(path_or_pair: str | tuple[str, str], *, include_qualit
                 band_meta=band_meta,
                 quality_masks=quality_masks,
                 srf_matrix=srf_matrix,
-                ancillary={"source_path": str(path_or_pair), "y": int(y), "x": int(x), "srf_source": srf_source},
+                ancillary={
+                    "source_path": str(path_or_pair),
+                    "y": int(y),
+                    "x": int(x),
+                    "srf_source": srf_source,
+                    "srf_mode": srf_mode,
+                },
             )
 
 
-def load_enmap_scene(path_or_pair: str | tuple[str, str]) -> List[Sample]:
+def load_enmap_scene(path_or_pair: str | tuple[str, str], *, srf_blind: bool = False) -> List[Sample]:
     """Load an EnMAP L1B/L1C scene into memory."""
 
-    return list(iter_enmap_pixels(path_or_pair))
+    return list(iter_enmap_pixels(path_or_pair, srf_blind=srf_blind))
 
 
-def load_enmap_l2a_scene(path_or_pair: str | tuple[str, str], *, include_quality: bool = True) -> List[Sample]:
+def load_enmap_l2a_scene(
+    path_or_pair: str | tuple[str, str], *, include_quality: bool = True, srf_blind: bool = False
+) -> List[Sample]:
     """Load an EnMAP L2A reflectance scene into memory."""
 
-    return list(iter_enmap_l2a_pixels(path_or_pair, include_quality=include_quality))
+    return list(
+        iter_enmap_l2a_pixels(path_or_pair, include_quality=include_quality, srf_blind=srf_blind)
+    )

@@ -13,6 +13,7 @@ from alchemi.registry import srfs
 from alchemi.spectral import BandMetadata, Sample, Spectrum
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
 from alchemi.types import SRFMatrix as LegacySRFMatrix, ValueUnits
+from alchemi.srf.utils import build_gaussian_srf_matrix, default_band_widths, validate_srf_alignment
 
 from ..io.hytes import _ensure_kelvin, load_hytes_l1b_bt
 
@@ -31,39 +32,41 @@ def _load_ds(path: str) -> xr.Dataset:
     return load_hytes_l1b_bt(path)
 
 
-def _coerce_srf_matrix(wavelengths_nm: np.ndarray) -> tuple[DenseSRFMatrix | None, str, np.ndarray | None, list[tuple[float, float]] | None]:
-    try:
-        raw: LegacySRFMatrix | None = srfs.get_srf("hytes")
-    except Exception:
-        raw = None
+def _coerce_srf_matrix(
+    wavelengths_nm: np.ndarray, *, srf_blind: bool
+) -> tuple[DenseSRFMatrix | None, str, np.ndarray | None, list[tuple[float, float]] | None, np.ndarray]:
+    widths = default_band_widths("hytes", wavelengths_nm)
+    if not srf_blind:
+        try:
+            raw: LegacySRFMatrix | None = srfs.get_srf("hytes")
+        except Exception:
+            raw = None
 
-    if raw is None:
-        return None, "none", None, None
+        if raw is not None:
+            centers = np.asarray(raw.centers_nm, dtype=np.float64)
+            if centers.shape[0] == wavelengths_nm.shape[0]:
+                matrix = np.zeros((centers.shape[0], wavelengths_nm.shape[0]), dtype=np.float64)
+                areas: list[float] = []
+                for idx, (nm, resp) in enumerate(zip(raw.bands_nm, raw.bands_resp, strict=True)):
+                    nm_arr = np.asarray(nm, dtype=np.float64)
+                    resp_arr = np.asarray(resp, dtype=np.float64)
+                    matrix[idx, :] = np.interp(wavelengths_nm, nm_arr, resp_arr, left=0.0, right=0.0)
+                    area = float(np.trapz(matrix[idx, :], x=wavelengths_nm))
+                    areas.append(area)
+                    if area > 0:
+                        matrix[idx, :] /= area
 
-    centers = np.asarray(raw.centers_nm, dtype=np.float64)
-    if centers.shape[0] != wavelengths_nm.shape[0]:
-        return None, "none", raw.bad_band_mask, raw.bad_band_windows_nm
+                if areas and not np.any(np.asarray(areas) <= 0.0):
+                    dense = DenseSRFMatrix(wavelength_nm=wavelengths_nm, matrix=matrix)
+                    validate_srf_alignment(wavelengths_nm, dense.matrix, centers_nm=wavelengths_nm)
+                    provenance = "official"
+                    version = str(getattr(raw, "version", ""))
+                    if "gaussian" in version.lower():
+                        provenance = "gaussian"
+                    return dense, provenance, raw.bad_band_mask, raw.bad_band_windows_nm, widths
 
-    matrix = np.zeros((centers.shape[0], wavelengths_nm.shape[0]), dtype=np.float64)
-    areas: list[float] = []
-    for idx, (nm, resp) in enumerate(zip(raw.bands_nm, raw.bands_resp, strict=True)):
-        nm_arr = np.asarray(nm, dtype=np.float64)
-        resp_arr = np.asarray(resp, dtype=np.float64)
-        matrix[idx, :] = np.interp(wavelengths_nm, nm_arr, resp_arr, left=0.0, right=0.0)
-        area = float(np.trapz(matrix[idx, :], x=wavelengths_nm))
-        areas.append(area)
-        if area > 0:
-            matrix[idx, :] /= area
-
-    if not areas or np.any(np.asarray(areas) <= 0.0):
-        return None, "none", raw.bad_band_mask, raw.bad_band_windows_nm
-
-    dense = DenseSRFMatrix(wavelength_nm=wavelengths_nm, matrix=matrix)
-    provenance = "official"
-    version = str(getattr(raw, "version", ""))
-    if "gaussian" in version.lower():
-        provenance = "gaussian"
-    return dense, provenance, raw.bad_band_mask, raw.bad_band_windows_nm
+    dense = build_gaussian_srf_matrix(wavelengths_nm, widths, sensor="hytes")
+    return dense, "gaussian", None, None, widths
 
 
 def _edge_mask(length: int) -> np.ndarray:
@@ -136,7 +139,7 @@ def _band_metadata(wavelengths: np.ndarray, valid: np.ndarray, *, srf_source: st
     )
 
 
-def iter_hytes_pixels(path: str) -> Iterable[Sample]:
+def iter_hytes_pixels(path: str, *, srf_blind: bool = False) -> Iterable[Sample]:
     """Yield HyTES brightness-temperature pixels as :class:`Sample` objects."""
 
     ds = _load_ds(path)
@@ -151,7 +154,9 @@ def iter_hytes_pixels(path: str) -> Iterable[Sample]:
     band_mask = np.asarray(ds["band_mask"].values, dtype=bool) if "band_mask" in ds else None
     detector_mask = _extract_detector_mask(ds)
 
-    srf_matrix, srf_source, srf_bad_mask, srf_windows = _coerce_srf_matrix(wavelengths)
+    srf_matrix, srf_source, srf_bad_mask, srf_windows, widths = _coerce_srf_matrix(
+        wavelengths, srf_blind=srf_blind
+    )
     valid, quality_base = _valid_band_mask(
         wavelengths,
         dataset_mask=band_mask,
@@ -159,7 +164,12 @@ def iter_hytes_pixels(path: str) -> Iterable[Sample]:
         srf_windows=srf_windows,
         detector_mask=detector_mask,
     )
-    band_meta = _band_metadata(wavelengths, valid, srf_source=srf_source)
+    band_meta = BandMetadata(
+        center_nm=np.asarray(wavelengths, dtype=np.float64),
+        width_nm=widths,
+        valid_mask=np.asarray(valid, dtype=bool),
+        srf_source=np.full_like(wavelengths, srf_source, dtype=object),
+    )
 
     for y in range(values.shape[0]):
         for x in range(values.shape[1]):
@@ -181,30 +191,32 @@ def iter_hytes_pixels(path: str) -> Iterable[Sample]:
                     "y": int(y),
                     "x": int(x),
                     "srf_source": srf_source,
+                    "srf_mode": "srf-blind" if srf_blind else "srf-aware",
                 },
             )
             yield sample
 
 
-def iter_hytes_radiance_pixels(path: str) -> Iterable[Sample]:
+def iter_hytes_radiance_pixels(path: str, *, srf_blind: bool = False) -> Iterable[Sample]:
     """Yield HyTES pixels converted to radiance via Planck inversion."""
 
-    for sample in iter_hytes_pixels(path):
+    for sample in iter_hytes_pixels(path, srf_blind=srf_blind):
         rad_sample = planck.bt_sample_to_radiance_sample(sample)
         rad_sample.ancillary.setdefault("source_path", sample.ancillary.get("source_path"))
         rad_sample.ancillary.setdefault("y", sample.ancillary.get("y"))
         rad_sample.ancillary.setdefault("x", sample.ancillary.get("x"))
         rad_sample.ancillary.setdefault("srf_source", sample.ancillary.get("srf_source"))
+        rad_sample.ancillary.setdefault("srf_mode", sample.ancillary.get("srf_mode"))
         yield rad_sample
 
 
-def load_hytes_scene(path: str) -> List[Sample]:
+def load_hytes_scene(path: str, *, srf_blind: bool = False) -> List[Sample]:
     """Materialise brightness-temperature pixels into memory."""
 
-    return list(iter_hytes_pixels(path))
+    return list(iter_hytes_pixels(path, srf_blind=srf_blind))
 
 
-def load_hytes_radiance_scene(path: str) -> List[Sample]:
+def load_hytes_radiance_scene(path: str, *, srf_blind: bool = False) -> List[Sample]:
     """Materialise radiance pixels into memory."""
 
-    return list(iter_hytes_radiance_pixels(path))
+    return list(iter_hytes_radiance_pixels(path, srf_blind=srf_blind))
