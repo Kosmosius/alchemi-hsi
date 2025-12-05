@@ -7,12 +7,13 @@ per-pixel samples. ``Spectrum`` is a thin re-export of
 single canonical implementation.
 """
 
-from .sample import BandMetadata, Sample, ViewingGeometry
+from .sample import BandMetadata, GeoMeta, Sample, ViewingGeometry
 from .spectrum import Spectrum
 from .srf import SRFMatrix
 
 __all__ = [
     "BandMetadata",
+    "GeoMeta",
     "Sample",
     "SRFMatrix",
     "Spectrum",
