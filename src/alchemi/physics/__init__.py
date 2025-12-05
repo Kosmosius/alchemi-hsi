@@ -17,7 +17,12 @@ from .planck import (
     radiance_to_bt,
     radiance_to_bt_K,
 )
-from .rad_reflectance import radiance_to_toa_reflectance, toa_reflectance_to_radiance
+from .rad_reflectance import (
+    radiance_sample_to_toa_reflectance,
+    radiance_to_toa_reflectance,
+    toa_reflectance_sample_to_radiance,
+    toa_reflectance_to_radiance,
+)
 from .resampling import convolve_to_bands, generate_gaussian_srf, interpolate_to_centers, simulate_virtual_sensor
 from .continuum import compute_band_depth, compute_convex_hull_continuum
 from .rt_regime import classify_rt_regime
@@ -70,6 +75,7 @@ __all__ = [
     "radiance_to_toa_reflectance",
     "radiance_to_reflectance",
     "radiance_to_reflectance_avirisng",
+    "radiance_sample_to_toa_reflectance",
     "simulate_virtual_sensor",
     "random_swirlike_atmosphere",
     "reflectance_to_radiance",
@@ -79,5 +85,6 @@ __all__ = [
     "earth_sun_distance_for_sample",
     "project_esun_to_bands",
     "esun_for_sample",
+    "toa_reflectance_sample_to_radiance",
     "toa_reflectance_to_radiance",
 ]
