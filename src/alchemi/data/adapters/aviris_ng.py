@@ -35,10 +35,10 @@ _WATER_VAPOR_WINDOWS_NM: tuple[tuple[float, float], ...] = (
 )
 
 
-def _water_vapor_mask(wavelength_nm: np.ndarray) -> np.ndarray:
-    mask = np.ones_like(wavelength_nm, dtype=bool)
+def _deep_water_vapour_mask(wavelength_nm: np.ndarray) -> np.ndarray:
+    mask = np.zeros_like(wavelength_nm, dtype=bool)
     for lo, hi in _WATER_VAPOR_WINDOWS_NM:
-        mask &= ~((wavelength_nm >= lo) & (wavelength_nm <= hi))
+        mask |= (wavelength_nm >= lo) & (wavelength_nm <= hi)
     return mask
 
 
@@ -54,9 +54,21 @@ def _resolve_wavelengths(ds: xr.Dataset) -> np.ndarray:
     raise KeyError(msg)
 
 
-def _quality_masks(band_mask: np.ndarray) -> Dict[str, np.ndarray]:
-    zeros = np.zeros_like(band_mask, dtype=bool)
-    return {"valid_band": band_mask.astype(bool), "cloud": zeros, "smile": zeros}
+def _quality_masks(
+    band_mask: np.ndarray, *, deep_water_vapour: np.ndarray | None = None, bad_detector: np.ndarray | None = None
+) -> Dict[str, np.ndarray]:
+    valid = np.asarray(band_mask, dtype=bool).copy()
+    if deep_water_vapour is not None:
+        valid &= ~np.asarray(deep_water_vapour, dtype=bool)
+    if bad_detector is not None:
+        valid &= ~np.asarray(bad_detector, dtype=bool)
+
+    quality: Dict[str, np.ndarray] = {"valid_band": valid}
+    if deep_water_vapour is not None:
+        quality["deep_water_vapour"] = np.asarray(deep_water_vapour, dtype=bool)
+    if bad_detector is not None:
+        quality["bad_detector"] = np.asarray(bad_detector, dtype=bool)
+    return quality
 
 
 def _srf_matrix_for_avirisng(wavelengths: np.ndarray) -> tuple[DenseSRFMatrix | None, SRFProvenance]:
@@ -80,14 +92,14 @@ def _srf_matrix_for_avirisng(wavelengths: np.ndarray) -> tuple[DenseSRFMatrix | 
 
 
 def _band_meta(
-    wavelengths: np.ndarray, band_mask: np.ndarray, fwhm: np.ndarray | None, provenance: SRFProvenance
+    wavelengths: np.ndarray, valid_mask: np.ndarray, fwhm: np.ndarray | None, provenance: SRFProvenance
 ) -> dict[str, np.ndarray]:
     width_nm = fwhm if fwhm is not None else np.full_like(wavelengths, np.nan, dtype=np.float64)
     srf_source = np.full(wavelengths.shape[0], provenance.value, dtype=object)
     return {
         "center_nm": wavelengths,
         "width_nm": width_nm,
-        "valid_mask": band_mask,
+        "valid_mask": valid_mask,
         "srf_source": srf_source,
     }
 
@@ -111,7 +123,9 @@ def _build_sample(
 ) -> Sample:
     wavelengths = _resolve_wavelengths(ds)
     band_mask = _build_band_mask(ds, wavelengths)
-    band_mask = band_mask & _water_vapor_mask(wavelengths)
+    deep_water_vapour = _deep_water_vapour_mask(wavelengths)
+    band_mask = np.asarray(band_mask, dtype=bool)
+    valid_mask = band_mask & ~deep_water_vapour
     srf_matrix, provenance = _srf_matrix_for_avirisng(wavelengths)
     fwhm = np.asarray(ds["fwhm_nm"].values, dtype=np.float64) if "fwhm_nm" in ds else None
 
@@ -122,8 +136,8 @@ def _build_sample(
         spectrum=spectrum,
         sensor_id=str(ds.attrs.get("sensor", "aviris-ng")),
         srf_matrix=srf_matrix,
-        band_meta=_band_meta(wavelengths, band_mask, fwhm, provenance),
-        quality_masks=_quality_masks(band_mask),
+        band_meta=_band_meta(wavelengths, valid_mask, fwhm, provenance),
+        quality_masks=_quality_masks(valid_mask, deep_water_vapour=deep_water_vapour),
         ancillary=ancillary,
     )
 

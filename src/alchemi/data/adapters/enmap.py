@@ -121,8 +121,9 @@ def _valid_band_mask(
     *,
     dataset_mask: np.ndarray | None,
     srf: LegacySRFMatrix | None,
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray | None]:
     valid = np.ones_like(wavelengths_nm, dtype=bool)
+    deep_water_vapour: np.ndarray | None = None
     if dataset_mask is not None:
         valid &= np.asarray(dataset_mask, dtype=bool)
 
@@ -133,10 +134,13 @@ def _valid_band_mask(
             valid &= ~((wavelengths_nm >= start) & (wavelengths_nm <= end))
 
     spec = DEFAULT_SENSOR_REGISTRY.get_sensor("enmap")
-    if spec.absorption_windows_nm is not None:
+    if spec.absorption_windows_nm:
+        deep_water_vapour = np.zeros_like(valid, dtype=bool)
         for start, end in spec.absorption_windows_nm:
+            deep_water_vapour |= (wavelengths_nm >= start) & (wavelengths_nm <= end)
             valid &= ~((wavelengths_nm >= start) & (wavelengths_nm <= end))
-    return valid
+
+    return valid, deep_water_vapour
 
 
 def _quality_masks(
@@ -144,6 +148,8 @@ def _quality_masks(
     *,
     include_quality: bool,
     band_masks: Sequence[np.ndarray] | None = None,
+    deep_water_vapour: np.ndarray | None = None,
+    bad_detector: np.ndarray | None = None,
 ) -> dict[str, np.ndarray]:
     masks = [base_mask]
     if band_masks:
@@ -152,8 +158,16 @@ def _quality_masks(
     valid = np.ones_like(base_mask, dtype=bool)
     for mask in masks:
         valid &= np.asarray(mask, dtype=bool)
+    if deep_water_vapour is not None:
+        valid &= ~np.asarray(deep_water_vapour, dtype=bool)
+    if bad_detector is not None:
+        valid &= ~np.asarray(bad_detector, dtype=bool)
 
     quality: dict[str, np.ndarray] = {"valid_band": valid}
+    if deep_water_vapour is not None:
+        quality["deep_water_vapour"] = np.asarray(deep_water_vapour, dtype=bool)
+    if bad_detector is not None:
+        quality["bad_detector"] = np.asarray(bad_detector, dtype=bool)
     if include_quality:
         for idx, mask in enumerate(masks):
             key = "band_mask" if idx == 0 else f"band_mask_{idx}"
@@ -189,7 +203,7 @@ def iter_enmap_pixels(path_or_pair: str | tuple[str, str]) -> Iterable[Sample]:
         raw_srf = None
 
     dataset_mask = np.asarray(ds["band_mask"].values, dtype=bool) if "band_mask" in ds else None
-    valid = _valid_band_mask(wavelengths, dataset_mask=dataset_mask, srf=raw_srf)
+    valid, deep_water_vapour = _valid_band_mask(wavelengths, dataset_mask=dataset_mask, srf=raw_srf)
     srf_matrix, srf_source = _coerce_srf_matrix(raw_srf, wavelengths)
     fwhm = np.asarray(ds["fwhm_nm"].values, dtype=np.float64) if "fwhm_nm" in ds else None
 
@@ -198,7 +212,9 @@ def iter_enmap_pixels(path_or_pair: str | tuple[str, str]) -> Iterable[Sample]:
         extra_masks.append(dataset_mask)
     if raw_srf is not None and raw_srf.bad_band_mask is not None:
         extra_masks.append(~np.asarray(raw_srf.bad_band_mask, dtype=bool))
-    quality_base = _quality_masks(valid, include_quality=True, band_masks=extra_masks)
+    quality_base = _quality_masks(
+        valid, include_quality=True, band_masks=extra_masks, deep_water_vapour=deep_water_vapour
+    )
 
     scaled = _normalize_radiance_units(radiance)
 
@@ -253,7 +269,7 @@ def iter_enmap_l2a_pixels(path_or_pair: str | tuple[str, str], *, include_qualit
         raw_srf = None
 
     dataset_mask = np.asarray(ds["band_mask"].values, dtype=bool) if "band_mask" in ds else None
-    valid = _valid_band_mask(wavelengths, dataset_mask=dataset_mask, srf=raw_srf)
+    valid, deep_water_vapour = _valid_band_mask(wavelengths, dataset_mask=dataset_mask, srf=raw_srf)
     srf_matrix, srf_source = _coerce_srf_matrix(raw_srf, wavelengths)
     fwhm = np.asarray(ds["fwhm_nm"].values, dtype=np.float64) if "fwhm_nm" in ds else None
 
@@ -262,7 +278,9 @@ def iter_enmap_l2a_pixels(path_or_pair: str | tuple[str, str], *, include_qualit
         extra_masks.append(dataset_mask)
     if raw_srf is not None and raw_srf.bad_band_mask is not None:
         extra_masks.append(~np.asarray(raw_srf.bad_band_mask, dtype=bool))
-    quality_base = _quality_masks(valid, include_quality=include_quality, band_masks=extra_masks)
+    quality_base = _quality_masks(
+        valid, include_quality=include_quality, band_masks=extra_masks, deep_water_vapour=deep_water_vapour
+    )
 
     scaled = _normalize_reflectance(reflectance)
 

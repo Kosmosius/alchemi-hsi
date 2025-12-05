@@ -93,26 +93,26 @@ def _valid_band_mask(
         quality["band_mask"] = dataset_mask
 
     if srf_mask is not None:
-        srf_mask = ~np.asarray(srf_mask, dtype=bool)
-        valid &= srf_mask
-        quality["srf_band_mask"] = srf_mask
+        srf_bad = np.asarray(srf_mask, dtype=bool)
+        valid &= ~srf_bad
+        quality["srf_bad_band"] = srf_bad
 
     edge_mask = _edge_mask(wavelengths.size)
     if np.any(edge_mask):
         valid &= ~edge_mask
-        quality["edge_band"] = ~edge_mask
+        quality["edge_band"] = edge_mask
 
     if srf_windows is not None:
-        window_mask = np.ones_like(valid, dtype=bool)
+        window_mask = np.zeros_like(valid, dtype=bool)
         for start, end in srf_windows:
-            window_mask &= ~((wavelengths >= start) & (wavelengths <= end))
-        valid &= window_mask
+            window_mask |= (wavelengths >= start) & (wavelengths <= end)
+        valid &= ~window_mask
         quality["srf_bad_window"] = window_mask
 
     if detector_mask is not None:
         detector_mask = np.asarray(detector_mask, dtype=bool)
         valid &= ~detector_mask
-        quality["bad_detector"] = ~detector_mask
+        quality["bad_detector"] = detector_mask
 
     quality["valid_band"] = valid
     return valid, quality

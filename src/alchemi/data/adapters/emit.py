@@ -14,7 +14,7 @@ from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
 from alchemi.types import QuantityKind, SRFMatrix as LegacySRFMatrix, ValueUnits
 from alchemi.physics import units as qty_units
 
-from ..io import load_emit_l1b
+from ..io.emit import WATER_VAPOR_WINDOWS_NM, load_emit_l1b
 from ...io.emit_l2b import iter_high_confident_pixels, load_emit_l2b
 
 __all__ = [
@@ -56,11 +56,18 @@ def _ensure_wavelengths_nm(ds: xr.Dataset) -> np.ndarray:
     return wavelengths
 
 
+def _deep_water_vapour_mask(wavelengths_nm: np.ndarray) -> np.ndarray:
+    mask = np.zeros_like(wavelengths_nm, dtype=bool)
+    for start, end in WATER_VAPOR_WINDOWS_NM:
+        mask |= (wavelengths_nm >= start) & (wavelengths_nm <= end)
+    return mask
+
+
 def _quality_masks(
     ds: xr.Dataset, radiance: xr.DataArray, include_quality: bool, extra_band_masks: Sequence[np.ndarray] | None = None
 ) -> dict[str, np.ndarray]:
-    bands = radiance.shape[-1]
-    valid_band = np.ones(bands, dtype=bool)
+    wavelengths_nm = _ensure_wavelengths_nm(ds)
+    valid_band = np.ones_like(wavelengths_nm, dtype=bool)
 
     band_masks: list[np.ndarray] = []
     if include_quality and "band_mask" in ds:
@@ -69,10 +76,16 @@ def _quality_masks(
     if extra_band_masks:
         band_masks.extend(list(extra_band_masks))
 
+    deep_water_vapour = _deep_water_vapour_mask(wavelengths_nm)
+    valid_band &= ~deep_water_vapour
+
     for mask in band_masks:
         valid_band &= np.asarray(mask, dtype=bool)
 
     quality: dict[str, np.ndarray] = {"valid_band": np.broadcast_to(valid_band, radiance.shape)}
+    if np.any(deep_water_vapour):
+        quality["deep_water_vapour"] = np.broadcast_to(deep_water_vapour, radiance.shape)
+
     if include_quality:
         for idx, mask in enumerate(band_masks):
             name = "band_mask" if idx == 0 else f"band_mask_{idx}"
