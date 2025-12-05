@@ -181,6 +181,15 @@ def _normalize_value_units(
     return normalized_units
 
 
+def _ensure_sorted(
+    wavelength_nm: Sequence[float] | NDArray[np.floating], values: NDArray[np.floating]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    order = np.argsort(wavelength_nm)
+    sorted_wavelengths = np.asarray(wavelength_nm, dtype=np.float64)[order]
+    sorted_values = np.take(np.asarray(values, dtype=np.float64), order, axis=-1)
+    return sorted_wavelengths, sorted_values
+
+
 @dataclass
 class WavelengthGrid:
     nm: NDArray[np.float64]  # [B]
@@ -234,42 +243,75 @@ class WavelengthGrid:
         return self.nm * scale
 
 
-@dataclass
+@dataclass(init=False)
 class Spectrum:
     """Canonical spectral sample coupling wavelengths, values, and metadata.
 
     ``Spectrum`` pairs a :class:`WavelengthGrid` (always stored in nanometres)
-    with a 1-D value vector, an explicit :class:`QuantityKind`, and
+    with a bands-last value array, a strongly typed :class:`QuantityKind`, and
     normalised units. Construction enforces shape alignment and optional mask
     compatibility so that downstream physics utilities can rely on consistent
     invariants across M1.
     """
 
     wavelengths: WavelengthGrid | Sequence[float] | NDArray[np.floating]
-    values: NDArray[np.float64]  # [B]
+    values: NDArray[np.float64]
     kind: QuantityKind | SpectrumKind | str
-    units: ValueUnits | RadianceUnits | ReflectanceUnits | TemperatureUnits | str
+    units: ValueUnits | RadianceUnits | ReflectanceUnits | TemperatureUnits | str | None = None
     mask: NDArray[np.bool_] | None = None  # [B] boolean
     meta: dict[str, Any] = field(default_factory=dict)
+
+    def __init__(
+        self,
+        *,
+        wavelengths: WavelengthGrid | Sequence[float] | NDArray[np.floating] | None = None,
+        wavelength_nm: Sequence[float] | NDArray[np.floating] | None = None,
+        values: NDArray[np.float64] | None = None,
+        kind: QuantityKind | SpectrumKind | str,
+        units: ValueUnits | RadianceUnits | ReflectanceUnits | TemperatureUnits | str | None = None,
+        mask: NDArray[np.bool_] | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> None:
+        if wavelengths is None and wavelength_nm is None:
+            msg = "Either wavelengths or wavelength_nm must be provided"
+            raise TypeError(msg)
+        if values is None:
+            msg = "values must be provided"
+            raise TypeError(msg)
+
+        self.wavelengths = wavelengths if wavelengths is not None else wavelength_nm  # type: ignore[assignment]
+        self.values = values
+        self.kind = kind
+        self.units = units
+        self.mask = mask
+        self.meta = {} if meta is None else meta
+
+        self.__post_init__()
 
     def __post_init__(self) -> None:
         if not isinstance(self.wavelengths, WavelengthGrid):
             self.wavelengths = WavelengthGrid.from_any(self.wavelengths)
 
         v = np.asarray(self.values, dtype=np.float64)
-        if v.ndim != 1:
-            raise ValueError("values must be a 1-D array")
-        if v.shape[0] != self.wavelengths.nm.shape[0]:
-            raise ValueError("values length must match wavelengths")
+        if v.ndim < 1:
+            raise ValueError("values must be at least 1-D")
+        band_count = int(self.wavelengths.nm.shape[0])
+        if v.shape[-1] != band_count:
+            raise ValueError("Last dimension of values must match wavelengths length")
         self.values = v
 
         if self.mask is not None:
             m = np.asarray(self.mask, dtype=bool)
-            if m.shape != v.shape:
-                raise ValueError("mask shape must match values")
+            if m.ndim != 1 or m.shape[0] != band_count:
+                raise ValueError("mask shape must match wavelength dimension")
             self.mask = m
 
         self.kind = _normalize_quantity_kind(self.kind)
+        if self.units is None:
+            expected = _EXPECTED_UNITS.get(self.kind)
+            if not expected:
+                raise ValueError("Units must be provided for this spectrum kind")
+            self.units = next(iter(expected))
         self.units = _normalize_value_units(self.units, self.kind)
         self.meta = dict(self.meta)
 
@@ -299,6 +341,11 @@ class Spectrum:
                 msg = "Radiance values must be non-negative"
                 raise ValueError(msg)
 
+    def validate(self) -> None:
+        """Re-run value invariants to mirror legacy API used in tests."""
+
+        self._validate_values()
+
     @property
     def wavelength_nm(self) -> NDArray[np.float64]:
         """Return the underlying wavelength grid in nanometres."""
@@ -309,7 +356,27 @@ class Spectrum:
     def band_count(self) -> int:
         """Number of spectral bands."""
 
-        return int(self.values.shape[0])
+        return int(self.wavelengths.nm.shape[0])
+
+    def as_pixel(self) -> NDArray[np.float64]:
+        """Return values reshaped to a simple ``(bands,)`` pixel vector."""
+
+        return self.values.reshape(-1, self.band_count)[0]
+
+    def flatten_spatial(self) -> NDArray[np.float64]:
+        """Flatten any leading spatial dimensions to ``(N, bands)``."""
+
+        return self.values.reshape(-1, self.band_count)
+
+    def reshape_values(self, *shape: int) -> NDArray[np.float64]:
+        """Reshape values to ``(*shape, bands)``.
+
+        This is a thin wrapper around :meth:`numpy.ndarray.reshape` that
+        preserves the trailing spectral dimension for ergonomic cube-style
+        manipulations.
+        """
+
+        return self.values.reshape(*shape, self.band_count)
 
     def copy_with(
         self,
@@ -318,14 +385,16 @@ class Spectrum:
         values: NDArray[np.float64] | None = None,
         mask: NDArray[np.bool_] | None = None,
         meta: dict[str, Any] | None = None,
+        kind: QuantityKind | SpectrumKind | str | None = None,
+        units: ValueUnits | RadianceUnits | ReflectanceUnits | TemperatureUnits | str | None = None,
     ) -> Spectrum:
         """Return a shallow copy with selected fields replaced."""
 
         return Spectrum(
             wavelengths=wavelengths if wavelengths is not None else self.wavelengths,
             values=values if values is not None else self.values,
-            kind=self.kind,
-            units=self.units,
+            kind=kind if kind is not None else self.kind,
+            units=units if units is not None else self.units,
             mask=mask if mask is not None else self.mask,
             meta=meta if meta is not None else dict(self.meta),
         )
@@ -339,7 +408,7 @@ class Spectrum:
         units: RadianceUnits | ValueUnits | str = RadianceUnits.W_M2_SR_NM,
         mask: NDArray[np.bool_] | None = None,
         meta: dict[str, Any] | None = None,
-    ) -> Spectrum:
+        ) -> Spectrum:
         return cls(
             wavelengths=wavelengths,
             values=values,
@@ -358,7 +427,7 @@ class Spectrum:
         units: ReflectanceUnits | ValueUnits | str = ReflectanceUnits.FRACTION,
         mask: NDArray[np.bool_] | None = None,
         meta: dict[str, Any] | None = None,
-    ) -> Spectrum:
+        ) -> Spectrum:
         return cls(
             wavelengths=wavelengths,
             values=values,
@@ -366,6 +435,92 @@ class Spectrum:
             units=units,
             mask=mask,
             meta=meta or {},
+        )
+
+    @classmethod
+    def from_brightness_temperature(
+        cls,
+        wavelengths: WavelengthGrid,
+        values: NDArray[np.float64],
+        *,
+        units: TemperatureUnits | ValueUnits | str = TemperatureUnits.KELVIN,
+        mask: NDArray[np.bool_] | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Spectrum:
+        return cls(
+            wavelengths=wavelengths,
+            values=values,
+            kind=QuantityKind.BRIGHTNESS_T,
+            units=units,
+            mask=mask,
+            meta=meta or {},
+        )
+
+    @classmethod
+    def from_wavelengths_and_values(
+        cls,
+        wavelength_nm: Sequence[float] | NDArray[np.floating],
+        values: NDArray[np.float64],
+        *,
+        kind: QuantityKind | SpectrumKind | str,
+        units: ValueUnits | RadianceUnits | ReflectanceUnits | TemperatureUnits | str | None = None,
+        mask: NDArray[np.bool_] | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Spectrum:
+        """Convenience constructor mirroring the M1 spec terminology."""
+
+        return cls(
+            wavelengths=WavelengthGrid.from_any(wavelength_nm),
+            values=values,
+            kind=kind,
+            units=units,
+            mask=mask,
+            meta=meta or {},
+        )
+
+    @classmethod
+    def from_microns(
+        cls,
+        wavelength_um: Sequence[float] | NDArray[np.floating],
+        values: NDArray[np.floating],
+        *,
+        kind: QuantityKind | SpectrumKind | str,
+        units: ValueUnits | RadianceUnits | ReflectanceUnits | TemperatureUnits | str | None = None,
+    ) -> Spectrum:
+        wavelength_nm = np.asarray(wavelength_um, dtype=np.float64) * 1_000.0
+        values_arr = np.asarray(values, dtype=np.float64)
+        if _normalize_quantity_kind(kind) == QuantityKind.RADIANCE:
+            values_arr = values_arr / 1_000.0
+        wavelength_nm, values_arr = _ensure_sorted(wavelength_nm, values_arr)
+        return cls(
+            wavelengths=wavelength_nm,
+            values=values_arr,
+            kind=kind,
+            units=units,
+        )
+
+    @classmethod
+    def from_wavenumber(
+        cls,
+        wavenumber_cm: Sequence[float] | NDArray[np.floating],
+        values: NDArray[np.floating],
+        *,
+        kind: QuantityKind | SpectrumKind | str,
+        units: ValueUnits | RadianceUnits | ReflectanceUnits | TemperatureUnits | str | None = None,
+    ) -> Spectrum:
+        wavenumber_cm = np.asarray(wavenumber_cm, dtype=np.float64)
+        if np.any(wavenumber_cm <= 0):
+            raise ValueError("wavenumber_cm must be positive")
+        wavelength_nm = 1.0e7 / wavenumber_cm
+        values_arr = np.asarray(values, dtype=np.float64)
+        if _normalize_quantity_kind(kind) == QuantityKind.RADIANCE:
+            values_arr = values_arr * 1.0e7 / np.square(wavelength_nm)
+        wavelength_nm, values_arr = _ensure_sorted(wavelength_nm, values_arr)
+        return cls(
+            wavelengths=wavelength_nm,
+            values=values_arr,
+            kind=kind,
+            units=units,
         )
 
     @classmethod
