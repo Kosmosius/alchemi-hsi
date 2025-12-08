@@ -1,7 +1,10 @@
 import numpy as np
+import pytest
 import xarray as xr
 
 from alchemi.data.adapters import aviris_ng as aviris_adapter
+
+pytestmark = pytest.mark.physics_and_metadata
 
 
 def _mock_cube(wavelengths: np.ndarray) -> xr.Dataset:

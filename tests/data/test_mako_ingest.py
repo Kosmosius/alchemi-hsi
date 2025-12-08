@@ -14,6 +14,8 @@ from alchemi.types import SpectrumKind
 
 rasterio = pytest.importorskip("rasterio")
 
+pytestmark = pytest.mark.physics_and_metadata
+
 
 @pytest.fixture()
 def synthetic_mako_cube(tmp_path: Path) -> tuple[Path, np.ndarray, np.ndarray]:
@@ -81,8 +83,8 @@ def test_mako_l2s_sample_smoketest(synthetic_mako_cube: tuple[Path, np.ndarray, 
     ds = open_mako_l2s(path)
 
     sample = load_mako_pixel(ds, (0, 1))
-    assert sample.meta["sensor"] == "mako"
-    assert sample.meta["col"] == 1
+    assert sample.sensor_id == "mako"
+    assert sample.ancillary["x"] == 1
     assert sample.spectrum.kind == SpectrumKind.RADIANCE
 
 

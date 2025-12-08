@@ -9,6 +9,8 @@ from alchemi.physics.planck import (
     radiance_to_bt_K,
 )
 
+pytestmark = pytest.mark.physics_and_metadata
+
 
 def test_hytes_roundtrip_temperatures():
     temps = np.array([200.0, 240.0, 280.0, 320.0])

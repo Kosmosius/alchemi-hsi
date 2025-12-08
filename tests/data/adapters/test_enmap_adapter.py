@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import xarray as xr
 
 from alchemi.data.adapters.enmap import (
@@ -8,6 +9,9 @@ from alchemi.data.adapters.enmap import (
     load_enmap_scene,
 )
 from alchemi.registry import srfs
+
+
+pytestmark = pytest.mark.physics_and_metadata
 
 
 def _write_enmap_cube(path, wavelengths_nm, *, var_name="radiance", units="W m-2 sr-1 nm-1", mask=None):

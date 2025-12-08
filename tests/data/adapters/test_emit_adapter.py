@@ -1,8 +1,11 @@
 import numpy as np
+import pytest
 import xarray as xr
 
 from alchemi.data.adapters import emit as emit_adapter
 from alchemi.types import SRFMatrix
+
+pytestmark = pytest.mark.physics_and_metadata
 
 
 def _stub_srf():
