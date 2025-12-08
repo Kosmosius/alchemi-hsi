@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from alchemi.data.cube import Cube, geo_from_attrs
+from alchemi.data.validators import check_cube_health
 
 if TYPE_CHECKING:  # pragma: no cover
     import xarray as xr
@@ -17,6 +19,8 @@ else:  # pragma: no cover - optional dependency for runtime type hints
         xr = Any  # type: ignore[assignment]
 
 __all__ = ["from_hytes_bt"]
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def from_hytes_bt(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
@@ -41,7 +45,7 @@ def from_hytes_bt(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
     if "band_mask" in dataset:
         band_mask = np.asarray(dataset["band_mask"].values, dtype=bool)
 
-    return Cube(
+    cube = Cube(
         data=data,
         axis=axis,
         axis_unit="wavelength_nm",
@@ -51,3 +55,5 @@ def from_hytes_bt(dataset: xr.Dataset, *, srf_id: str | None = None) -> Cube:
         attrs=attrs,
         band_mask=band_mask,
     )
+    check_cube_health(cube, logger=_LOGGER)
+    return cube
