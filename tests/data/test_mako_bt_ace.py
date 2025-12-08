@@ -14,6 +14,8 @@ from alchemi.types import SpectrumKind
 
 rasterio = pytest.importorskip("rasterio")
 
+pytestmark = pytest.mark.physics_and_metadata
+
 
 @pytest.fixture()
 def synthetic_btemp_cube(tmp_path: Path) -> tuple[Path, np.ndarray]:
@@ -85,7 +87,7 @@ def test_mako_btemp_units_and_shape(synthetic_btemp_cube: tuple[Path, np.ndarray
 
     sample = load_mako_pixel_bt(ds, (0, 1))
     assert sample.spectrum.kind == SpectrumKind.BT
-    assert sample.meta["sensor"] == "mako"
+    assert sample.sensor_id == "mako"
 
 
 def test_mako_ace_band_order_smoketest(synthetic_ace_cube: tuple[Path, np.ndarray]):

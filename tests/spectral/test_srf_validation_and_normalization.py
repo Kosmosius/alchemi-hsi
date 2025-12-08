@@ -14,6 +14,8 @@ from alchemi.registry import srfs
 from alchemi.spectral import Spectrum, SRFMatrix
 
 
+pytestmark = pytest.mark.physics_and_metadata
+
 def test_row_normalization_preserves_flat_spectrum():
     wavelength_nm = np.linspace(400.0, 500.0, 5)
     matrix = np.vstack([

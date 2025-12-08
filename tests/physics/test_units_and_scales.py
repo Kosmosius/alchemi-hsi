@@ -6,6 +6,8 @@ from alchemi import wavelengths
 from alchemi.data.io import emit, enmap
 from alchemi.io import mako
 
+pytestmark = pytest.mark.physics_and_metadata
+
 
 @pytest.mark.parametrize(
     "microns, expected_nm",

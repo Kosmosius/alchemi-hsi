@@ -48,6 +48,19 @@ We welcome contributions that strengthen the hyperspectral ingestion, physics, a
 - Ensure `make test` (alias for `pytest`) and `make coverage` succeed locally before opening a pull request.
 - Use `pytest --maxfail=1` during development for faster feedback.
 
+#### Physics and metadata contract suite
+
+M1 physics/metadata coverage is grouped under the `physics_and_metadata` marker. This suite exercises
+unit conversions, Planck/brightness temperature round-trips, SRF validation/normalization, continuum and
+band-depth contracts, cube health checks, and ingest adapter wiring (EMIT, EnMAP, AVIRIS-NG, HyTES, Mako).
+Run it locally with:
+
+```bash
+pytest -m physics_and_metadata
+```
+
+This job is intended to be a required status check in CI to guard the data–physics contract for M1.
+
 ### Commits and pull requests
 
 - Use short-lived feature branches named `area/short-description` (e.g., `ingest/emit-loader`).

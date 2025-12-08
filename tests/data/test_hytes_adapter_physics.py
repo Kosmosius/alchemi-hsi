@@ -1,11 +1,14 @@
 import numpy as np
-import numpy as np
+import pytest
 import xarray as xr
 
 from alchemi.data.adapters import hytes as hytes_adapter
 from alchemi.data.io.hytes import HYTES_BAND_COUNT, HYTES_WAVELENGTHS_NM
 from alchemi.physics import planck
 from alchemi.physics.planck import planck_radiance_wavelength, radiance_to_bt_K
+
+
+pytestmark = pytest.mark.physics_and_metadata
 
 
 def _write_hytes_bt_cube(tmp_path, value: float = 300.0) -> str:

@@ -2,10 +2,14 @@ import importlib
 import types
 
 import numpy as np
+import pytest
 import xarray as xr
 
 import alchemi.data.io as data_io
 from alchemi.data.io.hytes import HYTES_BAND_COUNT, HYTES_WAVELENGTHS_NM
+
+
+pytestmark = pytest.mark.physics_and_metadata
 
 
 def _stub_dataset(wavelengths: np.ndarray, values: np.ndarray, key: str) -> xr.Dataset:

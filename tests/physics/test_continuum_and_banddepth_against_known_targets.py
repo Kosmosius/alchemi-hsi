@@ -28,6 +28,9 @@ from alchemi.physics.continuum import (
 from alchemi.types import Spectrum, WavelengthGrid
 
 
+pytestmark = pytest.mark.physics_and_metadata
+
+
 def _load_golden():
     fixture_path = Path(__file__).resolve().parents[1] / "data" / "golden_banddepth.json"
     with fixture_path.open("r", encoding="utf-8") as f:
