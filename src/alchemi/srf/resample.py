@@ -73,7 +73,6 @@ def _to_srf_matrix(srf: SRFMatrix | object) -> SRFMatrix:
         raise ValueError(msg)
 
     centers = getattr(srf, "band_centers_nm", None)
-    deltas = _grid_deltas(wl_arr)
 
     band_centers: list[np.ndarray] = []
     bands_resp: list[np.ndarray] = []
@@ -94,7 +93,7 @@ def _to_srf_matrix(srf: SRFMatrix | object) -> SRFMatrix:
             msg = "SRF rows must integrate to a positive finite area"
             raise ValueError(msg)
 
-        trapz_area = float(np.trapz(resp_band, x=nm_band))
+        trapz_area = float(np.trapezoid(resp_band, x=nm_band))
         if not np.isfinite(trapz_area) or trapz_area <= 0.0:
             msg = "SRF rows must have positive area"
             raise ValueError(msg)

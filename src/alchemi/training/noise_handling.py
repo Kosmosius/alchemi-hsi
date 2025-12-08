@@ -11,7 +11,9 @@ Tensor = torch.Tensor
 def filter_by_confidence(confidence: Tensor, threshold: float = 0.5) -> Tensor:
     """Return weights down-weighting samples below a confidence threshold."""
 
-    return torch.where(confidence >= threshold, torch.ones_like(confidence), torch.zeros_like(confidence))
+    return torch.where(
+        confidence >= threshold, torch.ones_like(confidence), torch.zeros_like(confidence)
+    )
 
 
 def mutual_refinement(predictions: Iterable[Tensor], momentum: float = 0.5) -> Tensor:

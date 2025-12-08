@@ -65,7 +65,9 @@ def build_gas_loss() -> Callable[[GasOutput, Tensor | None], Tensor]:
         var = logvar.exp()
         nll = 0.5 * ((labels - mean) ** 2 / var + logvar)
         if output.plume_logits is not None:
-            plume = F.binary_cross_entropy_with_logits(output.plume_logits.squeeze(-1), (labels > 0).float())
+            plume = F.binary_cross_entropy_with_logits(
+                output.plume_logits.squeeze(-1), (labels > 0).float()
+            )
             return nll.mean() + plume
         return nll.mean()
 

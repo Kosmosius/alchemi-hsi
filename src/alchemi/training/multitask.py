@@ -33,7 +33,11 @@ class MultiTaskLoss:
         for name, loss in losses.items():
             weight = self.weights.get(name, 1.0)
             weighted.append(weight * loss)
-        total = sum(weighted) if weighted else torch.zeros((), device=list(losses.values())[0].device)
+        total = (
+            sum(weighted)
+            if weighted
+            else torch.zeros((), device=next(iter(losses.values())).device)
+        )
         if self.cfg.use_gradnorm:
             self._update_gradnorm(losses)
         return total

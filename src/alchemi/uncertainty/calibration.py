@@ -1,12 +1,13 @@
 """Calibration utilities for uncertainty estimation."""
 from __future__ import annotations
 
-from typing import Dict, Hashable, Iterable, Mapping, Optional, Union
+from itertools import pairwise
+from typing import Dict, Hashable, Iterable, Mapping, Optional
 
 import torch
 import torch.nn.functional as F
 
-TemperatureLike = Union[float, torch.Tensor, Mapping[Hashable, float]]
+TemperatureLike = float | torch.Tensor | Mapping[Hashable, float]
 
 
 def _make_temperature_vector(
@@ -114,7 +115,7 @@ def fit_temperature(
     task_ids: Optional[Iterable[Hashable]] = None,
     max_iters: int = 200,
     lr: float = 0.05,
-) -> Union[float, Dict[Hashable, float]]:
+) -> float | Dict[Hashable, float]:
     """Fit temperature scaling parameters on validation data.
 
     Args:
@@ -175,7 +176,7 @@ def expected_calibration_error(
     bins = torch.linspace(0, 1, steps=n_bins + 1, device=logits.device)
     ece = torch.zeros((), device=logits.device)
 
-    for bin_lower, bin_upper in zip(bins[:-1], bins[1:]):
+    for bin_lower, bin_upper in pairwise(bins):
         mask = (confidences > bin_lower) & (confidences <= bin_upper)
         if mask.any():
             bin_acc = accuracies[mask].float().mean()
