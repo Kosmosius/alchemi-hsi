@@ -7,12 +7,9 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from alchemi.spectral import Spectrum
-from alchemi.types import SRFMatrix, WavelengthGrid
+from alchemi.physics import resampling as physics_resampling
+from alchemi.types import QuantityKind, SRFMatrix, Spectrum, ValueUnits, WavelengthGrid
 from alchemi.utils.integrate import np_integrate as _np_integrate
-
-from .registry import GLOBAL_SRF_REGISTRY
-from .sensor import SensorSRF
 
 __all__ = [
     "boxcar_resample",
@@ -59,63 +56,104 @@ def _as_2d(values: np.ndarray, n_wavelengths: int) -> tuple[NDArray[np.float64],
     raise ValueError("Spectral values must be a 1-D or 2-D array")
 
 
-def _compute_weights(sensor_srf: SensorSRF) -> NDArray[np.float64]:
-    deltas = _grid_deltas(sensor_srf.wavelength_grid_nm)
-    weights = sensor_srf.srfs * deltas[None, :]
-    row_scale = np.sum(weights, axis=1)
-    if np.any(~np.isfinite(row_scale)) or np.any(row_scale <= 0.0):
-        raise ValueError("SRF rows must integrate to a positive finite area")
-    weights = weights / row_scale[:, None]
-    return weights
+def _to_srf_matrix(srf: SRFMatrix | object) -> SRFMatrix:
+    if isinstance(srf, SRFMatrix):
+        return srf
 
+    wl = getattr(srf, "wavelength_grid_nm", None)
+    rows = getattr(srf, "srfs", None)
+    if wl is None or rows is None:
+        msg = "srf_matrix must be an SRFMatrix or SensorSRF-like object"
+        raise TypeError(msg)
 
-def _maybe_resample_values(
-    values: NDArray[np.float64],
-    wavelengths_nm: NDArray[np.float64],
-    sensor_srf: SensorSRF,
-    *,
-    allow_mismatch_tol_nm: float,
-) -> NDArray[np.float64]:
-    target_wl = sensor_srf.wavelength_grid_nm
-    if wavelengths_nm.shape == target_wl.shape and np.allclose(
-        wavelengths_nm, target_wl, atol=allow_mismatch_tol_nm
-    ):
-        return values
-    return np.vstack([np.interp(target_wl, wavelengths_nm, row) for row in values])
+    wl_arr = _validate_wavelengths(np.asarray(wl, dtype=np.float64))
+    row_arr = np.asarray(rows, dtype=np.float64)
+    if row_arr.ndim != 2 or row_arr.shape[1] != wl_arr.shape[0]:
+        msg = "srfs must be shaped [bands, wavelengths]"
+        raise ValueError(msg)
 
+    centers = getattr(srf, "band_centers_nm", None)
+    deltas = _grid_deltas(wl_arr)
 
-def _centers_from_srf(sensor_srf: SensorSRF) -> NDArray[np.float64]:
-    if sensor_srf.band_centers_nm is not None:
-        return np.asarray(sensor_srf.band_centers_nm, dtype=np.float64)
-    deltas = _grid_deltas(sensor_srf.wavelength_grid_nm)
-    row_scale = sensor_srf.srfs @ deltas
-    return (sensor_srf.srfs * deltas[None, :]) @ sensor_srf.wavelength_grid_nm / row_scale
+    band_centers: list[np.ndarray] = []
+    bands_resp: list[np.ndarray] = []
+    bands_nm: list[np.ndarray] = []
+    for row in row_arr:
+        positive = np.nonzero(row > 0.0)[0]
+        if positive.size == 0:
+            msg = "SRF rows must contain positive support"
+            raise ValueError(msg)
+        start, end = positive[0], positive[-1]
+
+        nm_band = wl_arr[start : end + 1]
+        resp_band = row[start : end + 1]
+
+        deltas_band = _grid_deltas(nm_band)
+        row_scale = float(resp_band @ deltas_band)
+        if not np.isfinite(row_scale) or row_scale <= 0.0:
+            msg = "SRF rows must integrate to a positive finite area"
+            raise ValueError(msg)
+
+        trapz_area = float(np.trapz(resp_band, x=nm_band))
+        if not np.isfinite(trapz_area) or trapz_area <= 0.0:
+            msg = "SRF rows must have positive area"
+            raise ValueError(msg)
+
+        scaled_row = np.asarray(resp_band * (row_scale / trapz_area), dtype=np.float64)
+        bands_resp.append(scaled_row)
+        band_centers.append((scaled_row * deltas_band) @ nm_band / row_scale)
+        bands_nm.append(nm_band)
+
+    centers_arr = np.asarray(centers if centers is not None else band_centers, dtype=np.float64)
+    bands_nm = [np.asarray(nm_band, dtype=np.float64) for nm_band in bands_nm]
+    meta = getattr(srf, "meta", {}) or {}
+
+    return SRFMatrix(
+        sensor=str(meta.get("sensor", getattr(srf, "sensor_id", "sensor"))),
+        centers_nm=centers_arr,
+        bands_nm=bands_nm,
+        bands_resp=bands_resp,
+        version=str(meta.get("srf_version", meta.get("version", "v1"))),
+        bad_band_mask=getattr(srf, "valid_mask", None) or meta.get("bad_band_mask"),
+        bad_band_windows_nm=meta.get("bad_band_windows_nm"),
+    )
 
 
 def resample_values_with_srf(
     values: np.ndarray,
     wavelengths_hr_nm: np.ndarray,
-    sensor_srf: SensorSRF,
+    srf_matrix: SRFMatrix,
     *,
     allow_mismatch_tol_nm: float = 1e-3,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Resample raw arrays onto sensor bands using SRF weights."""
 
+    srf_matrix = _to_srf_matrix(srf_matrix)
+    _ = allow_mismatch_tol_nm  # retained for API compatibility
+
     wl_hr = _validate_wavelengths(wavelengths_hr_nm)
     spectra, squeezed = _as_2d(values, wl_hr.shape[0])
-    weights = _compute_weights(sensor_srf)
-    values_on_srf = _maybe_resample_values(
-        spectra, wl_hr, sensor_srf, allow_mismatch_tol_nm=allow_mismatch_tol_nm
-    )
-    band_values = values_on_srf @ weights.T
-    centers = _centers_from_srf(sensor_srf)
-    result = band_values[0] if squeezed else band_values
-    return np.asarray(result, dtype=np.float64), centers
+    band_values: list[np.ndarray] = []
+
+    for row in spectra:
+        spec = Spectrum(
+            wavelengths=WavelengthGrid(wl_hr),
+            values=np.asarray(row, dtype=np.float64),
+            kind=QuantityKind.RADIANCE,
+            units=ValueUnits.RADIANCE_W_M2_SR_NM,
+        )
+        convolved = physics_resampling.convolve_to_bands(spec, srf_matrix)
+        band_values.append(np.asarray(convolved.values, dtype=np.float64))
+
+    band_array = np.vstack(band_values)
+    centers = np.asarray(srf_matrix.centers_nm, dtype=np.float64)
+    result = band_array[0] if squeezed else band_array
+    return result, centers
 
 
 def resample_with_srf(
     spectrum: Spectrum,
-    sensor_srf: SensorSRF,
+    srf_matrix: SRFMatrix,
     *,
     allow_mismatch_tol_nm: float = 1e-3,
 ) -> Spectrum:
@@ -124,18 +162,13 @@ def resample_with_srf(
     band_values, centers = resample_values_with_srf(
         spectrum.values,
         spectrum.wavelengths.nm,
-        sensor_srf,
+        srf_matrix,
         allow_mismatch_tol_nm=allow_mismatch_tol_nm,
     )
 
     meta = dict(spectrum.meta)
-    meta.update(sensor_srf.meta)
     if "band_centers_nm" not in meta:
         meta["band_centers_nm"] = centers
-    if sensor_srf.band_widths_nm is not None:
-        meta.setdefault("band_widths_nm", sensor_srf.band_widths_nm)
-    if sensor_srf.band_ids is not None:
-        meta.setdefault("band_ids", sensor_srf.band_ids)
 
     return Spectrum(
         wavelengths=WavelengthGrid(centers),
@@ -149,27 +182,13 @@ def resample_with_srf(
 def resample_to_sensor(
     spectrum: Spectrum, sensor_id: str, **kwargs: float
 ) -> Spectrum:
-    sensor_srf = GLOBAL_SRF_REGISTRY.require(sensor_id)
-    return resample_with_srf(spectrum, sensor_srf, **kwargs)
+    from .utils import load_sensor_srf
 
-
-# ---------------------------------------------------------------------------
-# Compatibility wrappers below retain the existing API surface.
-
-
-def _sensor_srf_from_matrix(wl_nm: NDArray[np.float64], srf_matrix: SRFMatrix) -> SensorSRF:
-    srfs = np.vstack(
-        [
-            np.interp(wl_nm, nm_band, resp_band, left=0.0, right=0.0)
-            for nm_band, resp_band in zip(srf_matrix.bands_nm, srf_matrix.bands_resp, strict=True)
-        ]
-    )
-    return SensorSRF(
-        wavelength_grid_nm=np.asarray(wl_nm, dtype=np.float64),
-        srfs=srfs,
-        band_centers_nm=np.asarray(srf_matrix.centers_nm, dtype=np.float64),
-        meta={"sensor": getattr(srf_matrix, "sensor", None), "srf_version": getattr(srf_matrix, "version", None)},
-    )
+    srf_matrix = load_sensor_srf(sensor_id)
+    if srf_matrix is None:
+        msg = f"No SRF matrix available for sensor_id={sensor_id!r}"
+        raise KeyError(msg)
+    return resample_with_srf(spectrum, srf_matrix, **kwargs)
 
 
 def convolve_to_bands(
@@ -179,10 +198,16 @@ def convolve_to_bands(
 ) -> NDArray[np.float64]:
     """Convolve a high-resolution spectrum with tabulated SRFs."""
 
+    srf_matrix = _to_srf_matrix(srf_matrix)
     wl = _validate_wavelengths(np.asarray(highres_wl_nm, dtype=np.float64))
-    sensor_srf = _sensor_srf_from_matrix(wl, srf_matrix)
-    band_values, _ = resample_values_with_srf(highres_vals, wl, sensor_srf)
-    return np.asarray(band_values, dtype=np.float64)
+    spectrum = Spectrum(
+        wavelengths=WavelengthGrid(wl),
+        values=np.asarray(highres_vals, dtype=np.float64),
+        kind=QuantityKind.UNKNOWN,
+        units=None,
+    )
+    convolved = physics_resampling.convolve_to_bands(spectrum, srf_matrix)
+    return np.asarray(convolved.values, dtype=np.float64)
 
 
 def boxcar_resample(
@@ -338,8 +363,7 @@ def project_to_sensor(
             raise ValueError("SRF band count does not match target centers")
         if not np.allclose(srf.centers_nm, centers):
             raise ValueError("SRF centers do not align with target centers")
-        sensor_srf = _sensor_srf_from_matrix(_validate_wavelengths(wl_nm), srf)
-        band_values, _ = resample_values_with_srf(vals, wl_nm, sensor_srf)
+        band_values, _ = resample_values_with_srf(vals, wl_nm, srf)
         return band_values
 
     if fallback == "gaussian":
@@ -359,21 +383,6 @@ def project_to_sensor(
         return boxcar_resample(wl_nm, vals, centers, width_nm)
 
     raise ValueError(f"Unsupported fallback method '{fallback}'")
-
-
-def resample_with_srf(
-    wl_nm: np.ndarray,
-    vals: np.ndarray,
-    srf: SRFMatrix,
-) -> NDArray[np.float64]:
-    """Explicit SRF-based resampling wrapper.
-
-    This convenience function keeps SRF-based projection distinct from the
-    interpolation-only helpers, avoiding silent fallbacks when bandpass effects
-    matter.
-    """
-
-    return convolve_to_bands(wl_nm, vals, srf)
 
 
 def resample_by_interpolation(
