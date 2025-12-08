@@ -1,8 +1,9 @@
 import numpy as np
 
 from alchemi.align.batch_builders import NoiseConfig, build_avirisng_pairs
-from alchemi.srf.avirisng import avirisng_srf_matrix
-from alchemi.srf.batch_convolve import batch_convolve_lab_to_sensor
+from alchemi.srf.avirisng import build_avirisng_sensor_srf
+from alchemi.srf.registry import get_srf, register_sensor_srf
+from alchemi.srf.resample import resample_values_with_srf
 
 
 def _lab_batch(num: int = 256) -> list[tuple[np.ndarray, np.ndarray]]:
@@ -21,8 +22,11 @@ def test_aviris_pairs_projection_matches(tmp_path) -> None:
     batch = _lab_batch()
     pairs = build_avirisng_pairs(batch, cache_dir=tmp_path)
 
-    srf = avirisng_srf_matrix(cache_dir=tmp_path)
-    expected = batch_convolve_lab_to_sensor(batch[0][0], np.stack([b[1] for b in batch]), srf)
+    sensor_srf = get_srf("avirisng")
+    if sensor_srf is None:
+        sensor_srf = build_avirisng_sensor_srf(cache_dir=tmp_path)
+        register_sensor_srf(sensor_srf)
+    expected, _ = resample_values_with_srf(np.stack([b[1] for b in batch]), batch[0][0], sensor_srf)
 
     stacked = np.stack([pair.sensor_values for pair in pairs], axis=0)
     np.testing.assert_allclose(stacked, expected, atol=1e-6)
@@ -32,10 +36,10 @@ def test_aviris_pairs_projection_matches(tmp_path) -> None:
 
 def test_aviris_noise_vector_application(tmp_path) -> None:
     batch = _lab_batch()
-    srf = avirisng_srf_matrix(cache_dir=tmp_path)
     base_pairs = build_avirisng_pairs(batch, cache_dir=tmp_path)
 
-    band_noise = np.linspace(0.0, 0.05, srf.centers_nm.size, dtype=np.float64)
+    srf = get_srf("avirisng") or build_avirisng_sensor_srf(cache_dir=tmp_path)
+    band_noise = np.linspace(0.0, 0.05, srf.band_count, dtype=np.float64)
     noisy_pairs = build_avirisng_pairs(
         batch,
         cache_dir=tmp_path,
@@ -43,7 +47,8 @@ def test_aviris_noise_vector_application(tmp_path) -> None:
         noise_cfg=NoiseConfig(seed=7),
     )
 
-    expected = batch_convolve_lab_to_sensor(batch[0][0], np.stack([b[1] for b in batch]), srf)
+    sensor_srf = get_srf("avirisng") or build_avirisng_sensor_srf(cache_dir=tmp_path)
+    expected, _ = resample_values_with_srf(np.stack([b[1] for b in batch]), batch[0][0], sensor_srf)
     sigma = np.abs(expected) * band_noise.reshape(1, -1)
     rng = np.random.default_rng(7)
     expected_noise = rng.normal(loc=0.0, scale=1.0, size=expected.shape) * sigma

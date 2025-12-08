@@ -2,7 +2,12 @@ import numpy as np
 
 from alchemi.align.batch_builders import NoiseConfig, PairBatch, build_enmap_pairs
 from alchemi.srf.batch_convolve import batch_convolve_lab_to_sensor
-from alchemi.srf.enmap import enmap_srf_matrix
+import numpy as np
+
+from alchemi.align.batch_builders import NoiseConfig, PairBatch, build_enmap_pairs
+from alchemi.srf.enmap import build_enmap_sensor_srf
+from alchemi.srf.registry import get_srf, register_sensor_srf
+from alchemi.srf.resample import resample_values_with_srf
 
 
 def _synthetic_lab() -> tuple[np.ndarray, np.ndarray]:
@@ -53,8 +58,11 @@ def test_enmap_convolution_matches_reference(tmp_path) -> None:
         noise_level_rel_swir=0.0,
     )
 
-    srf = enmap_srf_matrix(cache_dir=tmp_path)
-    expected = batch_convolve_lab_to_sensor(batch[0][0], np.stack([b[1] for b in batch]), srf)
+    sensor_srf = get_srf("enmap")
+    if sensor_srf is None:
+        sensor_srf = build_enmap_sensor_srf(cache_dir=tmp_path)
+        register_sensor_srf(sensor_srf)
+    expected, _ = resample_values_with_srf(np.stack([b[1] for b in batch]), batch[0][0], sensor_srf)
 
     stacked = np.stack([pair.sensor_values for pair in pairs], axis=0)
     np.testing.assert_allclose(stacked, expected, atol=5e-6)
@@ -76,9 +84,9 @@ def test_enmap_noise_levels_split(tmp_path) -> None:
         noise_cfg=NoiseConfig(seed=123),
     )
 
-    srf = enmap_srf_matrix(cache_dir=tmp_path)
-    expected = batch_convolve_lab_to_sensor(batch[0][0], np.stack([b[1] for b in batch]), srf)
-    rel_levels = np.where(srf.centers_nm <= 999.0, 0.03, 0.06)
+    sensor_srf = get_srf("enmap") or build_enmap_sensor_srf(cache_dir=tmp_path)
+    expected, _ = resample_values_with_srf(np.stack([b[1] for b in batch]), batch[0][0], sensor_srf)
+    rel_levels = np.where(sensor_srf.band_centers_nm <= 999.0, 0.03, 0.06)
     sigma = np.abs(expected) * rel_levels.reshape(1, -1)
 
     rng = np.random.default_rng(123)
