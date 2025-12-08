@@ -78,6 +78,7 @@ line-length = 100
 addopts = "-ra -p no:hypothesispytest"  # Disable real Hypothesis plugin; tests use the local shim.
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = ["physics_and_metadata: integration tests validating physics and metadata wiring"]
 
 [tool.mypy]
 python_version = "3.11"
