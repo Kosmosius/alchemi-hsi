@@ -1,8 +1,9 @@
 import numpy as np
 
 from alchemi.align.batch_builders import NoiseConfig, build_emit_pairs
-from alchemi.srf.registry import get_srf
-from alchemi.srf.resample import project_to_sensor
+from alchemi.srf.emit import build_emit_sensor_srf
+from alchemi.srf.registry import get_srf, register_sensor_srf
+from alchemi.srf.resample import resample_values_with_srf
 
 
 def _lab_grid(num: int = 1024) -> np.ndarray:
@@ -11,7 +12,10 @@ def _lab_grid(num: int = 1024) -> np.ndarray:
 
 def test_emits_pairs_band_geometry() -> None:
     grid = _lab_grid()
-    srf_matrix, _ = get_srf("emit", wavelengths_nm=grid)
+    sensor_srf = get_srf("emit")
+    if sensor_srf is None:
+        sensor_srf = build_emit_sensor_srf(wavelength_grid_nm=grid)
+        register_sensor_srf(sensor_srf)
     lab_batch = [
         (grid, np.exp(-0.5 * ((grid - 600.0) / 35.0) ** 2)),
         (grid, np.exp(-0.5 * ((grid - 1200.0) / 80.0) ** 2)),
@@ -19,7 +23,7 @@ def test_emits_pairs_band_geometry() -> None:
 
     pairs = build_emit_pairs(lab_batch)
     assert len(pairs) == len(lab_batch)
-    expected_bands = srf_matrix.centers_nm.size
+    expected_bands = sensor_srf.band_count
     for pair in pairs:
         np.testing.assert_allclose(pair.lab_wavelengths_nm, grid)
         assert pair.sensor_wavelengths_nm.shape[0] == expected_bands
@@ -34,9 +38,9 @@ def test_emits_pairs_projection_matches_reference() -> None:
     pairs = build_emit_pairs([(grid, lab)], noise_cfg=NoiseConfig())
     (pair,) = pairs
 
-    srf_matrix, _ = get_srf("emit", wavelengths_nm=grid)
-    reference = project_to_sensor(grid, lab, srf_matrix.centers_nm, srf=srf_matrix)
-    np.testing.assert_allclose(pair.sensor_values, reference, atol=1e-6)
+    sensor_srf = get_srf("emit") or build_emit_sensor_srf(wavelength_grid_nm=grid)
+    expected, _ = resample_values_with_srf(lab, grid, sensor_srf)
+    np.testing.assert_allclose(pair.sensor_values, expected, atol=1e-6)
 
 
 def test_emits_pairs_noise_variance_control() -> None:

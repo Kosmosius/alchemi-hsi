@@ -24,6 +24,6 @@ def batch_convolve_lab_to_sensor(
         srfs=srfs,
         band_centers_nm=np.asarray(srf.centers_nm, dtype=np.float64),
         meta={"sensor": getattr(srf, "sensor", None)},
-    )
+    ).normalized()
     band_values, _ = resample_values_with_srf(lab_values, lab_nm, sensor_srf)
     return np.asarray(band_values, dtype=np.float64)

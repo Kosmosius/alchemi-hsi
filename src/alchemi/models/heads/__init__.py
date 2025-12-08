@@ -1,4 +1,4 @@
-from .aux import AuxHead
+from .aux import AuxHead, AuxOutputs
 from .domain import DomainDiscriminator
 from .gas import GasHead, GasOutput
 from .gas_head import GasHead as LegacyGasHead
@@ -8,6 +8,7 @@ from .unmix_head import LinearUnmixHead
 
 __all__ = [
     "AuxHead",
+    "AuxOutputs",
     "DomainDiscriminator",
     "GasHead",
     "GasOutput",

@@ -5,24 +5,24 @@ from typing import Sequence
 
 import numpy as np
 
+from alchemi.spectral import Sample, Spectrum
 from alchemi.tokens.registry import AxisUnit
+from alchemi.types import QuantityKind, ReflectanceUnits
 
 
 @dataclass(slots=True)
 class SyntheticAlignmentDataset:
     """Lightweight in-memory dataset producing paired lab and overhead spectra."""
 
-    lab_wavelengths_nm: np.ndarray
-    sensor_wavelengths_nm: np.ndarray
-    lab_values: np.ndarray
-    sensor_values: np.ndarray
+    lab_spectra: list[Spectrum]
+    sensor_samples: list[Sample]
     axis_unit: AxisUnit = "nm"
 
     def __len__(self) -> int:
-        return int(self.lab_values.shape[0])
+        return len(self.lab_spectra)
 
-    def __getitem__(self, index: int) -> tuple[np.ndarray, np.ndarray]:
-        return self.lab_values[index], self.sensor_values[index]
+    def __getitem__(self, index: int) -> tuple[Spectrum, Sample]:
+        return self.lab_spectra[index], self.sensor_samples[index]
 
     @classmethod
     def create(
@@ -52,19 +52,35 @@ class SyntheticAlignmentDataset:
             lab_rows.append(lab_values.astype(np.float64, copy=False))
             sensor_rows.append(sensor_values.astype(np.float64, copy=False))
 
-        lab_values_arr = np.stack(lab_rows, axis=0)
-        sensor_values_arr = np.stack(sensor_rows, axis=0)
-        sensor_wavelengths = lab_wavelengths.copy()
+        lab_spectra: list[Spectrum] = []
+        sensor_samples: list[Sample] = []
+        for lab_values, sensor_values in zip(lab_rows, sensor_rows, strict=True):
+            lab_spectrum = Spectrum(
+                wavelength_nm=lab_wavelengths,
+                values=lab_values,
+                kind=QuantityKind.REFLECTANCE,
+                units=ReflectanceUnits.FRACTION,
+            )
+            sensor_spectrum = Spectrum(
+                wavelength_nm=lab_wavelengths,
+                values=sensor_values,
+                kind=QuantityKind.REFLECTANCE,
+                units=ReflectanceUnits.FRACTION,
+            )
+            lab_spectra.append(lab_spectrum)
+            sensor_samples.append(Sample(spectrum=sensor_spectrum, sensor_id="synthetic"))
 
-        return cls(
-            lab_wavelengths_nm=lab_wavelengths,
-            sensor_wavelengths_nm=sensor_wavelengths,
-            lab_values=lab_values_arr,
-            sensor_values=sensor_values_arr,
-            axis_unit=axis_unit,
-        )
+        return cls(lab_spectra=lab_spectra, sensor_samples=sensor_samples, axis_unit=axis_unit)
 
-    def batch(self, indices: Sequence[int]) -> tuple[np.ndarray, np.ndarray]:
-        lab = np.asarray(self.lab_values[list(indices)], dtype=np.float64)
-        sensor = np.asarray(self.sensor_values[list(indices)], dtype=np.float64)
+    @property
+    def lab_wavelengths_nm(self) -> np.ndarray:
+        return np.asarray(self.lab_spectra[0].wavelength_nm, dtype=np.float64)
+
+    @property
+    def sensor_wavelengths_nm(self) -> np.ndarray:
+        return np.asarray(self.sensor_samples[0].spectrum.wavelength_nm, dtype=np.float64)
+
+    def batch(self, indices: Sequence[int]) -> tuple[list[Spectrum], list[Sample]]:
+        lab = [self.lab_spectra[idx] for idx in indices]
+        sensor = [self.sensor_samples[idx] for idx in indices]
         return lab, sensor

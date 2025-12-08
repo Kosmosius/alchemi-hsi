@@ -33,19 +33,22 @@ class _SyntheticAlignmentTrainer(AlignmentTrainer):
     def _build_batch(self, batch_size: int) -> _TensorBatch:  # type: ignore[override]
         indices = [(self._cursor + idx) % len(self._dataset) for idx in range(batch_size)]
         self._cursor = (self._cursor + batch_size) % len(self._dataset)
-        lab_values, sensor_values = self._dataset.batch(indices)
+        lab_spectra, sensor_samples = self._dataset.batch(indices)
+
+        lab_values = [spec.values for spec in lab_spectra]
+        sensor_values = [sample.spectrum.values for sample in sensor_samples]
 
         lab_tokens, lab_masks, sensor_tokens, sensor_masks = [], [], [], []
-        for lab_row, sensor_row in zip(lab_values, sensor_values):
+        for lab_spec, sensor_sample in zip(lab_spectra, sensor_samples):
             lab_tok = self.tokenizer(
-                lab_row,
-                self.lab_wavelengths,
+                lab_spec.values,
+                lab_spec.wavelength_nm,
                 axis_unit=self.axis_unit,
                 width=self.lab_fwhm,
             )
             sensor_tok = self.tokenizer(
-                sensor_row,
-                self._dataset.sensor_wavelengths_nm,
+                sensor_sample.spectrum.values,
+                sensor_sample.spectrum.wavelength_nm,
                 axis_unit=self.axis_unit,
             )
             lab_tokens.append(lab_tok.bands)
