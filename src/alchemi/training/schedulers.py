@@ -9,7 +9,9 @@ from alchemi.config.core import SchedulerConfig
 
 
 class WarmupCosine(torch.optim.lr_scheduler._LRScheduler):
-    def __init__(self, optimizer: torch.optim.Optimizer, warmup_steps: int, max_steps: int, min_lr: float = 0.0):
+    def __init__(
+        self, optimizer: torch.optim.Optimizer, warmup_steps: int, max_steps: int, min_lr: float = 0.0
+    ):
         self.warmup_steps = max(1, warmup_steps)
         self.max_steps = max(self.warmup_steps + 1, max_steps)
         self.min_lr = min_lr

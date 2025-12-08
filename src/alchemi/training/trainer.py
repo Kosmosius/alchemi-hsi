@@ -2,7 +2,7 @@
 
 The trainer glues together configuration objects, data pipelines, model
 construction, loss wiring, optimisation, and logging. The implementation here
-is intentionally lightweight – a dummy call such as ``Trainer(cfg).run()`` will
+is intentionally lightweight - a dummy call such as ``Trainer(cfg).run()`` will
 build the model stack and iterate through a few batches without requiring an
 external dataset. Detailed loss wiring can be extended later without changing
 this entry point.
@@ -81,11 +81,15 @@ class Trainer:
         self.ingest = AnySensorIngest.from_config(cfg.model).to(self.device)
         self.backbone = MAEBackbone.from_config(cfg.model).to(self.device)
         self.alignment = LabOverheadAlignment.from_config(cfg.model).to(self.device)
-        self.solids_head = SolidsHead.from_config(cfg.model.backbone.embed_dim, cfg.model.heads.solids).to(
-            self.device
-        )
-        self.gas_head = GasHead.from_config(cfg.model.backbone.embed_dim, cfg.model.heads.gas).to(self.device)
-        self.aux_head = AuxHead.from_config(cfg.model.backbone.embed_dim, cfg.model.heads.aux).to(self.device)
+        self.solids_head = SolidsHead.from_config(
+            cfg.model.backbone.embed_dim, cfg.model.heads.solids
+        ).to(self.device)
+        self.gas_head = GasHead.from_config(
+            cfg.model.backbone.embed_dim, cfg.model.heads.gas
+        ).to(self.device)
+        self.aux_head = AuxHead.from_config(
+            cfg.model.backbone.embed_dim, cfg.model.heads.aux
+        ).to(self.device)
 
         # Loss helpers
         self.mae_loss = build_mae_reconstruction_loss()
@@ -130,10 +134,19 @@ class Trainer:
             self.cfg.training.optimizer,
             lr_override=stage_cfg.learning_rate,
         )
-        self.scheduler = build_scheduler(self.optimizer, self.cfg.training.scheduler, stage_cfg.epochs)
+        self.scheduler = build_scheduler(
+            self.optimizer, self.cfg.training.scheduler, stage_cfg.epochs
+        )
 
     def parameters(self) -> Iterable[nn.Parameter]:  # pragma: no cover - passthrough
-        modules = [self.ingest, self.backbone, self.alignment, self.solids_head, self.gas_head, self.aux_head]
+        modules = [
+            self.ingest,
+            self.backbone,
+            self.alignment,
+            self.solids_head,
+            self.gas_head,
+            self.aux_head,
+        ]
         for module in modules:
             yield from module.parameters()
 
@@ -166,7 +179,9 @@ class Trainer:
         loss = self.mae_loss(out.decoded, tokens, mask=out.mask)
         return loss, {"mae": float(loss.detach().cpu())}
 
-    def alignment_step(self, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+    def alignment_step(
+        self, batch: dict[str, torch.Tensor]
+    ) -> tuple[torch.Tensor, dict[str, float]]:
         tok_a = batch["tokens"].to(self.device)
         tok_b = batch.get("tokens_alt", tok_a).to(self.device)
         enc_a = self.backbone.forward_encoder(tok_a)

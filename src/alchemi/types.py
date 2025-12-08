@@ -1,4 +1,4 @@
-# TODO: migrated from legacy structure – reconcile with new design.
+# TODO: migrated from legacy structure - reconcile with new design.
 from __future__ import annotations
 
 import logging
@@ -225,7 +225,8 @@ def _normalize_value_units(
             msg = f"Unrecognised units: {unit_str!r}"
             raise ValueError(msg)
         warnings.warn(
-            "Unit strings are deprecated; use ValueUnits / RadianceUnits / ReflectanceUnits / TemperatureUnits enums instead.",
+            "Unit strings are deprecated; use ValueUnits / RadianceUnits / "
+            "ReflectanceUnits / TemperatureUnits enums instead.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -277,7 +278,9 @@ class WavelengthGrid:
         self.nm = a
 
     @classmethod
-    def from_any(cls, values: Sequence[float] | NDArray[np.floating], units: str | None = None) -> WavelengthGrid:
+    def from_any(
+        cls, values: Sequence[float] | NDArray[np.floating], units: str | None = None
+    ) -> WavelengthGrid:
         """Create a grid from values expressed in nm, µm, or Ångström.
 
         Parameters
@@ -600,25 +603,6 @@ class Spectrum:
             values=values_arr,
             kind=kind,
             units=units,
-        )
-
-    @classmethod
-    def from_brightness_temperature(
-        cls,
-        wavelengths: WavelengthGrid,
-        values: NDArray[np.float64],
-        *,
-        units: TemperatureUnits | ValueUnits | str = TemperatureUnits.KELVIN,
-        mask: NDArray[np.bool_] | None = None,
-        meta: dict[str, Any] | None = None,
-    ) -> Spectrum:
-        return cls(
-            wavelengths=wavelengths,
-            values=values,
-            kind=QuantityKind.BRIGHTNESS_T,
-            units=units,
-            mask=mask,
-            meta=meta or {},
         )
 
     def masked(self) -> Spectrum:

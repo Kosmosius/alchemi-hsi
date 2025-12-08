@@ -14,7 +14,9 @@ from alchemi.registry import srfs
 pytestmark = pytest.mark.physics_and_metadata
 
 
-def _write_enmap_cube(path, wavelengths_nm, *, var_name="radiance", units="W m-2 sr-1 nm-1", mask=None):
+def _write_enmap_cube(
+    path, wavelengths_nm, *, var_name="radiance", units="W m-2 sr-1 nm-1", mask=None
+):
     wavelengths_nm = np.asarray(wavelengths_nm, dtype=np.float64)
     band_count = wavelengths_nm.shape[0]
     data = np.full((1, 1, band_count), 1.0, dtype=np.float64)
@@ -45,7 +47,7 @@ def test_enmap_l1b_samples_include_srf_and_masks(tmp_path):
     assert np.all(np.diff(sample.spectrum.wavelength_nm) > 0)
     assert sample.spectrum.kind == "radiance"
     assert sample.srf_matrix is not None
-    row_area = np.trapz(sample.srf_matrix.matrix, x=sample.srf_matrix.wavelength_nm, axis=1)
+    row_area = np.trapezoid(sample.srf_matrix.matrix, x=sample.srf_matrix.wavelength_nm, axis=1)
     np.testing.assert_allclose(row_area, np.ones_like(row_area))
     assert sample.ancillary.get("srf_mode") == "srf-aware"
 

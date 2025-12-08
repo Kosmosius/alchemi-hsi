@@ -12,7 +12,9 @@ from typing import Iterable
 from alchemi.utils.io import StrPath
 
 
-def find_project_root(start: StrPath | None = None, markers: Iterable[str] = ("pyproject.toml", ".git")) -> Path:
+def find_project_root(
+    start: StrPath | None = None, markers: Iterable[str] = ("pyproject.toml", ".git")
+) -> Path:
     """Locate the project root by searching for a marker file.
 
     Parameters

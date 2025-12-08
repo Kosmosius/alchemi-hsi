@@ -433,7 +433,12 @@ def perturb_sensor_srf(
 
     if center_jitter_nm > 0:
         centers += rng.uniform(-center_jitter_nm, center_jitter_nm, size=centers.shape)
-        np.clip(centers, sensor_srf.wavelength_grid_nm[0], sensor_srf.wavelength_grid_nm[-1], out=centers)
+        np.clip(
+            centers,
+            sensor_srf.wavelength_grid_nm[0],
+            sensor_srf.wavelength_grid_nm[-1],
+            out=centers,
+        )
 
     if width_jitter_frac > 0:
         widths *= rng.uniform(1.0 - width_jitter_frac, 1.0 + width_jitter_frac, size=widths.shape)

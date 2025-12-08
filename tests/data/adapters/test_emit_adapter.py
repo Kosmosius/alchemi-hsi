@@ -67,7 +67,10 @@ def test_iter_emit_l2a_pixels_reflectance(monkeypatch, tmp_path):
 def test_attach_emit_l2b_labels(monkeypatch, tmp_path):
     wavelengths = np.array([400.0, 500.0])
     radiance = np.ones((1, 1, wavelengths.size))
-    ds = xr.Dataset({"radiance": (("y", "x", "band"), radiance)}, coords={"wavelength_nm": ("band", wavelengths)})
+    ds = xr.Dataset(
+        {"radiance": (("y", "x", "band"), radiance)},
+        coords={"wavelength_nm": ("band", wavelengths)},
+    )
     monkeypatch.setattr(emit_adapter, "load_emit_l1b", lambda *_args, **_kwargs: ds)
     monkeypatch.setattr(emit_adapter.srfs, "get_srf", lambda *_args, **_kwargs: None)
 
@@ -89,7 +92,10 @@ def test_emit_srf_blind_gaussian(monkeypatch, tmp_path):
     radiance = np.ones((1, 1, wavelengths.size), dtype=np.float64)
     band_mask = np.array([True, True, True])
     ds = xr.Dataset(
-        {"radiance": (("y", "x", "band"), radiance, {"units": "W/m^2/sr/nm"}), "band_mask": (("band",), band_mask)},
+        {
+            "radiance": (("y", "x", "band"), radiance, {"units": "W/m^2/sr/nm"}),
+            "band_mask": (("band",), band_mask),
+        },
         coords={"wavelength_nm": ("band", wavelengths)},
     )
 

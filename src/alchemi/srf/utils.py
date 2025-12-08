@@ -251,7 +251,9 @@ def build_gaussian_srf_matrix(
     if centers.shape[0] != wl.shape[0] or widths.shape[0] != wl.shape[0]:
         raise ValueError("centers_nm and width_nm must match axis_nm length")
 
-    rows = np.vstack([gaussian_srf(center, width, wl) for center, width in zip(centers, widths, strict=True)])
+    rows = np.vstack(
+        [gaussian_srf(center, width, wl) for center, width in zip(centers, widths, strict=True)]
+    )
     matrix = DenseSRFMatrix(wavelength_nm=wl, matrix=rows)
     validate_srf_alignment(wl, matrix, centers_nm=centers)
     return matrix

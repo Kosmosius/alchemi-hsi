@@ -10,7 +10,7 @@ import numpy as np
 
 from ..registry import srfs
 from ..spectral.srf import SensorSRF, SRFProvenance
-from ..types import SRFMatrix as LegacySRFMatrix, SRFMatrix
+from ..types import SRFMatrix, SRFMatrix as LegacySRFMatrix
 
 
 def _to_dense_matrix(
@@ -42,7 +42,7 @@ def _to_dense_matrix(
 
         matrix[idx] = np.interp(base_grid, nm_arr, resp_arr, left=0.0, right=0.0)
 
-        area = float(np.trapz(matrix[idx], x=base_grid))
+        area = float(np.trapezoid(matrix[idx], x=base_grid))
         if area > 0.0:
             matrix[idx] /= area
 
@@ -133,7 +133,10 @@ class SRFRegistry:
         sensors = set(self._overrides.keys())
         if self._root is None:
             try:
-                sensors.update(path.stem.split("_srfs")[0] for path in Path(srfs._SRF_ROOT).glob("*_srfs.*"))
+                sensors.update(
+                    path.stem.split("_srfs")[0]
+                    for path in Path(srfs._SRF_ROOT).glob("*_srfs.*")
+                )
             except Exception:  # pragma: no cover - best effort
                 pass
         return sorted(sensors)
