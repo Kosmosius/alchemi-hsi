@@ -2,12 +2,15 @@ from __future__ import annotations
 
 """Process-wide SRF registry backed by canonical :class:`SensorSRF` objects."""
 
+import warnings
+from pathlib import Path
 from typing import Iterable
 
 import numpy as np
 
+from ..registry import srfs
 from ..spectral.srf import SensorSRF, SRFProvenance
-from ..types import SRFMatrix as LegacySRFMatrix
+from ..types import SRFMatrix as LegacySRFMatrix, SRFMatrix
 
 
 def _to_dense_matrix(
@@ -82,36 +85,64 @@ def sensor_srf_from_legacy(
 
 
 class SRFRegistry:
-    """Registry keyed by ``sensor_id`` that returns :class:`SensorSRF` payloads."""
+    """Compatibility shim that proxies to :mod:`alchemi.registry.srfs`.
 
-    def __init__(self) -> None:
-        self._by_sensor: dict[str, SensorSRF] = {}
+    New code should call :func:`alchemi.registry.srfs.get_srf` directly. This
+    wrapper preserves the legacy interface used by older adapters while routing
+    all lookups through the canonical SRF registry.
+    """
 
-    def register(self, sensor_srf: SensorSRF) -> None:
+    def __init__(self, root: str | Path | None = None) -> None:
+        warnings.warn(
+            "alchemi.srf.registry.SRFRegistry is deprecated; use"
+            " alchemi.registry.srfs.get_srf instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self._root = Path(root) if root is not None else None
+        self._overrides: dict[str, SRFMatrix] = {}
+
+    def register(self, sensor_srf: SensorSRF | SRFMatrix) -> None:
         key = sensor_srf.sensor_id.lower()
-        self._by_sensor[key] = sensor_srf
+        if isinstance(sensor_srf, SensorSRF):
+            # Convert to the canonical matrix representation for downstream use.
+            matrix = sensor_srf.to_matrix()
+        else:
+            matrix = sensor_srf
+        self._overrides[key] = matrix
 
     def has(self, sensor_id: str) -> bool:
-        return sensor_id.lower() in self._by_sensor
+        return sensor_id.lower() in self._overrides
 
-    def get(self, sensor_id: str) -> SensorSRF | None:
-        return self._by_sensor.get(sensor_id.lower())
-
-    def require(self, sensor_id: str) -> SensorSRF:
+    def get(self, sensor_id: str) -> SRFMatrix | None:
         key = sensor_id.lower()
+        if key in self._overrides:
+            return self._overrides[key]
         try:
-            return self._by_sensor[key]
-        except KeyError as exc:  # pragma: no cover - defensive guard
-            raise KeyError(f"No SRF registered for sensor_id={sensor_id!r}") from exc
+            return srfs.get_srf(sensor_id, base_path=self._root)
+        except FileNotFoundError:
+            return None
+
+    def require(self, sensor_id: str) -> SRFMatrix:
+        srf = self.get(sensor_id)
+        if srf is None:  # pragma: no cover - defensive guard
+            raise KeyError(f"No SRF registered for sensor_id={sensor_id!r}")
+        return srf
 
     def all_sensors(self) -> list[str]:
-        return sorted(self._by_sensor.keys())
+        sensors = set(self._overrides.keys())
+        if self._root is None:
+            try:
+                sensors.update(path.stem.split("_srfs")[0] for path in Path(srfs._SRF_ROOT).glob("*_srfs.*"))
+            except Exception:  # pragma: no cover - best effort
+                pass
+        return sorted(sensors)
 
 
 GLOBAL_SRF_REGISTRY = SRFRegistry()
 
 
-def get_srf(sensor_id: str, **_: object) -> SensorSRF | None:
+def get_srf(sensor_id: str, **_: object) -> SRFMatrix | None:
     """Backwards-compatible helper that proxies the global registry."""
     return GLOBAL_SRF_REGISTRY.get(sensor_id)
 

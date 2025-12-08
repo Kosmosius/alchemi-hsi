@@ -62,20 +62,23 @@ def _load_npy(path: Path) -> SRFMatrix:
     return _validate_srf_matrix(payload)
 
 
-def _resolve_path(sensor_id: str) -> Path:
+def _resolve_path(sensor_id: str, base_path: Path) -> Path:
     base = sensor_id.lower()
     candidates = [
-        _SRF_ROOT / f"{base}_srfs.json",
-        _SRF_ROOT / f"{base}_srfs.npy",
-        _SRF_ROOT / f"{base}_srfs.npz",
+        base_path / f"{base}.json",
+        base_path / f"{base}.npy",
+        base_path / f"{base}.npz",
+        base_path / f"{base}_srfs.json",
+        base_path / f"{base}_srfs.npy",
+        base_path / f"{base}_srfs.npz",
     ]
     for path in candidates:
         if path.exists():
             return path
-    raise FileNotFoundError(f"SRF file for {sensor_id!r} not found under {_SRF_ROOT}")
+    raise FileNotFoundError(f"SRF file for {sensor_id!r} not found under {base_path}")
 
 
-def get_srf(sensor_id: str) -> SRFMatrix:
+def get_srf(sensor_id: str, base_path: str | Path | None = None) -> SRFMatrix:
     """Load an SRF matrix for ``sensor_id``.
 
     The loader understands JSON payloads that mirror :class:`SRFMatrix` along
@@ -84,7 +87,8 @@ def get_srf(sensor_id: str) -> SRFMatrix:
     integration to ensure unit area.
     """
 
-    path = _resolve_path(sensor_id)
+    root = Path(base_path) if base_path is not None else _SRF_ROOT
+    path = _resolve_path(sensor_id, root)
     if path.suffix == ".json":
         srf = _load_json(path)
     elif path.suffix in {".npy", ".npz"}:
