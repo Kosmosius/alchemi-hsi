@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 
 from alchemi.losses import InfoNCELoss
-from alchemi.models.heads.aux import AuxOutputs
+from alchemi.models.heads.aux_head import AuxOutputs  # NOTE: aux head lives in aux_head.py (Windows `AUX` reserved)
 from alchemi.models.heads.gas import GasOutput
 from alchemi.models.heads.solids import SolidsOutput
 

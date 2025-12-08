@@ -1,4 +1,9 @@
 """Auxiliary prediction heads for band depth and QA."""
+# NOTE FOR FUTURE MAINTAINERS AND CODE ASSISTANTS:
+# This module is intentionally named `aux_head.py` instead of `aux.py`.
+# On Windows, `AUX` is a reserved device name (like `NUL`, `PRN`, `COM1`, etc.),
+# so `aux.py` cannot be checked out by Git on Windows. Do NOT rename this file
+# or reintroduce `aux.py`; it will break Windows users.
 from __future__ import annotations
 
 from dataclasses import dataclass
