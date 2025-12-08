@@ -1,4 +1,4 @@
-from .aux import AuxHead, AuxOutputs
+from .aux_head import AuxHead, AuxOutputs  # NOTE: lives in aux_head.py to avoid Windows `AUX` device name
 from .domain import DomainDiscriminator
 from .gas import GasHead, GasOutput
 from .gas_head import GasHead as LegacyGasHead

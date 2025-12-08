@@ -5,7 +5,14 @@ from .blocks import MLP
 from .context import MinimalSpatialContext
 from .encoder.mae import MAEDecoder, MAEEncoder, MAEOutput, MaskedAutoencoder
 from .factory import build_set_encoder
-from .heads import AuxHead, GasHead, GasOutput, LegacyGasHead, SolidsHead, SolidsOutput
+from .heads import (  # NOTE: AuxHead lives in aux_head.py (not aux.py) due to Windows `AUX` reserved name
+    AuxHead,
+    GasHead,
+    GasOutput,
+    LegacyGasHead,
+    SolidsHead,
+    SolidsOutput,
+)
 from .heads.domain import DomainDiscriminator
 from .heads.id_head import IDHead
 from .heads.unmix_head import LinearUnmixHead
