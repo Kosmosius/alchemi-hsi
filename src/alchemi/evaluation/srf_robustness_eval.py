@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 
 import numpy as np
 
@@ -17,7 +17,7 @@ def apply_srf_perturbations(
 ) -> np.ndarray:
     """Apply simple SRF perturbations via wavelength shifting and smoothing."""
 
-    num_samples, num_bands = spectra.shape
+    _num_samples, num_bands = spectra.shape
     wavelengths = np.linspace(0, 1, num_bands)
     shifted = wavelengths + center_shift
     shifted = np.clip(shifted, 0, 1)
@@ -45,7 +45,10 @@ def robustness_degradation(
 ) -> float:
     """Measure degradation between baseline and perturbed spectra using a metric."""
 
-    scores = [evaluator(base, pert) for base, pert in zip(baseline_spectra, perturbed_spectra)]
+    scores = [
+        evaluator(base, pert)
+        for base, pert in zip(baseline_spectra, perturbed_spectra, strict=False)
+    ]
     return float(np.mean(scores))
 
 

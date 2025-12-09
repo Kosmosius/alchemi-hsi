@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import numpy as np
 
-from .metrics import expected_calibration_error, prediction_set_coverage, brier_score
+from .metrics import brier_score, expected_calibration_error, prediction_set_coverage
 
 
 def split_by_regime(
@@ -38,8 +38,8 @@ def summarize_abstention(
     summary = {"overall_coverage": coverage}
     for regime_name in np.unique(regimes_arr):
         mask = regimes_arr == regime_name
-        regime_sets = [p for p, m in zip(prediction_sets, mask) if m]
-        regime_labels = [l for l, m in zip(labels, mask) if m]
+        regime_sets = [p for p, m in zip(prediction_sets, mask, strict=False) if m]
+        regime_labels = [label for label, m in zip(labels, mask, strict=False) if m]
         summary[f"coverage_{regime_name}"] = prediction_set_coverage(regime_sets, regime_labels)
         summary[f"abstention_rate_{regime_name}"] = float(1.0 - summary[f"coverage_{regime_name}"])
     return summary
@@ -68,4 +68,4 @@ def calibration_summary(
     return summary
 
 
-__all__ = ["split_by_regime", "summarize_abstention", "calibration_summary"]
+__all__ = ["calibration_summary", "split_by_regime", "summarize_abstention"]

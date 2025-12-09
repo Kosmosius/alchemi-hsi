@@ -3,20 +3,20 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 import numpy as np
 
 from alchemi.types import QuantityKind, Spectrum, WavelengthGrid
 
 __all__ = [
-    "build_continuum",
-    "continuum_remove",
-    "compute_band_metrics",
     "BandMetrics",
-    "compute_convex_hull_continuum",
+    "build_continuum",
     "compute_band_depth",
+    "compute_band_metrics",
+    "compute_convex_hull_continuum",
+    "continuum_remove",
 ]
 
 
@@ -31,7 +31,7 @@ def _upper_hull_indices(wavelengths: np.ndarray, values: np.ndarray) -> list[int
     reflectance continua that should sit above the spectrum.
     """
 
-    points = list(zip(wavelengths, values))
+    points = list(zip(wavelengths, values, strict=False))
     hull: list[int] = []
     for idx, point in enumerate(points):
         while len(hull) >= 2:
@@ -66,14 +66,14 @@ def _natural_cubic_spline_coefficients(
     alpha = np.zeros(n)
     alpha[1:-1] = (3 / h[1:]) * (y[2:] - y[1:-1]) - (3 / h[:-1]) * (y[1:-1] - y[:-2])
 
-    l = np.ones(n)
+    lower = np.ones(n)
     mu = np.zeros(n)
     z = np.zeros(n)
 
     for i in range(1, n - 1):
-        l[i] = 2 * (x[i + 1] - x[i - 1]) - h[i - 1] * mu[i - 1]
-        mu[i] = h[i] / l[i]
-        z[i] = (alpha[i] - h[i - 1] * z[i - 1]) / l[i]
+        lower[i] = 2 * (x[i + 1] - x[i - 1]) - h[i - 1] * mu[i - 1]
+        mu[i] = h[i] / lower[i]
+        z[i] = (alpha[i] - h[i - 1] * z[i - 1]) / lower[i]
 
     b = np.zeros(n - 1)
     c = np.zeros(n)

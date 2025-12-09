@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any, Callable, Iterable, List
+from collections.abc import Callable, Sequence
+from typing import Any, ClassVar
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
 from alchemi.spectral import Sample
+
 from .adapters import iter_aviris_ng_pixels, iter_emit_pixels, iter_enmap_pixels, iter_hytes_pixels
 from .catalog import SceneCatalog
-from .tiling import iter_tiles
 from .io import load_emit_l1b
+from .tiling import iter_tiles
 
 
 class SpectrumDataset(Dataset[dict[str, Any]]):
@@ -79,7 +80,7 @@ class PairingDataset(Dataset[dict[str, dict[str, Any]]]):
 class RealMAEDataset(Dataset[dict[str, torch.Tensor]]):
     """Tiny dataset that samples patches from real cube fixtures for MAE runs."""
 
-    _LOADERS: dict[str, Any] = {
+    _LOADERS: ClassVar[dict[str, Any]] = {
         "emit_fixture": load_emit_l1b,
     }
 

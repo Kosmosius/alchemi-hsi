@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from itertools import pairwise
 
 import numpy as np
 
-from .metrics import precision_recall_f1, spectral_angle_mapper, residual_norm
+from .metrics import precision_recall_f1, residual_norm, spectral_angle_mapper
 
 
 def compare_dominant_minerals(
@@ -32,10 +33,12 @@ def compute_reconstruction_errors(
     """Return SAM and band-depth reconstruction errors."""
 
     sam_scores = [
-        spectral_angle_mapper(ref, pred) for ref, pred in zip(reference_spectra, predicted_spectra)
+        spectral_angle_mapper(ref, pred)
+        for ref, pred in zip(reference_spectra, predicted_spectra, strict=False)
     ]
     residuals = [
-        residual_norm(ref, pred) for ref, pred in zip(reference_spectra, predicted_spectra)
+        residual_norm(ref, pred)
+        for ref, pred in zip(reference_spectra, predicted_spectra, strict=False)
     ]
 
     band_depth_errors: list[float] = []
@@ -70,14 +73,14 @@ def limit_of_detection_experiment(
 
     bin_edges = np.asarray(abundance_bins)
     detection_rates = []
-    for lower, upper in zip(bin_edges[:-1], bin_edges[1:]):
+    for lower, upper in pairwise(bin_edges):
         in_bin = (abundances_arr >= lower) & (abundances_arr < upper)
         if not np.any(in_bin):
             continue
         detection_rates.append(float(np.mean(detections_arr[in_bin])))
 
     lod_threshold = None
-    for bound, rate in zip(bin_edges[1:], detection_rates):
+    for bound, rate in zip(bin_edges[1:], detection_rates, strict=False):
         if rate >= 0.5:
             lod_threshold = bound
             break
