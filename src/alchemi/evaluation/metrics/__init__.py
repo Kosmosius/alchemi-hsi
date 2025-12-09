@@ -8,10 +8,10 @@ small dictionaries.
 
 from __future__ import annotations
 
-from typing import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from itertools import pairwise
 
 import numpy as np
-
 
 # ---------------------------------------------------------------------------
 # Classification metrics
@@ -198,7 +198,7 @@ def expected_calibration_error(
     predictions = probs.argmax(axis=1)
     bins = np.linspace(0.0, 1.0, n_bins + 1)
     ece = 0.0
-    for bin_lower, bin_upper in zip(bins[:-1], bins[1:]):
+    for bin_lower, bin_upper in pairwise(bins):
         in_bin = (confidences > bin_lower) & (confidences <= bin_upper)
         if not np.any(in_bin):
             continue
@@ -235,23 +235,26 @@ def prediction_set_coverage(
     """Coverage rate for prediction sets or abstention-enabled classifiers."""
 
     label_arr = np.asarray(labels)
-    covered = [label in pred_set for label, pred_set in zip(label_arr, prediction_sets)]
+    covered = [
+        label in pred_set
+        for label, pred_set in zip(label_arr, prediction_sets, strict=False)
+    ]
     return float(np.mean(covered))
 
 
 __all__ = [
     "accuracy",
-    "precision_recall_f1",
-    "rmse",
-    "mae",
-    "r2_score",
+    "brier_score",
+    "cosine_similarity",
+    "expected_calibration_error",
     "intersection_over_union",
+    "mae",
+    "negative_log_likelihood",
+    "precision_recall_f1",
+    "prediction_set_coverage",
+    "r2_score",
+    "residual_norm",
+    "rmse",
     "segmentation_precision_recall",
     "spectral_angle_mapper",
-    "cosine_similarity",
-    "residual_norm",
-    "expected_calibration_error",
-    "negative_log_likelihood",
-    "brier_score",
-    "prediction_set_coverage",
 ]

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import random
-from typing import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 
 import numpy as np
 import torch
@@ -59,9 +59,10 @@ class SRFJitter:
     def __init__(self, centers_nm: Sequence[float], jitter_nm: float = 1.0):
         self.centers_nm = np.asarray(centers_nm, dtype=np.float64)
         self.jitter_nm = jitter_nm
+        self.rng = np.random.default_rng()
 
     def __call__(self, spectrum: Spectrum) -> Spectrum:
-        offsets = np.random.uniform(-self.jitter_nm, self.jitter_nm, size=self.centers_nm.shape)
+        offsets = self.rng.uniform(-self.jitter_nm, self.jitter_nm, size=self.centers_nm.shape)
         perturbed = self.centers_nm + offsets
         values = np.interp(perturbed, spectrum.wavelength_nm, spectrum.values)
         # TODO: swap to physics.resampling once spectral/type unification lands.

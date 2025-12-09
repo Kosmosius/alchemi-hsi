@@ -8,9 +8,6 @@ without changing call-sites. Shapes follow the PyTorch transformer defaults
 
 from __future__ import annotations
 
-from typing import Optional
-
-import torch
 from torch import Tensor, nn
 
 __all__ = [
@@ -40,7 +37,7 @@ class MLP(nn.Module):
             nn.Linear(d_hidden, d_out),
         )
 
-    def forward(self, x: Tensor) -> Tensor:  # noqa: D401
+    def forward(self, x: Tensor) -> Tensor:
         """Apply the MLP."""
         return self.net(x)
 
@@ -58,7 +55,7 @@ class MultiHeadSelfAttention(nn.Module):
         )
 
     def forward(
-        self, x: Tensor, key_padding_mask: Optional[Tensor] = None
+        self, x: Tensor, key_padding_mask: Tensor | None = None
     ) -> tuple[Tensor, Tensor]:
         """Compute self-attention for ``x`` with an optional padding mask."""
 
@@ -84,7 +81,9 @@ class TransformerBlock(nn.Module):
         self.norm2 = nn.LayerNorm(dim)
         self.mlp = MLP(dim, hidden, dim, dropout=dropout)
 
-    def forward(self, x: Tensor, key_padding_mask: Optional[Tensor] = None) -> Tensor:
+    def forward(
+        self, x: Tensor, key_padding_mask: Tensor | None = None
+    ) -> Tensor:
         """Apply attention and feed-forward residual blocks."""
 
         attn_out, _ = self.attn(self.norm1(x), key_padding_mask=key_padding_mask)
