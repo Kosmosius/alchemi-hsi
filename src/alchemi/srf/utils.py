@@ -204,7 +204,11 @@ def default_band_widths(
     if srf is None and sensor in _KNOWN_SENSORS:
         srf = load_sensor_srf(sensor, registry=registry)
 
-    if srf is not None and np.allclose(srf.centers_nm, wavelengths, atol=1e-6):
+    if (
+        srf is not None
+        and np.asarray(srf.centers_nm, dtype=np.float64).shape == wavelengths.shape
+        and np.allclose(srf.centers_nm, wavelengths, atol=1e-6)
+    ):
         widths = np.asarray(
             [
                 estimate_fwhm(nm, resp)
