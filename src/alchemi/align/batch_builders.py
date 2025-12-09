@@ -200,7 +200,11 @@ def _pairs_from_projection(
     else:
         valid_mask = np.ones_like(sensor_wl, dtype=bool)
 
-    widths = np.zeros_like(sensor_wl) if band_widths_nm is None else np.asarray(band_widths_nm, dtype=np.float64)
+    widths = (
+        np.zeros_like(sensor_wl)
+        if band_widths_nm is None
+        else np.asarray(band_widths_nm, dtype=np.float64)
+    )
     band_meta = BandMetadata(
         center_nm=sensor_wl,
         width_nm=widths,

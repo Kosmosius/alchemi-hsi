@@ -33,7 +33,9 @@ def generate_plume_samples(
     plume_scale = strength * mask[..., np.newaxis]
 
     bg_values = background.spectrum.values[np.newaxis, np.newaxis, :]
-    gas_interp = np.interp(background.spectrum.wavelength_nm, gas_signature.wavelength_nm, gas_signature.values)
+    gas_interp = np.interp(
+        background.spectrum.wavelength_nm, gas_signature.wavelength_nm, gas_signature.values
+    )
     plume_cube = bg_values * (1 - plume_scale) + (bg_values + gas_interp) * plume_scale
 
     srfs_for_sensor = None

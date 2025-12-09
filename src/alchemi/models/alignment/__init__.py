@@ -1,4 +1,4 @@
-"""Lab–overhead alignment utilities."""
+"""Lab-overhead alignment utilities."""
 
 from .lab_overhead import LabOverheadAlignment, alignment_losses
 

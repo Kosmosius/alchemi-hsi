@@ -65,7 +65,9 @@ def load_avirisng_l1b(path: str | Path) -> xr.Dataset:
             raise ValueError("Band mask length must match number of bands")
         dataset["band_mask"] = ("band", mask[order])
 
-    dataset.attrs.update(quantity=QuantityKind.RADIANCE.value, sensor="avirisng", units=_RAD_UNITS.value)
+    dataset.attrs.update(
+        quantity=QuantityKind.RADIANCE.value, sensor="avirisng", units=_RAD_UNITS.value
+    )
 
     check_monotonic(wavelengths)
 

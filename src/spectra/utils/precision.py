@@ -19,7 +19,6 @@ _PRECISION_ALIASES: dict[str, PrecisionType] = {
 
 def _has_transformer_engine() -> bool:
     try:
-
         return True
     except Exception:  # pragma: no cover - import guards
         return False

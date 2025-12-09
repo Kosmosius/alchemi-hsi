@@ -79,6 +79,7 @@ def _as_float64_arrays(*arrays: np.ndarray) -> tuple[np.ndarray, ...]:
 # Low-level Planck helpers
 # ---------------------------------------------------------------------------
 
+
 def planck_radiance_wavelength(
     wavelength_nm: np.ndarray | float,
     temperature_K: np.ndarray | float,
@@ -188,10 +189,18 @@ def inverse_planck_central_lambda(
     L_b, wl_b = np.broadcast_arrays(L_arr, wl_arr)
 
     out = np.empty_like(L_b, dtype=np.float64)
-    it = np.nditer([L_b, wl_b, out], flags=["multi_index"], op_flags=[["readonly"], ["readonly"], ["writeonly"]])
+    it = np.nditer(
+        [L_b, wl_b, out],
+        flags=["multi_index"],
+        op_flags=[["readonly"], ["readonly"], ["writeonly"]],
+    )
     for L_val, wl_val, out_ref in it:
-        evaluator = lambda temp: float(planck_radiance_wavelength(float(wl_val), temp))
-        out_ref[...] = _binary_search_temperature(float(L_val), float(wl_val), evaluator=evaluator, t_min=t_min, t_max=t_max)
+        evaluator = lambda temp, wl_val=wl_val: float(
+            planck_radiance_wavelength(float(wl_val), temp)
+        )
+        out_ref[...] = _binary_search_temperature(
+            float(L_val), float(wl_val), evaluator=evaluator, t_min=t_min, t_max=t_max
+        )
 
     return out
 
@@ -199,6 +208,7 @@ def inverse_planck_central_lambda(
 # ----------------------------------------------------------------------------
 # Array-based Planck conversions (internal helpers)
 # ----------------------------------------------------------------------------
+
 
 def radiance_to_bt_K(
     L: np.ndarray,
@@ -318,7 +328,10 @@ def band_averaged_radiance(
 
     if temps_arr.ndim == 1 and temps_arr.shape[0] == srfs.shape[0]:
         return np.asarray(
-            [band_averaged_radiance(temp, srfs[i : i + 1], wl)[0] for i, temp in enumerate(temps_arr)],
+            [
+                band_averaged_radiance(temp, srfs[i : i + 1], wl)[0]
+                for i, temp in enumerate(temps_arr)
+            ],
             dtype=np.float64,
         )
 
@@ -369,10 +382,12 @@ def invert_band_averaged_radiance_to_bt(
         row = srfs[idx : idx + 1, :]
         lam_eff = float(_effective_wavelengths(row, wl)[0])
 
-        def evaluator(temp: float) -> float:
+        def evaluator(temp: float, row=row) -> float:
             return float(band_averaged_radiance(temp, row, wl)[0])
 
-        out[idx] = _binary_search_temperature(L_val, lam_eff, evaluator=evaluator, t_min=t_min, t_max=t_max)
+        out[idx] = _binary_search_temperature(
+            L_val, lam_eff, evaluator=evaluator, t_min=t_min, t_max=t_max
+        )
 
     return out
 
@@ -416,7 +431,9 @@ def radiance_spectrum_to_bt(
         if srfs is not None:
             if srf_wl is None:
                 raise ValueError("srf_wavelength_nm must accompany srf_matrix")
-            lambda_eff = _effective_wavelengths(np.asarray(srfs, dtype=np.float64), np.asarray(srf_wl, dtype=np.float64))
+            lambda_eff = _effective_wavelengths(
+                np.asarray(srfs, dtype=np.float64), np.asarray(srf_wl, dtype=np.float64)
+            )
             if lambda_eff.shape[0] != radiance_vals.shape[-1]:
                 raise ValueError("SRF band count must match spectrum length")
         else:
@@ -460,7 +477,9 @@ def bt_spectrum_to_radiance(
         if srfs is not None:
             if srf_wl is None:
                 raise ValueError("srf_wavelength_nm must accompany srf_matrix")
-            lambda_eff = _effective_wavelengths(np.asarray(srfs, dtype=np.float64), np.asarray(srf_wl, dtype=np.float64))
+            lambda_eff = _effective_wavelengths(
+                np.asarray(srfs, dtype=np.float64), np.asarray(srf_wl, dtype=np.float64)
+            )
             if lambda_eff.shape[0] != bt_vals.shape[-1]:
                 raise ValueError("SRF band count must match spectrum length")
         else:
@@ -554,9 +573,14 @@ def bt_sample_to_radiance_sample(
 # Backwards-compatible wrappers
 # ---------------------------------------------------------------------------
 
+
 def radiance_to_bt(spectrum: Spectrum, srf: SRFMatrix | None = None) -> Spectrum:
-    return radiance_spectrum_to_bt(spectrum, srf_matrix=srf, srf_wavelength_nm=None, method="central_lambda")
+    return radiance_spectrum_to_bt(
+        spectrum, srf_matrix=srf, srf_wavelength_nm=None, method="central_lambda"
+    )
 
 
 def bt_to_radiance(spectrum: Spectrum, srf: SRFMatrix | None = None) -> Spectrum:
-    return bt_spectrum_to_radiance(spectrum, srf_matrix=srf, srf_wavelength_nm=None, method="central_lambda")
+    return bt_spectrum_to_radiance(
+        spectrum, srf_matrix=srf, srf_wavelength_nm=None, method="central_lambda"
+    )

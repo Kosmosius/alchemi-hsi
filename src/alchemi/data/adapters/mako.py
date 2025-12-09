@@ -28,8 +28,16 @@ def load_mako_pixel_bt(ds: xr.Dataset, position: tuple[int, int]) -> Sample:
 
 
 def _to_sample(ds: xr.Dataset, spectrum: Any, position: tuple[int, int]) -> Sample:
-    wavelengths = np.asarray(ds["wavelength_nm"].values, dtype=float) if "wavelength_nm" in ds else spectrum.wavelength_nm
-    band_mask = np.asarray(ds["band_mask"].values, dtype=bool) if "band_mask" in ds else np.ones_like(wavelengths, dtype=bool)
+    wavelengths = (
+        np.asarray(ds["wavelength_nm"].values, dtype=float)
+        if "wavelength_nm" in ds
+        else spectrum.wavelength_nm
+    )
+    band_mask = (
+        np.asarray(ds["band_mask"].values, dtype=bool)
+        if "band_mask" in ds
+        else np.ones_like(wavelengths, dtype=bool)
+    )
     return Sample(
         spectrum=spectrum,
         sensor_id="mako",

@@ -1,4 +1,5 @@
 """Lightweight masked autoencoder backbone."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -13,7 +14,9 @@ from alchemi.models.blocks import TransformerBlock
 
 def _positional_encoding(num_tokens: int, dim: int, device: torch.device) -> Tensor:
     positions = torch.arange(num_tokens, device=device).unsqueeze(1)
-    div_term = torch.exp(torch.arange(0, dim, 2, device=device) * (-torch.log(torch.tensor(10000.0)) / dim))
+    div_term = torch.exp(
+        torch.arange(0, dim, 2, device=device) * (-torch.log(torch.tensor(10000.0)) / dim)
+    )
     pe = torch.zeros(num_tokens, dim, device=device)
     pe[:, 0::2] = torch.sin(positions * div_term)
     pe[:, 1::2] = torch.cos(positions * div_term)

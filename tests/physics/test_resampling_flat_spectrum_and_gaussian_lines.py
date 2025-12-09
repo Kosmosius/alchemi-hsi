@@ -1,6 +1,10 @@
 import numpy as np
 
-from alchemi.physics.resampling import convolve_to_bands, generate_gaussian_srf, interpolate_to_centers
+from alchemi.physics.resampling import (
+    convolve_to_bands,
+    generate_gaussian_srf,
+    interpolate_to_centers,
+)
 from alchemi.types import Spectrum, WavelengthGrid
 
 

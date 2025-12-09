@@ -63,8 +63,7 @@ def configure_determinism(enabled: bool) -> None:
     except (AttributeError, TypeError):
         if enabled:
             LOGGER.warning(
-                "Deterministic algorithms requested but not fully supported "
-                "by this PyTorch build.",
+                "Deterministic algorithms requested but not fully supported by this PyTorch build.",
             )
 
 

@@ -16,7 +16,9 @@ from alchemi.types import (
 )
 
 
-def _toy_ds(var_name: str, values: np.ndarray, wavelengths: np.ndarray, *, units: str) -> xr.Dataset:
+def _toy_ds(
+    var_name: str, values: np.ndarray, wavelengths: np.ndarray, *, units: str
+) -> xr.Dataset:
     ds = xr.Dataset(
         {var_name: (("y", "x", "band"), values, {"units": units})},
         coords={
@@ -87,5 +89,10 @@ def test_hytes_pixel_bt_units():
 
 def test_reflectance_units_wire():
     wavelengths = np.array([400.0, 500.0])
-    spec = Spectrum(wavelengths=wavelengths, values=np.array([0.1, 0.2]), kind=QuantityKind.REFLECTANCE, units=ReflectanceUnits.FRACTION)
+    spec = Spectrum(
+        wavelengths=wavelengths,
+        values=np.array([0.1, 0.2]),
+        kind=QuantityKind.REFLECTANCE,
+        units=ReflectanceUnits.FRACTION,
+    )
     assert spec.units == ValueUnits.REFLECTANCE_FRACTION

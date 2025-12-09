@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Process-wide SRF registry backed by canonical :class:`SensorSRF` objects."""
+
+from __future__ import annotations
 
 import warnings
 from pathlib import Path
@@ -134,8 +134,7 @@ class SRFRegistry:
         if self._root is None:
             try:
                 sensors.update(
-                    path.stem.split("_srfs")[0]
-                    for path in Path(srfs._SRF_ROOT).glob("*_srfs.*")
+                    path.stem.split("_srfs")[0] for path in Path(srfs._SRF_ROOT).glob("*_srfs.*")
                 )
             except Exception:  # pragma: no cover - best effort
                 pass

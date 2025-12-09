@@ -61,7 +61,9 @@ def calibration_summary(
     }
     for regime_name in np.unique(regimes_arr):
         mask = regimes_arr == regime_name
-        summary[f"ece_{regime_name}"] = expected_calibration_error(predictions[mask], labels_arr[mask], n_bins=n_bins)
+        summary[f"ece_{regime_name}"] = expected_calibration_error(
+            predictions[mask], labels_arr[mask], n_bins=n_bins
+        )
         summary[f"brier_{regime_name}"] = brier_score(predictions[mask], labels_arr[mask])
     return summary
 

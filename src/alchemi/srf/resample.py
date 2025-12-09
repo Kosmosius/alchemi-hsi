@@ -178,9 +178,7 @@ def resample_with_srf(
     )
 
 
-def resample_to_sensor(
-    spectrum: Spectrum, sensor_id: str, **kwargs: float
-) -> Spectrum:
+def resample_to_sensor(spectrum: Spectrum, sensor_id: str, **kwargs: float) -> Spectrum:
     from .utils import load_sensor_srf
 
     srf_matrix = load_sensor_srf(sensor_id)
@@ -329,10 +327,7 @@ def interpolate_values(
         try:
             from scipy.interpolate import CubicSpline
         except Exception as exc:  # pragma: no cover - exercised via tests
-            msg = (
-                "Spline interpolation requires SciPy; install scipy or choose "
-                "mode='linear'"
-            )
+            msg = "Spline interpolation requires SciPy; install scipy or choose mode='linear'"
             raise RuntimeError(msg) from exc
 
         out = np.vstack([CubicSpline(wl, row, extrapolate=True)(centers) for row in spectra])

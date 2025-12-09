@@ -39,14 +39,10 @@ def test_spectral_angle_ignores_nan_bands():
 
 
 def test_temperature_scaling_reduces_ece_and_preserves_ranking():
-    logits_cal = np.array(
-        [[6.0, 0.0], [5.0, 0.0], [0.0, 4.0], [0.0, 5.0], [3.0, 0.0], [0.0, 3.0]]
-    )
+    logits_cal = np.array([[6.0, 0.0], [5.0, 0.0], [0.0, 4.0], [0.0, 5.0], [3.0, 0.0], [0.0, 3.0]])
     labels_cal = np.array([0, 0, 1, 1, 0, 1])
 
-    logits_eval = np.array(
-        [[4.0, 0.0], [2.0, 0.0], [0.0, 2.0], [1.0, 0.0], [0.0, 1.0], [3.0, 0.0]]
-    )
+    logits_eval = np.array([[4.0, 0.0], [2.0, 0.0], [0.0, 2.0], [1.0, 0.0], [0.0, 1.0], [3.0, 0.0]])
     labels_eval = np.array([0, 0, 1, 0, 1, 0])
 
     scaler = TemperatureScaler()
@@ -63,4 +59,3 @@ def test_temperature_scaling_reduces_ece_and_preserves_ranking():
 
     assert ece_after < ece_before - 0.01
     assert np.array_equal(logits_eval.argmax(axis=1), logits_scaled.argmax(axis=1))
-

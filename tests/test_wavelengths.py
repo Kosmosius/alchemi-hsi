@@ -42,7 +42,9 @@ def test_check_monotonic_strict_and_non_strict() -> None:
     try:
         check_monotonic(np.array([1.0, 0.95, 1.1]), strict=False, eps=0.1)
     except ValueError:
-        raise AssertionError("Non-strict monotonicity should allow small decreases")
+        raise AssertionError(
+            "Non-strict monotonicity should allow small decreases"
+        ) from None
 
 
 def test_fix_monotonic_adjusts_small_violations() -> None:

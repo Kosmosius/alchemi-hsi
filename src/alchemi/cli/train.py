@@ -36,7 +36,8 @@ class Trainer:
                 print(f"[trainer] Skipping stage '{name}' (disabled)")
                 continue
             print(
-                "[trainer] Running stage '%s' for %s epochs (lr=%s, weight=%.2f)" % (
+                "[trainer] Running stage '%s' for %s epochs (lr=%s, weight=%.2f)"
+                % (
                     name,
                     setting.epochs if setting.epochs is not None else "configured",
                     setting.learning_rate if setting.learning_rate is not None else "default",
@@ -106,4 +107,3 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 if __name__ == "__main__":  # pragma: no cover - CLI entrypoint
     main()
-

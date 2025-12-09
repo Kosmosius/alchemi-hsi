@@ -1,4 +1,5 @@
 """Sensor-agnostic ingest that turns spectra + metadata into model tokens."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,7 +12,9 @@ from alchemi.config.core import IngestConfig, ModelConfig
 from alchemi.types import QuantityKind, Sample
 
 
-def _as_tensor(x: Tensor | Sequence[float] | None, device: torch.device, dtype: torch.dtype) -> Tensor:
+def _as_tensor(
+    x: Tensor | Sequence[float] | None, device: torch.device, dtype: torch.dtype
+) -> Tensor:
     if x is None:
         return torch.tensor([], device=device, dtype=dtype)
     if isinstance(x, Tensor):
@@ -50,7 +53,9 @@ class AnySensorIngest(nn.Module):
         self.value_proj = nn.Linear(1, d_model)
         self.wavelength_proj = nn.Linear(1, d_model)
         self.bandwidth_proj = nn.Linear(1, d_model)
-        self.srf_proj = nn.Sequential(nn.Linear(64, d_model), nn.GELU(), nn.Linear(d_model, d_model))
+        self.srf_proj = nn.Sequential(
+            nn.Linear(64, d_model), nn.GELU(), nn.Linear(d_model, d_model)
+        )
         self.quantity_embed = nn.Embedding(len(tuple(quantity_kinds)), d_model)
         self.sensor_embed = nn.Embedding(max_sensors, d_model)
         self.out_norm = nn.LayerNorm(d_model)
@@ -98,7 +103,9 @@ class AnySensorIngest(nn.Module):
             Integer IDs identifying the sensor source per batch element.
         """
 
-        values, wl, bw, qty, sensor = self._extract(sample, wavelengths, bandwidths, quantity, sensor_ids)
+        values, wl, bw, qty, sensor = self._extract(
+            sample, wavelengths, bandwidths, quantity, sensor_ids
+        )
         batch = values.shape[0]
 
         if values.dim() == 2:
@@ -112,7 +119,9 @@ class AnySensorIngest(nn.Module):
         band_tokens = self._encode_band_tokens(flat, wl, bw, srf, qty, sensor)
         grouped = self._group_spectrally(band_tokens)
         tokens = self.out_norm(self.dropout(grouped))
-        return IngestOutput(tokens=tokens, spectral_groups=grouped.shape[2], spatial_shape=spatial_shape)
+        return IngestOutput(
+            tokens=tokens, spectral_groups=grouped.shape[2], spatial_shape=spatial_shape
+        )
 
     def _extract(
         self,
@@ -137,14 +146,22 @@ class AnySensorIngest(nn.Module):
             elif isinstance(quantity, QuantityKind):
                 qty = torch.tensor([list(QuantityKind).index(quantity)], device=values.device)
             elif isinstance(quantity, str):
-                qty = torch.tensor([list(QuantityKind).index(QuantityKind(quantity))], device=values.device)
+                qty = torch.tensor(
+                    [list(QuantityKind).index(QuantityKind(quantity))], device=values.device
+                )
             else:
                 qty = torch.zeros(values.shape[0], device=values.device, dtype=torch.long)
             sensor = (
-                sensor_ids.to(values.device) if isinstance(sensor_ids, Tensor) else torch.tensor(sensor_ids or 0, device=values.device)
+                sensor_ids.to(values.device)
+                if isinstance(sensor_ids, Tensor)
+                else torch.tensor(sensor_ids or 0, device=values.device)
             )
 
-        wl = wl if wl.numel() > 0 else torch.linspace(0, 1, values.shape[-1], device=values.device, dtype=values.dtype)
+        wl = (
+            wl
+            if wl.numel() > 0
+            else torch.linspace(0, 1, values.shape[-1], device=values.device, dtype=values.dtype)
+        )
         bw = bw if bw.numel() > 0 else torch.full_like(wl, 1.0 / max(values.shape[-1], 1))
         if wl.dim() == 1:
             wl = wl.unsqueeze(0).expand(values.shape[0], -1)

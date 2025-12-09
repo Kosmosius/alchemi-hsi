@@ -1,4 +1,5 @@
 """Calibration utilities for uncertainty estimation."""
+
 from __future__ import annotations
 
 from itertools import pairwise

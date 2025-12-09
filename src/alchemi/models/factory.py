@@ -15,4 +15,3 @@ def build_set_encoder(*, embed_dim: int, depth: int, heads: int) -> SetEncoder:
     """Create the canonical SetEncoder used by both training stacks."""
 
     return SetEncoder(dim=embed_dim, depth=depth, heads=heads)
-

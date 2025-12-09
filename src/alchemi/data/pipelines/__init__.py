@@ -9,7 +9,13 @@ from torch.utils.data import DataLoader
 from alchemi.config import DataConfig
 
 from ..catalog import SceneCatalog
-from ..datasets import AvirisGasDataset, EmitGasDataset, EmitSolidsDataset, HytesDataset, SpectralEarthDataset
+from ..datasets import (
+    AvirisGasDataset,
+    EmitGasDataset,
+    EmitSolidsDataset,
+    HytesDataset,
+    SpectralEarthDataset,
+)
 from ..transforms import GeometricAugment, RandomBandDropout, SpectralNoise, compose
 
 
@@ -22,7 +28,9 @@ def _build_transforms(cfg: DataConfig) -> Callable:
     return compose(transforms) if transforms else lambda x: x
 
 
-def build_emit_solids_pipeline(data_cfg: DataConfig, *, catalog: SceneCatalog | None = None) -> DataLoader:
+def build_emit_solids_pipeline(
+    data_cfg: DataConfig, *, catalog: SceneCatalog | None = None
+) -> DataLoader:
     dataset = EmitSolidsDataset(
         split=data_cfg.splits.get("train", ["train"])[0],
         catalog=catalog or SceneCatalog(),
@@ -33,7 +41,9 @@ def build_emit_solids_pipeline(data_cfg: DataConfig, *, catalog: SceneCatalog | 
     return DataLoader(dataset, batch_size=data_cfg.sample.batch_size, shuffle=True)
 
 
-def build_emit_gas_pipeline(data_cfg: DataConfig, *, catalog: SceneCatalog | None = None) -> DataLoader:
+def build_emit_gas_pipeline(
+    data_cfg: DataConfig, *, catalog: SceneCatalog | None = None
+) -> DataLoader:
     dataset = EmitGasDataset(
         split=data_cfg.splits.get("train", ["train"])[0],
         catalog=catalog or SceneCatalog(),
@@ -42,7 +52,9 @@ def build_emit_gas_pipeline(data_cfg: DataConfig, *, catalog: SceneCatalog | Non
     return DataLoader(dataset, batch_size=data_cfg.sample.batch_size, shuffle=True)
 
 
-def build_enmap_mae_pipeline(data_cfg: DataConfig, *, catalog: SceneCatalog | None = None) -> DataLoader:
+def build_enmap_mae_pipeline(
+    data_cfg: DataConfig, *, catalog: SceneCatalog | None = None
+) -> DataLoader:
     dataset = SpectralEarthDataset(
         split=data_cfg.splits.get("train", ["train"])[0],
         catalog=catalog or SceneCatalog(),
@@ -55,10 +67,14 @@ def build_enmap_mae_pipeline(data_cfg: DataConfig, *, catalog: SceneCatalog | No
     def _collate(batch: Iterable[dict]):
         return [augment(item) if hasattr(item, "shape") else item for item in batch]
 
-    return DataLoader(dataset, batch_size=data_cfg.sample.batch_size, shuffle=True, collate_fn=_collate)
+    return DataLoader(
+        dataset, batch_size=data_cfg.sample.batch_size, shuffle=True, collate_fn=_collate
+    )
 
 
-def build_aviris_gas_pipeline(data_cfg: DataConfig, *, catalog: SceneCatalog | None = None) -> DataLoader:
+def build_aviris_gas_pipeline(
+    data_cfg: DataConfig, *, catalog: SceneCatalog | None = None
+) -> DataLoader:
     dataset = AvirisGasDataset(
         split=data_cfg.splits.get("train", ["train"])[0],
         catalog=catalog or SceneCatalog(),
@@ -67,7 +83,9 @@ def build_aviris_gas_pipeline(data_cfg: DataConfig, *, catalog: SceneCatalog | N
     return DataLoader(dataset, batch_size=data_cfg.sample.batch_size, shuffle=True)
 
 
-def build_hytes_pipeline(data_cfg: DataConfig, *, catalog: SceneCatalog | None = None) -> DataLoader:
+def build_hytes_pipeline(
+    data_cfg: DataConfig, *, catalog: SceneCatalog | None = None
+) -> DataLoader:
     dataset = HytesDataset(
         split=data_cfg.splits.get("train", ["train"])[0],
         catalog=catalog or SceneCatalog(),

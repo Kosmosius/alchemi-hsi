@@ -1,4 +1,5 @@
 """Alignment utilities for lab and overhead spectra."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -88,7 +89,11 @@ def alignment_losses(
     """Compute InfoNCE-style contrastive and optional cycle losses."""
 
     z_lab = project_lab(lab_embeddings) if project_lab is not None else lab_embeddings
-    z_ovh = project_overhead(overhead_embeddings) if project_overhead is not None else overhead_embeddings
+    z_ovh = (
+        project_overhead(overhead_embeddings)
+        if project_overhead is not None
+        else overhead_embeddings
+    )
 
     z_lab = torch.nn.functional.normalize(z_lab, dim=-1)
     z_ovh = torch.nn.functional.normalize(z_ovh, dim=-1)

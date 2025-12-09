@@ -2,9 +2,7 @@ import numpy as np
 
 from alchemi.align.batch_builders import NoiseConfig, PairBatch, build_enmap_pairs
 from alchemi.srf.batch_convolve import batch_convolve_lab_to_sensor
-import numpy as np
 
-from alchemi.align.batch_builders import NoiseConfig, PairBatch, build_enmap_pairs
 from alchemi.srf.enmap import build_enmap_sensor_srf
 from alchemi.srf.registry import get_srf, register_sensor_srf
 from alchemi.srf.resample import resample_values_with_srf

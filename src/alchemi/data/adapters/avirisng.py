@@ -20,4 +20,6 @@ def load_avirisng_pixel(ds: xr.Dataset, position: tuple[int, int]) -> Sample:
     spectrum = avirisng_pixel(ds, y=y, x=x)
     values = np.asarray(spectrum.values, dtype=np.float64)
     path = str(getattr(ds, "encoding", {}).get("source", ""))
-    return _build_sample(ds=ds, path=path, y=y, x=x, values=values, spectrum_kind=str(spectrum.kind))
+    return _build_sample(
+        ds=ds, path=path, y=y, x=x, values=values, spectrum_kind=str(spectrum.kind)
+    )

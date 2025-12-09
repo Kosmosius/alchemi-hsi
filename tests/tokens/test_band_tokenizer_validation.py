@@ -72,4 +72,3 @@ def test_global_stats_required_for_global_zscore():
 
     with pytest.raises(ValueError, match="ValueStats"):
         tokenizer(values, axis, axis_unit="nm")
-

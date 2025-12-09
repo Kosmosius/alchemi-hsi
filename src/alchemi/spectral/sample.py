@@ -22,7 +22,7 @@ from .srf import SRFMatrix
 
 @dataclass
 class ViewingGeometry:
-    """Solar/sensor viewing geometry in degrees with Earth–Sun distance."""
+    """Solar/sensor viewing geometry in degrees with Earth-Sun distance."""
 
     solar_zenith_deg: float
     solar_azimuth_deg: float
@@ -106,7 +106,10 @@ class Sample:
         if self.srf_matrix is not None:
             if self.srf_matrix.matrix.shape[1] != length:
                 raise ValueError("SRF matrix wavelength axis must match spectrum length")
-            if self.band_meta is not None and self.srf_matrix.matrix.shape[0] != self.band_meta.center_nm.shape[0]:
+            if (
+                self.band_meta is not None
+                and self.srf_matrix.matrix.shape[0] != self.band_meta.center_nm.shape[0]
+            ):
                 raise ValueError("SRF matrix band count must match band metadata")
 
         for name, mask in self.quality_masks.items():
@@ -115,7 +118,9 @@ class Sample:
                 raise ValueError(f"Quality mask '{name}' must be 1-D with length {length}")
             self.quality_masks[name] = mask_arr
 
-        if self.viewing_geometry is not None and not isinstance(self.viewing_geometry, ViewingGeometry):
+        if self.viewing_geometry is not None and not isinstance(
+            self.viewing_geometry, ViewingGeometry
+        ):
             raise TypeError("viewing_geometry must be a ViewingGeometry instance")
 
     def to_chip(self) -> NDArray[np.floating]:
@@ -149,9 +154,13 @@ class Sample:
                 "kind": self.spectrum.kind,
             },
             "sensor_id": self.sensor_id,
-            "acquisition_time": self.acquisition_time.isoformat() if isinstance(self.acquisition_time, datetime) else self.acquisition_time,
+            "acquisition_time": self.acquisition_time.isoformat()
+            if isinstance(self.acquisition_time, datetime)
+            else self.acquisition_time,
             "geo": asdict(self.geo) if isinstance(self.geo, GeoMeta) else self.geo,
-            "viewing_geometry": asdict(self.viewing_geometry) if isinstance(self.viewing_geometry, ViewingGeometry) else self.viewing_geometry,
+            "viewing_geometry": asdict(self.viewing_geometry)
+            if isinstance(self.viewing_geometry, ViewingGeometry)
+            else self.viewing_geometry,
             "band_meta": band_meta,
             "srf_matrix": None
             if self.srf_matrix is None
@@ -221,7 +230,9 @@ class Sample:
         if cube.shape[2] != np.asarray(wavelength_nm).shape[0]:
             raise ValueError("cube spectral dimension must match wavelength grid length")
         values = cube[row, col, :]
-        spectrum = Spectrum(wavelength_nm=np.asarray(wavelength_nm, dtype=float), values=values, kind=kind)
+        spectrum = Spectrum(
+            wavelength_nm=np.asarray(wavelength_nm, dtype=float), values=values, kind=kind
+        )
         return cls(spectrum=spectrum, sensor_id=sensor_id, **kwargs)
 
     @staticmethod
@@ -248,7 +259,9 @@ class Sample:
         )
 
     @staticmethod
-    def _normalize_geo(geo: GeoMeta | Mapping[str, float] | Tuple[float, float, float] | None) -> GeoMeta | None:
+    def _normalize_geo(
+        geo: GeoMeta | Mapping[str, float] | Tuple[float, float, float] | None,
+    ) -> GeoMeta | None:
         if geo is None:
             return None
         if isinstance(geo, GeoMeta):
@@ -257,7 +270,9 @@ class Sample:
             if len(geo) != 3:
                 raise ValueError("geo tuples must contain (lat, lon, elev)")
             lat, lon, elev = geo
-            return GeoMeta(lat=float(lat), lon=float(lon), elev=None if elev is None else float(elev))
+            return GeoMeta(
+                lat=float(lat), lon=float(lon), elev=None if elev is None else float(elev)
+            )
         if isinstance(geo, Mapping):
             geo_dict = dict(geo)
             lat_val = geo_dict.get("lat") if "lat" in geo_dict else geo_dict.get("latitude")
@@ -265,5 +280,9 @@ class Sample:
             if lat_val is None or lon_val is None:
                 raise ValueError("geo mapping must provide lat/lon keys")
             elev_val = geo_dict.get("elev") if "elev" in geo_dict else geo_dict.get("elevation")
-            return GeoMeta(lat=float(lat_val), lon=float(lon_val), elev=None if elev_val is None else float(elev_val))
+            return GeoMeta(
+                lat=float(lat_val),
+                lon=float(lon_val),
+                elev=None if elev_val is None else float(elev_val),
+            )
         raise TypeError("geo must be a GeoMeta, mapping, tuple, or None")

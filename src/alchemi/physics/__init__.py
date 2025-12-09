@@ -23,7 +23,12 @@ from .rad_reflectance import (
     toa_reflectance_sample_to_radiance,
     toa_reflectance_to_radiance,
 )
-from .resampling import convolve_to_bands, generate_gaussian_srf, interpolate_to_centers, simulate_virtual_sensor
+from .resampling import (
+    convolve_to_bands,
+    generate_gaussian_srf,
+    interpolate_to_centers,
+    simulate_virtual_sensor,
+)
 from .continuum import (
     build_continuum,
     compute_band_depth,
@@ -44,7 +49,6 @@ from .tes import (
     bt_spectrum_to_radiance_spectrum,
     compute_lwir_emissivity_proxy,
     lwir_pipeline_for_sample,
-    radiance_sample_to_bt_sample,
     radiance_spectrum_to_bt_spectrum,
     tes_lwirt,
 )

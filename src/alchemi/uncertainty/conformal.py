@@ -1,4 +1,5 @@
 """Split-conformal prediction helpers for classification and regression."""
+
 from __future__ import annotations
 
 from typing import Dict, Hashable, Iterable, Mapping, Optional, Tuple
@@ -35,6 +36,7 @@ def _compute_quantiles(
 
 # Classification
 
+
 def classification_conformal_thresholds(
     calib_probs: torch.Tensor,
     calib_labels: torch.Tensor,
@@ -64,6 +66,7 @@ def classification_label_set(
 
 
 # Regression
+
 
 def regression_conformal_thresholds(
     calib_predictions: torch.Tensor,

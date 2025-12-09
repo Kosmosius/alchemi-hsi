@@ -29,10 +29,10 @@ class LabSpectrum:
     reflectance: np.ndarray
 
 
-# Sub-sampled SPLIB reflectance curves (unitless) covering 2.0–2.5 µm.
+# Sub-sampled SPLIB reflectance curves (unitless) covering 2.0-2.5 µm.
 _SPLIB_SNIPPETS: tuple[LabSpectrum, ...] = (
     LabSpectrum(
-        "Kaolinite KGa-1",  # pronounced Al–OH absorption near 2200 nm
+        "Kaolinite KGa-1",  # pronounced Al-OH absorption near 2200 nm
         wavelength_nm=np.array(
             [
                 2000.0,
@@ -73,7 +73,7 @@ _SPLIB_SNIPPETS: tuple[LabSpectrum, ...] = (
         ),
     ),
     LabSpectrum(
-        "Chlorite",  # strong triplet around 2250–2350 nm
+        "Chlorite",  # strong triplet around 2250-2350 nm
         wavelength_nm=np.array(
             [
                 2000.0,

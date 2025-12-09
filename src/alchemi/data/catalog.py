@@ -8,7 +8,10 @@ from typing import Dict, List, Mapping
 
 import yaml
 
-DEFAULT_CATALOG_PATHS: list[Path] = [Path("resources/examples/catalog.yaml"), Path("resources/examples/catalog.json")]
+DEFAULT_CATALOG_PATHS: list[Path] = [
+    Path("resources/examples/catalog.yaml"),
+    Path("resources/examples/catalog.json"),
+]
 
 
 class SceneCatalog:

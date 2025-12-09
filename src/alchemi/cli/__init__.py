@@ -1,4 +1,4 @@
-# TODO: migrated from legacy structure – reconcile with new design.
+# TODO: migrated from legacy structure - reconcile with new design.
 from __future__ import annotations
 
 import json

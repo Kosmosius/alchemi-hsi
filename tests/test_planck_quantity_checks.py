@@ -14,4 +14,3 @@ def test_planck_rejects_reflectance():
     )
     with pytest.raises(ValueError):
         radiance_to_bt(spectrum)
-

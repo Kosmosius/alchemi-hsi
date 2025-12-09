@@ -144,7 +144,9 @@ class RealMAEDataset(Dataset[dict[str, torch.Tensor]]):
 # Catalog-backed datasets
 
 
-def _pack_spectral_sample(sample: Sample, transform: Callable[[torch.Tensor], torch.Tensor] | None) -> dict[str, Any]:
+def _pack_spectral_sample(
+    sample: Sample, transform: Callable[[torch.Tensor], torch.Tensor] | None
+) -> dict[str, Any]:
     values = torch.from_numpy(sample.spectrum.values.astype("float32"))
     if transform is not None:
         values = transform(values)
@@ -152,7 +154,9 @@ def _pack_spectral_sample(sample: Sample, transform: Callable[[torch.Tensor], to
         "values": values,
         "wavelengths": torch.from_numpy(sample.spectrum.wavelength_nm.astype("float32")),
         "kind": sample.spectrum.kind,
-        "quality_masks": {k: torch.from_numpy(v.astype("bool")) for k, v in sample.quality_masks.items()},
+        "quality_masks": {
+            k: torch.from_numpy(v.astype("bool")) for k, v in sample.quality_masks.items()
+        },
         "meta": {"sensor_id": sample.sensor_id, **sample.ancillary},
     }
 
@@ -191,7 +195,13 @@ class SpectralEarthDataset(_BaseCatalogDataset):
         patch_size: int = 32,
         stride: int = 16,
     ) -> None:
-        super().__init__(split=split, sensor_id="enmap", task="spectral_earth", catalog=catalog, transform=transform)
+        super().__init__(
+            split=split,
+            sensor_id="enmap",
+            task="spectral_earth",
+            catalog=catalog,
+            transform=transform,
+        )
         for scene in self.scene_paths:
             for sample in iter_enmap_pixels(str(scene)):
                 # Build chips using a synthetic 2x2 window to keep stubs lightweight.
@@ -200,7 +210,14 @@ class SpectralEarthDataset(_BaseCatalogDataset):
                     tensor_chip = torch.from_numpy(tile.data.astype("float32"))
                     if transform is not None:
                         tensor_chip = transform(tensor_chip)
-                    self.samples.append({"chip": tensor_chip, "wavelengths": torch.from_numpy(sample.spectrum.wavelength_nm.astype("float32"))})
+                    self.samples.append(
+                        {
+                            "chip": tensor_chip,
+                            "wavelengths": torch.from_numpy(
+                                sample.spectrum.wavelength_nm.astype("float32")
+                            ),
+                        }
+                    )
 
 
 class EmitSolidsDataset(_BaseCatalogDataset):
@@ -215,7 +232,9 @@ class EmitSolidsDataset(_BaseCatalogDataset):
         patch_size: int = 32,
         stride: int = 16,
     ) -> None:
-        super().__init__(split=split, sensor_id="emit", task="emit_solids", catalog=catalog, transform=transform)
+        super().__init__(
+            split=split, sensor_id="emit", task="emit_solids", catalog=catalog, transform=transform
+        )
         for scene in self.scene_paths:
             for sample in iter_emit_pixels(str(scene)):
                 chip = sample.spectrum.values.reshape(1, 1, -1)
@@ -223,11 +242,15 @@ class EmitSolidsDataset(_BaseCatalogDataset):
                     tensor_chip = torch.from_numpy(tile.data.astype("float32"))
                     if transform is not None:
                         tensor_chip = transform(tensor_chip)
-                    self.samples.append({
-                        "chip": tensor_chip,
-                        "wavelengths": torch.from_numpy(sample.spectrum.wavelength_nm.astype("float32")),
-                        "labels": sample.ancillary.get("labels", {}),
-                    })
+                    self.samples.append(
+                        {
+                            "chip": tensor_chip,
+                            "wavelengths": torch.from_numpy(
+                                sample.spectrum.wavelength_nm.astype("float32")
+                            ),
+                            "labels": sample.ancillary.get("labels", {}),
+                        }
+                    )
 
 
 class EmitGasDataset(_BaseCatalogDataset):
@@ -240,7 +263,9 @@ class EmitGasDataset(_BaseCatalogDataset):
         catalog: SceneCatalog | None = None,
         transform: Callable[[torch.Tensor], torch.Tensor] | None = None,
     ) -> None:
-        super().__init__(split=split, sensor_id="emit", task="emit_gas", catalog=catalog, transform=transform)
+        super().__init__(
+            split=split, sensor_id="emit", task="emit_gas", catalog=catalog, transform=transform
+        )
         for scene in self.scene_paths:
             for sample in iter_emit_pixels(str(scene)):
                 packed = _pack_spectral_sample(sample, transform)
@@ -257,7 +282,13 @@ class AvirisGasDataset(_BaseCatalogDataset):
         catalog: SceneCatalog | None = None,
         transform: Callable[[torch.Tensor], torch.Tensor] | None = None,
     ) -> None:
-        super().__init__(split=split, sensor_id="aviris-ng", task="aviris_gas", catalog=catalog, transform=transform)
+        super().__init__(
+            split=split,
+            sensor_id="aviris-ng",
+            task="aviris_gas",
+            catalog=catalog,
+            transform=transform,
+        )
         for scene in self.scene_paths:
             for sample in iter_aviris_ng_pixels(str(scene)):
                 self.samples.append(_pack_spectral_sample(sample, transform))
@@ -275,7 +306,9 @@ class HytesDataset(_BaseCatalogDataset):
         patch_size: int = 16,
         stride: int = 16,
     ) -> None:
-        super().__init__(split=split, sensor_id="hytes", task="hytes_bt", catalog=catalog, transform=transform)
+        super().__init__(
+            split=split, sensor_id="hytes", task="hytes_bt", catalog=catalog, transform=transform
+        )
         for scene in self.scene_paths:
             for sample in iter_hytes_pixels(str(scene)):
                 chip = sample.spectrum.values.reshape(1, 1, -1)
@@ -283,8 +316,12 @@ class HytesDataset(_BaseCatalogDataset):
                     tensor_chip = torch.from_numpy(tile.data.astype("float32"))
                     if transform is not None:
                         tensor_chip = transform(tensor_chip)
-                    self.samples.append({
-                        "chip": tensor_chip,
-                        "wavelengths": torch.from_numpy(sample.spectrum.wavelength_nm.astype("float32")),
-                        "meta": sample.ancillary,
-                    })
+                    self.samples.append(
+                        {
+                            "chip": tensor_chip,
+                            "wavelengths": torch.from_numpy(
+                                sample.spectrum.wavelength_nm.astype("float32")
+                            ),
+                            "meta": sample.ancillary,
+                        }
+                    )

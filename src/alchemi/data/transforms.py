@@ -68,7 +68,9 @@ class SRFJitter:
         return Spectrum(wavelength_nm=perturbed, values=values, kind=spectrum.kind)
 
 
-def compose(transforms: Iterable[Callable[[torch.Tensor], torch.Tensor]]) -> Callable[[torch.Tensor], torch.Tensor]:
+def compose(
+    transforms: Iterable[Callable[[torch.Tensor], torch.Tensor]],
+) -> Callable[[torch.Tensor], torch.Tensor]:
     """Compose a list of callables into a single transform."""
 
     def _inner(x: torch.Tensor) -> torch.Tensor:

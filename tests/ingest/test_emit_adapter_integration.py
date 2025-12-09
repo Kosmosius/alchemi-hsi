@@ -73,4 +73,3 @@ def test_emit_ingest_respects_physics_and_metadata(tmp_path):
     p1, p99 = np.nanpercentile(valid_reflectance, [1, 99])
     assert p1 >= 0.0
     assert p99 <= 1.2
-

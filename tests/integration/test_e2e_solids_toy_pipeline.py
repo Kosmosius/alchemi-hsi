@@ -8,8 +8,12 @@ def test_toy_solids_pipeline_one_step():
     torch.manual_seed(0)
     embeddings = torch.eye(3)
     lab_index = LabIndex.build(embeddings)
-    prototypes = torch.stack([torch.linspace(0.1, 0.3, 4), torch.linspace(0.4, 0.6, 4), torch.linspace(0.7, 0.9, 4)])
-    head = SolidsHead(embed_dim=3, hidden_dim=4, k=2, lab_index=lab_index, prototype_spectra=prototypes)
+    prototypes = torch.stack(
+        [torch.linspace(0.1, 0.3, 4), torch.linspace(0.4, 0.6, 4), torch.linspace(0.7, 0.9, 4)]
+    )
+    head = SolidsHead(
+        embed_dim=3, hidden_dim=4, k=2, lab_index=lab_index, prototype_spectra=prototypes
+    )
     optimizer = torch.optim.Adam(head.parameters(), lr=1e-2)
 
     features = torch.randn(2, 3)

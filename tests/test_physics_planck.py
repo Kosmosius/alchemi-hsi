@@ -11,7 +11,9 @@ from alchemi.physics.planck import (
 from alchemi.types import Spectrum, WavelengthGrid
 
 
-def _gaussian_srfs(wavelength_nm: np.ndarray, centers_nm: list[float], sigma_nm: float) -> np.ndarray:
+def _gaussian_srfs(
+    wavelength_nm: np.ndarray, centers_nm: list[float], sigma_nm: float
+) -> np.ndarray:
     srfs = []
     for center in centers_nm:
         resp = np.exp(-0.5 * ((wavelength_nm - center) / sigma_nm) ** 2)
@@ -66,7 +68,9 @@ def test_spectrum_central_lambda_roundtrip():
 def test_spectrum_band_method_roundtrip():
     wl_grid = np.linspace(8_000.0, 12_000.0, 500)
     srfs = _gaussian_srfs(wl_grid, [8_500.0, 9_800.0, 11_200.0], sigma_nm=60.0)
-    lambda_eff = np.trapezoid(srfs * wl_grid[None, :], x=wl_grid, axis=1) / np.trapezoid(srfs, x=wl_grid, axis=1)
+    lambda_eff = np.trapezoid(srfs * wl_grid[None, :], x=wl_grid, axis=1) / np.trapezoid(
+        srfs, x=wl_grid, axis=1
+    )
 
     temps = np.array([295.0, 305.0, 315.0])
     band_radiance = band_averaged_radiance(temps, srfs, wl_grid)
@@ -87,4 +91,3 @@ def test_spectrum_band_method_roundtrip():
         method="band",
     )
     assert np.allclose(recovered.values, band_radiance, rtol=1e-4, atol=1e-6)
-

@@ -2,7 +2,13 @@
 
 from .acceptance import evaluate_sensor_acceptance
 from .libraries import LibraryEntry, get_entries_for_leaf, list_all_entries, load_library_subset
-from .ontology import aggregate_leaves_to_family, get_children, get_node, get_path_to_root, OntologyNode
+from .ontology import (
+    aggregate_leaves_to_family,
+    get_children,
+    get_node,
+    get_path_to_root,
+    OntologyNode,
+)
 from .sensors import DEFAULT_SENSOR_REGISTRY, SensorRegistry, SensorSpec
 from .srfs import get_band_srf, get_srf
 

@@ -229,7 +229,9 @@ def brier_score(probabilities: np.ndarray, labels: Sequence[int]) -> float:
     return float(np.mean((probs - one_hot) ** 2))
 
 
-def prediction_set_coverage(prediction_sets: Sequence[Iterable[int]], labels: Sequence[int]) -> float:
+def prediction_set_coverage(
+    prediction_sets: Sequence[Iterable[int]], labels: Sequence[int]
+) -> float:
     """Coverage rate for prediction sets or abstention-enabled classifiers."""
 
     label_arr = np.asarray(labels)

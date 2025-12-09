@@ -61,9 +61,7 @@ def test_radiance_non_negative(wavelengths: WavelengthGrid) -> None:
 def test_brightness_temperature_positive(wavelengths: WavelengthGrid) -> None:
     values = np.array([200.0, 250.0, 300.0, 350.0, 0.0])
     with pytest.raises(ValueError, match="> 0 K"):
-        Spectrum.from_brightness_temperature(
-            wavelengths, values, units=TemperatureUnits.KELVIN
-        )
+        Spectrum.from_brightness_temperature(wavelengths, values, units=TemperatureUnits.KELVIN)
 
 
 def test_brightness_temperature_warning_outside_plausible_range(

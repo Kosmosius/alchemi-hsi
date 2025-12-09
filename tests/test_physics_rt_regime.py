@@ -17,7 +17,9 @@ from alchemi.types import WavelengthGrid
 
 
 def _make_sample(**ancillary):
-    spectrum = Spectrum.from_radiance(WavelengthGrid(np.array([1_000.0, 1_100.0])), np.array([0.1, 0.2]))
+    spectrum = Spectrum.from_radiance(
+        WavelengthGrid(np.array([1_000.0, 1_100.0])), np.array([0.1, 0.2])
+    )
     viewing_geometry = ViewingGeometry(
         solar_zenith_deg=ancillary.pop("solar_zenith_deg", 0.0),
         solar_azimuth_deg=0.0,

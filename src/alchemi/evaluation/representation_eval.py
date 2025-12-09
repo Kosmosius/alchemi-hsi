@@ -18,8 +18,12 @@ def recall_at_k(
 ) -> float:
     """Compute Recall@K for retrieval tasks."""
 
-    query_norm = query_embeddings / (np.linalg.norm(query_embeddings, axis=1, keepdims=True) + 1e-12)
-    gallery_norm = gallery_embeddings / (np.linalg.norm(gallery_embeddings, axis=1, keepdims=True) + 1e-12)
+    query_norm = query_embeddings / (
+        np.linalg.norm(query_embeddings, axis=1, keepdims=True) + 1e-12
+    )
+    gallery_norm = gallery_embeddings / (
+        np.linalg.norm(gallery_embeddings, axis=1, keepdims=True) + 1e-12
+    )
 
     sims = query_norm @ gallery_norm.T
     correct = 0

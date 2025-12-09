@@ -112,8 +112,7 @@ def main() -> None:
     _LOG.info("Tokens/s coefficient of variation across runs: %.2f%%", variability * 100)
     if variability > 0.10:
         _LOG.warning(
-            "Throughput variability exceeds 10%% (cv=%.2f%%). "
-            "Consider rerunning or pinning seeds.",
+            "Throughput variability exceeds 10%% (cv=%.2f%%). Consider rerunning or pinning seeds.",
             variability * 100,
         )
 

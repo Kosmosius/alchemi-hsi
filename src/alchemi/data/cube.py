@@ -20,7 +20,13 @@ from alchemi.spectral import BandMetadata, Sample, Spectrum
 from alchemi.wavelengths import check_monotonic, to_nm
 from alchemi.tokens.band_tokenizer import AxisUnit, BandTokenizer, Tokens
 from alchemi.tokens.registry import get_default_tokenizer
-from alchemi.types import QuantityKind, ValueUnits, WavelengthGrid, _normalize_quantity_kind, _normalize_value_units
+from alchemi.types import (
+    QuantityKind,
+    ValueUnits,
+    WavelengthGrid,
+    _normalize_quantity_kind,
+    _normalize_value_units,
+)
 
 __all__ = ["Cube", "GeoInfo", "geo_from_attrs"]
 
@@ -257,7 +263,9 @@ class Cube:
 
         extras = {k: v for k, v in self.attrs.items() if k not in {"sensor"}}
         valid_mask = (
-            np.asarray(self.band_mask, dtype=bool) if self.band_mask is not None else np.ones_like(wavelengths_nm, dtype=bool)
+            np.asarray(self.band_mask, dtype=bool)
+            if self.band_mask is not None
+            else np.ones_like(wavelengths_nm, dtype=bool)
         )
         band_meta = BandMetadata(
             center_nm=wavelengths_nm,

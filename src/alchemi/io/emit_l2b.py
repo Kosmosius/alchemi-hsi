@@ -44,7 +44,7 @@ def _ensure_expected_fields(ds: xr.Dataset) -> None:
     """Validate that the dataset looks like an EMIT L2B mineral product."""
     if not {"y", "x"}.issubset(ds.dims):
         raise ValueError(
-            "Expected spatial dimensions ('y', 'x') in EMIT L2B dataset, " f"found {tuple(ds.dims)}"
+            f"Expected spatial dimensions ('y', 'x') in EMIT L2B dataset, found {tuple(ds.dims)}"
         )
 
     mineral_vars = [name for name in ds.data_vars if "mineral" in name.lower()]

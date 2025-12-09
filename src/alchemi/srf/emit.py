@@ -83,8 +83,7 @@ def _resample_to_grid(
         raise ValueError("High-resolution wavelength grid must be strictly increasing")
 
     resp_rows = [
-        np.interp(highres, archive.native_nm, resp, left=0.0, right=0.0)
-        for resp in archive
+        np.interp(highres, archive.native_nm, resp, left=0.0, right=0.0) for resp in archive
     ]
     return highres, np.asarray(resp_rows, dtype=np.float64)
 
@@ -125,7 +124,11 @@ def emit_srf_matrix(highres_wl_nm: np.ndarray) -> SRFMatrix:
 
 
 def build_emit_sensor_srf(wavelength_grid_nm: np.ndarray | None = None) -> SensorSRF:
-    grid = _DEFAULT_GRID if wavelength_grid_nm is None else np.asarray(wavelength_grid_nm, dtype=np.float64)
+    grid = (
+        _DEFAULT_GRID
+        if wavelength_grid_nm is None
+        else np.asarray(wavelength_grid_nm, dtype=np.float64)
+    )
     legacy = emit_srf_matrix(grid)
     return sensor_srf_from_legacy(legacy, grid=grid, provenance=SRFProvenance.OFFICIAL)
 

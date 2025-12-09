@@ -10,6 +10,7 @@ from alchemi.types import QuantityKind
 
 pytestmark = pytest.mark.physics_and_metadata
 
+
 def _base_cube(kind: QuantityKind = QuantityKind.RADIANCE) -> Cube:
     data = np.ones((2, 2, 3), dtype=float)
     axis = np.array([400.0, 500.0, 600.0], dtype=float)
@@ -55,4 +56,3 @@ def test_reflectance_outlier_logs_warning(caplog):
     check_cube_health(cube, logger=logging.getLogger("alchemi.test"))
 
     assert any("Reflectance cube 99th percentile outside" in rec.message for rec in caplog.records)
-

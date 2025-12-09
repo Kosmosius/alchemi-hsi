@@ -168,9 +168,7 @@ def run_ablation(
         # Keep trainer artifacts scoped to the output directory for cleanliness.
         os.chdir(output_dir)
         try:
-            stats, recon_mse = run_pretrain_mae(
-                mae_config, seed_override=seed, return_loss=True
-            )
+            stats, recon_mse = run_pretrain_mae(mae_config, seed_override=seed, return_loss=True)
         finally:
             os.chdir(cwd)
 

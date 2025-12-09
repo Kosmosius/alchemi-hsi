@@ -51,7 +51,9 @@ def summarize_gaps(metadata: Mapping[str, Iterable[str]]) -> Mapping[str, object
     if ontology:
         summaries["ontology"] = ontology_coverage(ontology)
     # Identify keys with no entries
-    summaries["missing_fields"] = [key for key, values in metadata.items() if len(list(values)) == 0]
+    summaries["missing_fields"] = [
+        key for key, values in metadata.items() if len(list(values)) == 0
+    ]
     return summaries
 
 

@@ -18,7 +18,9 @@ def compare_dominant_minerals(
     """Compare dominant mineral predictions against EMIT L2B-style references."""
 
     label_accuracy = precision_recall_f1(reference_labels, predicted_labels, average="macro")
-    abundance_error = float(np.mean(np.abs(np.asarray(predicted_abundances) - np.asarray(reference_abundances))))
+    abundance_error = float(
+        np.mean(np.abs(np.asarray(predicted_abundances) - np.asarray(reference_abundances)))
+    )
     return {**label_accuracy, "abundance_mae": abundance_error}
 
 
@@ -29,8 +31,12 @@ def compute_reconstruction_errors(
 ) -> Mapping[str, float]:
     """Return SAM and band-depth reconstruction errors."""
 
-    sam_scores = [spectral_angle_mapper(ref, pred) for ref, pred in zip(reference_spectra, predicted_spectra)]
-    residuals = [residual_norm(ref, pred) for ref, pred in zip(reference_spectra, predicted_spectra)]
+    sam_scores = [
+        spectral_angle_mapper(ref, pred) for ref, pred in zip(reference_spectra, predicted_spectra)
+    ]
+    residuals = [
+        residual_norm(ref, pred) for ref, pred in zip(reference_spectra, predicted_spectra)
+    ]
 
     band_depth_errors: list[float] = []
     if diagnostic_bands is not None:
