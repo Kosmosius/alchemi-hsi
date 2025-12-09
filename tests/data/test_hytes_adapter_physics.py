@@ -13,7 +13,10 @@ pytestmark = pytest.mark.physics_and_metadata
 
 def _write_hytes_bt_cube(tmp_path, value: float = 300.0) -> str:
     bt = np.full((1, 1, HYTES_BAND_COUNT), value, dtype=np.float64)
-    ds = xr.Dataset({"brightness_temp": (("y", "x", "band"), bt)}, coords={"wavelength_nm": ("band", HYTES_WAVELENGTHS_NM)})
+    ds = xr.Dataset(
+        {"brightness_temp": (("y", "x", "band"), bt)},
+        coords={"wavelength_nm": ("band", HYTES_WAVELENGTHS_NM)},
+    )
     path = tmp_path / "hytes_bt.nc"
     ds.to_netcdf(path)
     return str(path)
@@ -46,7 +49,9 @@ def test_hytes_radiance_conversion_round_trip(tmp_path):
     bt_sample = next(iter(hytes_adapter.iter_hytes_pixels(path)))
     rad_sample = next(iter(hytes_adapter.iter_hytes_radiance_pixels(path)))
 
-    expected_radiance = planck_radiance_wavelength(bt_sample.spectrum.wavelength_nm, bt_sample.spectrum.values)
+    expected_radiance = planck_radiance_wavelength(
+        bt_sample.spectrum.wavelength_nm, bt_sample.spectrum.values
+    )
     if bt_sample.srf_matrix is not None:
         expected_radiance = planck.bt_spectrum_to_radiance(
             bt_sample.spectrum,
@@ -59,7 +64,9 @@ def test_hytes_radiance_conversion_round_trip(tmp_path):
     recovered_bt = radiance_to_bt_K(rad_sample.spectrum.values, rad_sample.spectrum.wavelength_nm)
     assert np.allclose(recovered_bt, bt_sample.spectrum.values, atol=5e-2)
 
-    assert np.array_equal(bt_sample.quality_masks["valid_band"], rad_sample.quality_masks["valid_band"])
+    assert np.array_equal(
+        bt_sample.quality_masks["valid_band"], rad_sample.quality_masks["valid_band"]
+    )
 
 
 def test_hytes_srf_blind_gaussian(tmp_path):

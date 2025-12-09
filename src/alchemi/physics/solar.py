@@ -1,4 +1,4 @@
-"""Solar irradiance and Earth–Sun distance utilities (ALCHEMI Section 5.2).
+"""Solar irradiance and Earth-Sun distance utilities (ALCHEMI Section 5.2).
 
 This module centralises solar-related helpers so the physics layer has a
 single source of truth for:
@@ -8,10 +8,10 @@ single source of truth for:
   used for spectra.
 * Projection of Esun onto sensor bandspaces using SRF convolutions or band
   centre interpolation when SRFs are unavailable.
-* Earth–Sun distance computation for specific acquisition dates or samples.
+* Earth-Sun distance computation for specific acquisition dates or samples.
 
 The reference irradiance table is a lightweight, smooth approximation of the
-ASTM G-173 AM0 spectrum sampled at 1 nm from 350–2500 nm, stored under
+ASTM G-173 AM0 spectrum sampled at 1 nm from 350-2500 nm, stored under
 ``resources/solar/esun_reference.csv``. Values are expressed as
 W·m⁻²·nm⁻¹. Because the canonical :class:`~alchemi.types.Spectrum` only
 recognises radiance/reflectance/BT quantity kinds, the Esun spectrum is tagged
@@ -119,7 +119,9 @@ def _convert_spectral_srf(
 
     bands_nm = [nm for _ in range(band_count)]
     bands_resp = [resp[idx, :] for idx in range(band_count)]
-    srf = SRFMatrix(sensor="unknown", centers_nm=np.asarray(centers), bands_nm=bands_nm, bands_resp=bands_resp)
+    srf = SRFMatrix(
+        sensor="unknown", centers_nm=np.asarray(centers), bands_nm=bands_nm, bands_resp=bands_resp
+    )
     return srf.normalize_rows_trapz()
 
 
@@ -171,8 +173,10 @@ def esun_for_sample(sample: Any, *, mode: str = "srf") -> np.ndarray:
     return np.asarray(interpolated.values, dtype=np.float64)
 
 
-def earth_sun_distance_au(date: datetime | np.datetime64 | None = None, *, doy: int | None = None) -> float:
-    """Return Earth–Sun distance in astronomical units for a date or day-of-year."""
+def earth_sun_distance_au(
+    date: datetime | np.datetime64 | None = None, *, doy: int | None = None
+) -> float:
+    """Return Earth-Sun distance in astronomical units for a date or day-of-year."""
 
     if doy is None:
         if date is None:
@@ -198,9 +202,12 @@ def earth_sun_distance_au(date: datetime | np.datetime64 | None = None, *, doy: 
 
 
 def earth_sun_distance_for_sample(sample: Any) -> float:
-    """Extract Earth–Sun distance from sample metadata or observation time."""
+    """Extract Earth-Sun distance from sample metadata or observation time."""
 
-    if hasattr(sample, "viewing_geometry") and getattr(sample.viewing_geometry, "earth_sun_distance_au", None) is not None:
+    if (
+        hasattr(sample, "viewing_geometry")
+        and getattr(sample.viewing_geometry, "earth_sun_distance_au", None) is not None
+    ):
         return float(sample.viewing_geometry.earth_sun_distance_au)  # type: ignore[return-value]
 
     if hasattr(sample, "ancillary"):
@@ -217,5 +224,5 @@ def earth_sun_distance_for_sample(sample: Any) -> float:
     if acquisition_time is not None:
         return earth_sun_distance_au(acquisition_time)
 
-    msg = "Earth–Sun distance unavailable: provide viewing_geometry, ancillary, or acquisition_time"
+    msg = "Earth-Sun distance unavailable: provide viewing_geometry, ancillary, or acquisition_time"
     raise ValueError(msg)

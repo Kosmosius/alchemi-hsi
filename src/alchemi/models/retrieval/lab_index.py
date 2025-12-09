@@ -1,4 +1,5 @@
 """Nearest-neighbour search over lab spectra embeddings."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

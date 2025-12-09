@@ -9,7 +9,9 @@ from alchemi.spectral import Sample, Spectrum
 def test_compute_usable_mask_respects_deep_water():
     wavelengths = np.array([1000.0, 1400.0, 1500.0], dtype=float)
     sample = Sample(
-        spectrum=Spectrum(wavelength_nm=wavelengths, values=np.zeros_like(wavelengths), kind="radiance"),
+        spectrum=Spectrum(
+            wavelength_nm=wavelengths, values=np.zeros_like(wavelengths), kind="radiance"
+        ),
         sensor_id="dummy",
         quality_masks={
             "valid_band": np.array([True, True, False], dtype=bool),
@@ -32,7 +34,12 @@ def test_emit_quality_masks_include_valid_band_and_water_mask():
         dims=("y", "x", "band"),
         coords={**coords, "wavelength_nm": ("band", wavelengths)},
     )
-    ds = xr.Dataset({"radiance": radiance, "band_mask": ("band", np.array([True, True, False, True], dtype=bool))})
+    ds = xr.Dataset(
+        {
+            "radiance": radiance,
+            "band_mask": ("band", np.array([True, True, False, True], dtype=bool)),
+        }
+    )
     ds = ds.assign_coords({"wavelength_nm": ("band", wavelengths)})
 
     quality = emit._quality_masks(ds, radiance, include_quality=True)
@@ -48,7 +55,9 @@ def test_enmap_valid_band_filters_absorption_windows():
     wavelengths = np.array([1200.0, 1350.0, 1500.0, 1850.0], dtype=float)
     dataset_mask = np.array([True, True, True, True], dtype=bool)
 
-    valid, deep_water_vapour = enmap._valid_band_mask(wavelengths, dataset_mask=dataset_mask, srf=None)
+    valid, deep_water_vapour = enmap._valid_band_mask(
+        wavelengths, dataset_mask=dataset_mask, srf=None
+    )
 
     assert deep_water_vapour is not None
     np.testing.assert_array_equal(deep_water_vapour, np.array([False, True, False, True]))
@@ -71,7 +80,11 @@ def test_hytes_valid_band_respects_detector_and_edges():
     detector_mask = np.array([False, True, False, False, False], dtype=bool)
 
     valid, quality = hytes._valid_band_mask(
-        wavelengths, dataset_mask=dataset_mask, srf_mask=None, srf_windows=[], detector_mask=detector_mask
+        wavelengths,
+        dataset_mask=dataset_mask,
+        srf_mask=None,
+        srf_windows=[],
+        detector_mask=detector_mask,
     )
 
     np.testing.assert_array_equal(quality["bad_detector"], detector_mask)

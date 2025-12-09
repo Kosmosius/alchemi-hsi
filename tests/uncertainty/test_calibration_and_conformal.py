@@ -1,7 +1,10 @@
 import torch
 
 from alchemi.uncertainty.calibration import fit_temperature, temperature_scale_logits
-from alchemi.uncertainty.conformal import classification_conformal_thresholds, classification_label_set
+from alchemi.uncertainty.conformal import (
+    classification_conformal_thresholds,
+    classification_label_set,
+)
 
 
 def _ece(probs: torch.Tensor, labels: torch.Tensor) -> float:

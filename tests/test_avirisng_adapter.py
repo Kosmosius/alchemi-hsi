@@ -22,7 +22,9 @@ def _write_l1b(path, radiance_value: float, band_mask: np.ndarray | None = None)
         dims=("y", "x", "band"),
         attrs={"units": "microwatts per square centimeter per steradian per nanometer"},
     )
-    ds["wavelength"] = xr.DataArray(centers / 1_000.0, dims=("band",), attrs={"units": "micrometers"})
+    ds["wavelength"] = xr.DataArray(
+        centers / 1_000.0, dims=("band",), attrs={"units": "micrometers"}
+    )
 
     if band_mask is not None:
         ds["band_mask"] = xr.DataArray(np.asarray(band_mask, dtype=np.int8), dims=("band",))
@@ -61,7 +63,9 @@ def test_radiance_samples_use_loader_units(tmp_path) -> None:
     assert sample.band_meta.srf_source[0] == "official"
 
     assert sample.srf_matrix is not None
-    assert sample.srf_matrix.matrix.shape[0] == sample.srf_matrix.matrix.shape[1] == centers.shape[0]
+    assert (
+        sample.srf_matrix.matrix.shape[0] == sample.srf_matrix.matrix.shape[1] == centers.shape[0]
+    )
 
 
 def test_reflectance_samples_match_radiance_grid(tmp_path) -> None:
@@ -81,4 +85,3 @@ def test_reflectance_samples_match_radiance_grid(tmp_path) -> None:
     assert mask.dtype == bool
     assert mask.shape == centers.shape
     assert np.all((sample.spectrum.values >= 0.0) & (sample.spectrum.values <= 1.0))
-

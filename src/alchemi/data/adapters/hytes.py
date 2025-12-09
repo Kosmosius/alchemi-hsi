@@ -34,7 +34,9 @@ def _load_ds(path: str) -> xr.Dataset:
 
 def _coerce_srf_matrix(
     wavelengths_nm: np.ndarray, *, srf_blind: bool
-) -> tuple[DenseSRFMatrix | None, str, np.ndarray | None, list[tuple[float, float]] | None, np.ndarray]:
+) -> tuple[
+    DenseSRFMatrix | None, str, np.ndarray | None, list[tuple[float, float]] | None, np.ndarray
+]:
     widths = default_band_widths("hytes", wavelengths_nm)
     if not srf_blind:
         try:
@@ -50,7 +52,9 @@ def _coerce_srf_matrix(
                 for idx, (nm, resp) in enumerate(zip(raw.bands_nm, raw.bands_resp, strict=True)):
                     nm_arr = np.asarray(nm, dtype=np.float64)
                     resp_arr = np.asarray(resp, dtype=np.float64)
-                    matrix[idx, :] = np.interp(wavelengths_nm, nm_arr, resp_arr, left=0.0, right=0.0)
+                    matrix[idx, :] = np.interp(
+                        wavelengths_nm, nm_arr, resp_arr, left=0.0, right=0.0
+                    )
                     area = float(np.trapz(matrix[idx, :], x=wavelengths_nm))
                     areas.append(area)
                     if area > 0:

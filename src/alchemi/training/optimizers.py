@@ -1,4 +1,5 @@
 """Optimizer factory functions used by the trainer."""
+
 from __future__ import annotations
 
 from typing import Iterable

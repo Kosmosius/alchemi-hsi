@@ -21,7 +21,9 @@ def convolve_lab_to_sensor(lab: Spectrum, srf: SRFMatrix) -> Spectrum:
     )
     values, _ = resample_values_with_srf(lab.values, lab.wavelengths.nm, sensor_srf)
     return Spectrum(
-        WavelengthGrid(sensor_srf.band_centers_nm if sensor_srf.band_centers_nm is not None else srf.centers_nm),
+        WavelengthGrid(
+            sensor_srf.band_centers_nm if sensor_srf.band_centers_nm is not None else srf.centers_nm
+        ),
         values,
         SpectrumKind.REFLECTANCE,
         "unitless",

@@ -7,6 +7,7 @@ build the model stack and iterate through a few batches without requiring an
 external dataset. Detailed loss wiring can be extended later without changing
 this entry point.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -84,12 +85,12 @@ class Trainer:
         self.solids_head = SolidsHead.from_config(
             cfg.model.backbone.embed_dim, cfg.model.heads.solids
         ).to(self.device)
-        self.gas_head = GasHead.from_config(
-            cfg.model.backbone.embed_dim, cfg.model.heads.gas
-        ).to(self.device)
-        self.aux_head = AuxHead.from_config(
-            cfg.model.backbone.embed_dim, cfg.model.heads.aux
-        ).to(self.device)
+        self.gas_head = GasHead.from_config(cfg.model.backbone.embed_dim, cfg.model.heads.gas).to(
+            self.device
+        )
+        self.aux_head = AuxHead.from_config(cfg.model.backbone.embed_dim, cfg.model.heads.aux).to(
+            self.device
+        )
 
         # Loss helpers
         self.mae_loss = build_mae_reconstruction_loss()

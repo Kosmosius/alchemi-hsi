@@ -1,4 +1,5 @@
 """Multi-task balancing utilities (static weights, GradNorm, PCGrad)."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

@@ -42,7 +42,9 @@ def load_emit_l1b(path: str, *, band_mask: bool = True) -> xr.Dataset:
     with rasterio.open(path) as src:
         wavelengths_nm, source_units = _extract_metadata(src)
         data = src.read(out_dtype=np.float64)
-        src_units = qty_units.normalize_units(source_units or TARGET_RADIANCE_UNITS, QuantityKind.RADIANCE)
+        src_units = qty_units.normalize_units(
+            source_units or TARGET_RADIANCE_UNITS, QuantityKind.RADIANCE
+        )
         if src_units != ValueUnits.RADIANCE_W_M2_SR_NM:
             data = qty_units.scale_radiance_between_wavelength_units(
                 data, src_units, ValueUnits.RADIANCE_W_M2_SR_NM
@@ -90,10 +92,14 @@ def emit_pixel(ds: xr.Dataset, y: int, x: int) -> Spectrum:
         raise KeyError("Dataset must contain 'radiance' variable and 'wavelength_nm' coordinate")
 
     radiance = ds["radiance"].sel(y=y, x=x)
-    units = radiance.attrs.get("units") or ds.attrs.get("radiance_units") or TARGET_RADIANCE_UNITS.value
+    units = (
+        radiance.attrs.get("units") or ds.attrs.get("radiance_units") or TARGET_RADIANCE_UNITS.value
+    )
     values = np.asarray(radiance.values, dtype=np.float64)
     src_units = qty_units.normalize_units(units, QuantityKind.RADIANCE)
-    values = qty_units.scale_radiance_between_wavelength_units(values, src_units, ValueUnits.RADIANCE_W_M2_SR_NM)
+    values = qty_units.scale_radiance_between_wavelength_units(
+        values, src_units, ValueUnits.RADIANCE_W_M2_SR_NM
+    )
 
     mask = None
     if "band_mask" in ds.data_vars:

@@ -65,7 +65,10 @@ def _deep_water_vapour_mask(wavelengths_nm: np.ndarray) -> np.ndarray:
 
 
 def _quality_masks(
-    ds: xr.Dataset, radiance: xr.DataArray, include_quality: bool, extra_band_masks: Sequence[np.ndarray] | None = None
+    ds: xr.Dataset,
+    radiance: xr.DataArray,
+    include_quality: bool,
+    extra_band_masks: Sequence[np.ndarray] | None = None,
 ) -> dict[str, np.ndarray]:
     wavelengths_nm = _ensure_wavelengths_nm(ds)
     valid_band = np.ones_like(wavelengths_nm, dtype=bool)
@@ -94,7 +97,9 @@ def _quality_masks(
     return quality
 
 
-def _coerce_srf_matrix(srf_matrix: Any | None, wavelengths_nm: np.ndarray | None = None) -> Any | None:
+def _coerce_srf_matrix(
+    srf_matrix: Any | None, wavelengths_nm: np.ndarray | None = None
+) -> Any | None:
     if srf_matrix is None:
         return None
     if hasattr(srf_matrix, "matrix"):
@@ -103,10 +108,14 @@ def _coerce_srf_matrix(srf_matrix: Any | None, wavelengths_nm: np.ndarray | None
         grid = (
             np.asarray(wavelengths_nm, dtype=np.float64)
             if wavelengths_nm is not None
-            else np.unique(np.concatenate([np.asarray(b, dtype=np.float64) for b in srf_matrix.bands_nm]))
+            else np.unique(
+                np.concatenate([np.asarray(b, dtype=np.float64) for b in srf_matrix.bands_nm])
+            )
         )
         dense = np.zeros((len(srf_matrix.bands_nm), grid.shape[0]), dtype=np.float64)
-        for idx, (nm, resp) in enumerate(zip(srf_matrix.bands_nm, srf_matrix.bands_resp, strict=True)):
+        for idx, (nm, resp) in enumerate(
+            zip(srf_matrix.bands_nm, srf_matrix.bands_resp, strict=True)
+        ):
             nm_arr = np.asarray(nm, dtype=np.float64)
             resp_arr = np.asarray(resp, dtype=np.float64)
             dense[idx] = np.interp(grid, nm_arr, resp_arr, left=0.0, right=0.0)
@@ -132,7 +141,10 @@ def _resolve_emit_srf(
             raw_srf = srfs.get_srf("emit")
         except FileNotFoundError:
             raw_srf = None
-        if raw_srf is not None and np.asarray(raw_srf.centers_nm, dtype=np.float64).shape[0] == wavelengths.shape[0]:
+        if (
+            raw_srf is not None
+            and np.asarray(raw_srf.centers_nm, dtype=np.float64).shape[0] == wavelengths.shape[0]
+        ):
             dense = _coerce_srf_matrix(raw_srf, wavelengths_nm=wavelengths)
             if dense is not None:
                 validate_srf_alignment(wavelengths, dense.matrix, centers_nm=wavelengths)
@@ -146,7 +158,9 @@ def _resolve_emit_srf(
     return srf_matrix, widths, srf_source, srf_mode
 
 
-def iter_emit_pixels(path: str, *, include_quality: bool = True, srf_blind: bool = False) -> Iterable[Sample]:
+def iter_emit_pixels(
+    path: str, *, include_quality: bool = True, srf_blind: bool = False
+) -> Iterable[Sample]:
     """Iterate over pixels in an EMIT scene.
 
     Parameters
@@ -205,7 +219,9 @@ def iter_emit_pixels(path: str, *, include_quality: bool = True, srf_blind: bool
             )
 
 
-def load_emit_scene(path: str, *, include_quality: bool = True, srf_blind: bool = False) -> List[Sample]:
+def load_emit_scene(
+    path: str, *, include_quality: bool = True, srf_blind: bool = False
+) -> List[Sample]:
     """Load an EMIT scene into a list of :class:`Sample` objects.
 
     This helper materialises the iterator returned by :func:`iter_emit_pixels` for
@@ -230,7 +246,9 @@ def _normalize_reflectance_values(reflectance: xr.DataArray) -> np.ndarray:
     return values
 
 
-def iter_emit_l2a_pixels(path: str, *, include_quality: bool = True, srf_blind: bool = False) -> Iterable[Sample]:
+def iter_emit_l2a_pixels(
+    path: str, *, include_quality: bool = True, srf_blind: bool = False
+) -> Iterable[Sample]:
     ds = _load_emit_l2a(path)
     wavelengths = _ensure_wavelengths_nm(ds)
     reflectance = ds.get("reflectance")
@@ -282,7 +300,9 @@ def iter_emit_l2a_pixels(path: str, *, include_quality: bool = True, srf_blind: 
             )
 
 
-def load_emit_l2a_scene(path: str, *, include_quality: bool = True, srf_blind: bool = False) -> List[Sample]:
+def load_emit_l2a_scene(
+    path: str, *, include_quality: bool = True, srf_blind: bool = False
+) -> List[Sample]:
     return list(iter_emit_l2a_pixels(path, include_quality=include_quality, srf_blind=srf_blind))
 
 
@@ -320,7 +340,9 @@ def attach_emit_l2b_labels(
 
 # Legacy exports maintained for compatibility with earlier adapters. These call
 # through to the new iterator implementation.
-def load_emit_pixel(path: str, y: int, x: int, **_: Any) -> Spectrum:  # pragma: no cover - thin wrapper
+def load_emit_pixel(
+    path: str, y: int, x: int, **_: Any
+) -> Spectrum:  # pragma: no cover - thin wrapper
     ds = load_emit_l1b(path)
     wavelengths = np.asarray(ds["wavelength_nm"].values, dtype=np.float64)
     radiance = ds["radiance"].isel(y=y, x=x)

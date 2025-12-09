@@ -22,7 +22,7 @@ class LabSensorCache:
         if srf is None:
             msg = f"No SRF available for sensor_id={sensor!r}"
             raise KeyError(msg)
-        
+
         @self.mem.cache  # type: ignore[misc]
         def _conv(
             lab_nm_hash: str,

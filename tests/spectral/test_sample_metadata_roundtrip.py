@@ -41,5 +41,7 @@ def test_sample_roundtrip_through_chip_preserves_metadata():
     assert restored.viewing_geometry == viewing
     assert restored.band_meta is not None
     np.testing.assert_array_equal(restored.band_meta.center_nm, sample.band_meta.center_nm)
-    assert restored.quality_masks["valid"][1] is False or restored.quality_masks["valid"][1] == False
+    assert (
+        restored.quality_masks["valid"][1] is False or restored.quality_masks["valid"][1] == False
+    )
     assert restored.ancillary["note"] == "roundtrip"

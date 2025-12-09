@@ -37,8 +37,12 @@ def _write_enmap_slice(path, wavelengths_um, radiance_value, units, mask=None):
 def test_enmap_ingest_respects_physics_and_metadata(tmp_path):
     vnir_path = tmp_path / "vnir.nc"
     swir_path = tmp_path / "swir.nc"
-    _write_enmap_slice(vnir_path, [0.45, 0.55, 0.65], radiance_value=1.5, units="W m-2 sr-1 um-1", mask=[1, 0, 1])
-    _write_enmap_slice(swir_path, [1.20, 1.40], radiance_value=4.0, units="W m-2 sr-1 nm-1", mask=[0, 1])
+    _write_enmap_slice(
+        vnir_path, [0.45, 0.55, 0.65], radiance_value=1.5, units="W m-2 sr-1 um-1", mask=[1, 0, 1]
+    )
+    _write_enmap_slice(
+        swir_path, [1.20, 1.40], radiance_value=4.0, units="W m-2 sr-1 nm-1", mask=[0, 1]
+    )
 
     dataset = load_enmap_l1b(vnir_path, swir_path)
     cube = from_enmap_l1b(dataset)
@@ -67,4 +71,3 @@ def test_enmap_ingest_respects_physics_and_metadata(tmp_path):
     p1, p99 = np.nanpercentile(valid_reflectance, [1, 99])
     assert p1 >= 0.0
     assert p99 <= 1.2
-

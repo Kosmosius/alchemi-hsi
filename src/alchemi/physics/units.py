@@ -150,7 +150,9 @@ def normalize_values_to_canonical(
     if quantity == QuantityKind.RADIANCE:
         if units == ValueUnits.RADIANCE_W_M2_SR_UM:
             return (
-                scale_radiance_between_wavelength_units(values, units, ValueUnits.RADIANCE_W_M2_SR_NM),
+                scale_radiance_between_wavelength_units(
+                    values, units, ValueUnits.RADIANCE_W_M2_SR_NM
+                ),
                 ValueUnits.RADIANCE_W_M2_SR_NM,
             )
         return values, ValueUnits.RADIANCE_W_M2_SR_NM
@@ -215,4 +217,3 @@ def wavenumber_cm1_to_wavelength_nm(k_cm1: NDArray[np.float64]) -> NDArray[np.fl
         raise ValueError("Wavenumbers must be positive")
     wavelength_m = 1.0 / (k * 100.0)
     return wavelength_m * 1e9
-

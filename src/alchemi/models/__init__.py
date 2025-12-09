@@ -5,7 +5,8 @@ from .blocks import MLP
 from .context import MinimalSpatialContext
 from .encoder.mae import MAEDecoder, MAEEncoder, MAEOutput, MaskedAutoencoder
 from .factory import build_set_encoder
-from .heads import (  # NOTE: AuxHead lives in aux_head.py (not aux.py) due to Windows `AUX` reserved name
+# NOTE: AuxHead lives in aux_head.py (not aux.py) due to Windows `AUX` reserved name.
+from .heads import (
     AuxHead,
     GasHead,
     GasOutput,

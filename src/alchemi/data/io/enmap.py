@@ -77,7 +77,9 @@ def load_enmap_l1b(path_vnir: str | Path, path_swir: str | Path) -> xr.Dataset:
     if mask_all is not None:
         dataset["band_mask"] = ("band", mask_all.astype(bool))
 
-    dataset.attrs.update(quantity=QuantityKind.RADIANCE.value, sensor="enmap", units=_RAD_UNITS.value)
+    dataset.attrs.update(
+        quantity=QuantityKind.RADIANCE.value, sensor="enmap", units=_RAD_UNITS.value
+    )
 
     return dataset
 
@@ -172,13 +174,17 @@ def _extract_wavelengths(ds: xr.Dataset, band_dim: str, arr: xr.DataArray) -> np
         if "wave" in name.lower() or "lambda" in name.lower():
             var = ds[name]
             if band_dim in var.dims and var.ndim == 1:
-                wavelengths_nm = ensure_nm(np.asarray(var.values, dtype=np.float64), var.attrs.get("units"))
+                wavelengths_nm = ensure_nm(
+                    np.asarray(var.values, dtype=np.float64), var.attrs.get("units")
+                )
                 check_monotonic(wavelengths_nm)
                 return wavelengths_nm
 
     fallback = ds.coords.get(band_dim)
     if fallback is not None and fallback.ndim == 1:
-        wavelengths_nm = ensure_nm(np.asarray(fallback.values, dtype=np.float64), fallback.attrs.get("units"))
+        wavelengths_nm = ensure_nm(
+            np.asarray(fallback.values, dtype=np.float64), fallback.attrs.get("units")
+        )
         check_monotonic(wavelengths_nm)
         return wavelengths_nm
 

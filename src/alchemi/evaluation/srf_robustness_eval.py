@@ -29,9 +29,7 @@ def apply_srf_perturbations(
         kernel = np.exp(-0.5 * (np.arange(-kernel_width, kernel_width + 1) / fwhm_scale) ** 2)
         kernel = kernel / kernel.sum()
         padded = np.pad(perturbed, ((0, 0), (kernel_width, kernel_width)), mode="edge")
-        smoothed = np.vstack([
-            np.convolve(row, kernel, mode="valid") for row in padded
-        ])
+        smoothed = np.vstack([np.convolve(row, kernel, mode="valid") for row in padded])
         perturbed = smoothed
 
     if distortion is not None:

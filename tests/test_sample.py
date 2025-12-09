@@ -7,7 +7,9 @@ from alchemi.spectral import BandMetadata, GeoMeta, Sample, Spectrum, ViewingGeo
 
 
 def test_sample_validation_rejects_mismatched_quality_mask() -> None:
-    spectrum = Spectrum(wavelength_nm=np.array([400.0, 500.0, 600.0]), values=np.ones(3), kind="radiance")
+    spectrum = Spectrum(
+        wavelength_nm=np.array([400.0, 500.0, 600.0]), values=np.ones(3), kind="radiance"
+    )
     band_meta = BandMetadata(
         center_nm=spectrum.wavelength_nm,
         width_nm=np.array([10.0, 10.0, 10.0]),

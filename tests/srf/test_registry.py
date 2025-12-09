@@ -27,11 +27,11 @@ def test_registry_roundtrip():
 
 
 def test_global_registry_populated():
-    emit = GLOBAL_SRF_REGISTRY.get("emit")
-    enmap = GLOBAL_SRF_REGISTRY.get("enmap")
-    hytes = GLOBAL_SRF_REGISTRY.get("hytes")
+    emit_srf = GLOBAL_SRF_REGISTRY.get("emit")
+    enmap_srf = GLOBAL_SRF_REGISTRY.get("enmap")
+    hytes_srf = GLOBAL_SRF_REGISTRY.get("hytes")
 
-    for sensor in (emit, enmap, hytes):
+    for sensor in (emit_srf, enmap_srf, hytes_srf):
         assert sensor is not None
         assert sensor.srfs.ndim == 2
         assert sensor.wavelength_grid_nm.ndim == 1

@@ -278,9 +278,7 @@ class _TensorBatch:
 class AlignmentTrainer:
     """Minimal CLIP-style trainer that couples lab and sensor embeddings."""
 
-    def __init__(
-        self, config: AlignmentExperimentConfig, *, config_path: str | Path | None = None
-    ):
+    def __init__(self, config: AlignmentExperimentConfig, *, config_path: str | Path | None = None):
         self.cfg = config
         self.config_path = Path(config_path) if config_path is not None else None
 
@@ -405,9 +403,7 @@ class AlignmentTrainer:
         )
 
     @classmethod
-    def from_yaml(
-        cls, path: str | Path, *, seed_override: int | None = None
-    ) -> AlignmentTrainer:
+    def from_yaml(cls, path: str | Path, *, seed_override: int | None = None) -> AlignmentTrainer:
         cfg = load_alignment_config(path)
         if seed_override is not None:
             cfg.trainer.seed = int(seed_override)

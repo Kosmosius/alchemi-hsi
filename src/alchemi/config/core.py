@@ -22,13 +22,16 @@ class SpectrumConfig(BaseModel):
 
     num_bands: int = Field(224, description="Number of spectral bands available")
     wavelength_min: float = Field(
-        350.0, description="Minimum wavelength captured (nanometers)",
+        350.0,
+        description="Minimum wavelength captured (nanometers)",
     )
     wavelength_max: float = Field(
-        2500.0, description="Maximum wavelength captured (nanometers)",
+        2500.0,
+        description="Maximum wavelength captured (nanometers)",
     )
     resolution: float = Field(
-        10.0, description="Approximate spectral resolution in nanometers",
+        10.0,
+        description="Approximate spectral resolution in nanometers",
     )
 
 
@@ -56,10 +59,12 @@ class AugmentationConfig(BaseModel):
         description="Perturb spectral response functions to simulate sensor uncertainty",
     )
     noise_injection: bool = Field(
-        False, description="Additive noise augmentation for robustness",
+        False,
+        description="Additive noise augmentation for robustness",
     )
     geometric_transforms: bool = Field(
-        True, description="Spatial flips/rotations/crops enabled",
+        True,
+        description="Spatial flips/rotations/crops enabled",
     )
 
 
@@ -115,14 +120,17 @@ class IngestConfig(BaseModel):
     spectral_bins: int = Field(256, description="Number of spectral bins after resampling")
     patch_embed_dim: int = Field(256, description="Embedding dimension for patch tokens")
     max_sensors: int = Field(
-        4, description="Maximum number of concurrent sensors in a batch",
+        4,
+        description="Maximum number of concurrent sensors in a batch",
     )
     dropout: float = Field(0.0, description="Dropout applied in the ingest stem")
     mask_tokens: bool = Field(
-        True, description="Whether to include learned mask tokens for missing bands",
+        True,
+        description="Whether to include learned mask tokens for missing bands",
     )
     normalization: Literal["layernorm", "batchnorm"] = Field(
-        "layernorm", description="Normalization applied to ingest outputs",
+        "layernorm",
+        description="Normalization applied to ingest outputs",
     )
 
 
@@ -262,20 +270,36 @@ class StageSchedule(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mae: StageSetting = Field(
-        default_factory=lambda: StageSetting(enabled=True, epochs=400, learning_rate=1.5e-4,
-                                            description="Stage A: MAE spectral pretraining"),
+        default_factory=lambda: StageSetting(
+            enabled=True,
+            epochs=400,
+            learning_rate=1.5e-4,
+            description="Stage A: MAE spectral pretraining",
+        ),
     )
     align: StageSetting = Field(
-        default_factory=lambda: StageSetting(enabled=True, epochs=120, learning_rate=1e-4,
-                                            description="Stage B: Lab/overhead alignment"),
+        default_factory=lambda: StageSetting(
+            enabled=True,
+            epochs=120,
+            learning_rate=1e-4,
+            description="Stage B: Lab/overhead alignment",
+        ),
     )
     tasks: StageSetting = Field(
-        default_factory=lambda: StageSetting(enabled=True, epochs=160, learning_rate=8e-5,
-                                            description="Stage C: Task heads finetuning"),
+        default_factory=lambda: StageSetting(
+            enabled=True,
+            epochs=160,
+            learning_rate=8e-5,
+            description="Stage C: Task heads finetuning",
+        ),
     )
     uncertainty: StageSetting = Field(
-        default_factory=lambda: StageSetting(enabled=True, epochs=40, learning_rate=5e-5,
-                                            description="Stage D: Uncertainty calibration"),
+        default_factory=lambda: StageSetting(
+            enabled=True,
+            epochs=40,
+            learning_rate=5e-5,
+            description="Stage D: Uncertainty calibration",
+        ),
     )
 
 
@@ -331,4 +355,3 @@ class ExperimentConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     training: TrainingConfig = Field(default_factory=TrainingConfig)
     eval: EvalConfig = Field(default_factory=EvalConfig)
-

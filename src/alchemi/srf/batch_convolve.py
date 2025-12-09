@@ -17,7 +17,10 @@ def batch_convolve_lab_to_sensor(
     lab_nm = np.asarray(lab_nm, dtype=np.float64)
     lab_values = np.asarray(lab_values, dtype=np.float64)
     srfs = np.vstack(
-        [np.interp(lab_nm, nm, resp, left=0.0, right=0.0) for nm, resp in zip(srf.bands_nm, srf.bands_resp, strict=True)]
+        [
+            np.interp(lab_nm, nm, resp, left=0.0, right=0.0)
+            for nm, resp in zip(srf.bands_nm, srf.bands_resp, strict=True)
+        ]
     )
     sensor_srf = SensorSRF(
         wavelength_grid_nm=lab_nm,

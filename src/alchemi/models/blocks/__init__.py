@@ -5,6 +5,7 @@ components can be swapped with more optimised variants (e.g. FlashAttention)
 without changing call-sites. Shapes follow the PyTorch transformer defaults
 (batch-first).
 """
+
 from __future__ import annotations
 
 from typing import Optional

@@ -53,4 +53,3 @@ def test_hytes_ingest_respects_physics_and_metadata(tmp_path):
     p1, p99 = np.nanpercentile(valid_bt, [1, 99])
     assert 150.0 <= p1 <= 400.0
     assert 150.0 <= p99 <= 400.0
-

@@ -72,4 +72,3 @@ def test_lwir_pipeline_from_radiance_sample() -> None:
     assert outputs["bt"].kind == QuantityKind.BRIGHTNESS_T
     assert outputs["emissivity_proxy"].kind == QuantityKind.REFLECTANCE
     np.testing.assert_allclose(outputs["T_proxy"], temps.max())
-

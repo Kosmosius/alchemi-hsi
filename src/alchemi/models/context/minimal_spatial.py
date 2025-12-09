@@ -1,4 +1,5 @@
 """Minimal spatial context using lightweight CNN layers."""
+
 from __future__ import annotations
 
 import torch

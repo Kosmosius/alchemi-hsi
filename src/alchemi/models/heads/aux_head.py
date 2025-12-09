@@ -1,4 +1,5 @@
 """Auxiliary prediction heads for band depth and QA."""
+
 # NOTE FOR FUTURE MAINTAINERS AND CODE ASSISTANTS:
 # This module is intentionally named `aux_head.py` instead of `aux.py`.
 # On Windows, `AUX` is a reserved device name (like `NUL`, `PRN`, `COM1`, etc.),

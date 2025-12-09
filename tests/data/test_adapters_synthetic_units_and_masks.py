@@ -13,7 +13,9 @@ pytestmark = pytest.mark.physics_and_metadata
 
 
 def _stub_dataset(wavelengths: np.ndarray, values: np.ndarray, key: str) -> xr.Dataset:
-    return xr.Dataset({key: (("y", "x", "band"), values)}, coords={"wavelength_nm": ("band", wavelengths)})
+    return xr.Dataset(
+        {key: (("y", "x", "band"), values)}, coords={"wavelength_nm": ("band", wavelengths)}
+    )
 
 
 def test_enmap_adapter_preserves_masks_and_units(tmp_path, monkeypatch):

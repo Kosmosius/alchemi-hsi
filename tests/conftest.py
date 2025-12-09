@@ -72,4 +72,3 @@ def pytest_ignore_collect(collection_path: Path, config) -> bool:  # pragma: no 
         return not any(target.is_relative_to(relative) for target in _PHYSICS_METADATA_TARGETS)
 
     return relative not in _PHYSICS_METADATA_TARGETS
-

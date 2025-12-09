@@ -1,4 +1,5 @@
 """Stage-specific training entrypoints (A/B/C/D)."""
+
 from __future__ import annotations
 
 from alchemi.config.core import TrainingConfig

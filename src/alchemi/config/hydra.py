@@ -128,7 +128,9 @@ def load_eval_config(name_or_mapping: str | Mapping[str, Any]) -> EvalConfig:
     return EvalConfig.model_validate(_resolve_eval(name_or_mapping))
 
 
-def load_experiment_config(name: str | Path, config_root: str | Path | None = None) -> ExperimentConfig:
+def load_experiment_config(
+    name: str | Path, config_root: str | Path | None = None
+) -> ExperimentConfig:
     """Load an :class:`ExperimentConfig` for a named experiment.
 
     Parameters
@@ -163,4 +165,3 @@ def load_experiment_config(name: str | Path, config_root: str | Path | None = No
         "eval": eval_cfg,
     }
     return ExperimentConfig.model_validate(experiment_fields)
-

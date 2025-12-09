@@ -13,13 +13,13 @@ from .hytes import (
     hytes_pixel_bt,
     load_hytes_l1b_bt,
 )
+from .splib import SPLIBCatalog, load_splib
 
 
 def load_hytes_l1b(*args, **kwargs):
     """Backward-compatible alias for brightness-temperature loader."""
 
     return load_hytes_l1b_bt(*args, **kwargs)
-from .splib import SPLIBCatalog, load_splib
 
 __all__ = [
     "HYTES_BAND_COUNT",

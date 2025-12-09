@@ -54,9 +54,7 @@ def test_continuum_and_removed_match_golden(spectrum_id: str):
     assert continuum.shape == reflectance.shape
     assert removed.values.shape == reflectance.shape
     np.testing.assert_allclose(continuum, entry["continuum"], rtol=1e-6, atol=1e-9)
-    np.testing.assert_allclose(
-        removed.values, entry["continuum_removed"], rtol=1e-6, atol=1e-9
-    )
+    np.testing.assert_allclose(removed.values, entry["continuum_removed"], rtol=1e-6, atol=1e-9)
 
 
 @pytest.mark.parametrize(
@@ -84,9 +82,7 @@ def test_band_metrics_match_golden(spectrum_id: str, band_idx: int):
 
     np.testing.assert_allclose(metrics.depth, band["expected_depth"], rtol=1e-6, atol=1e-12)
     np.testing.assert_allclose(metrics.area, band["expected_area"], rtol=1e-6, atol=1e-12)
-    np.testing.assert_allclose(
-        metrics.asymmetry, band["expected_asymmetry"], rtol=1e-6, atol=1e-12
-    )
+    np.testing.assert_allclose(metrics.asymmetry, band["expected_asymmetry"], rtol=1e-6, atol=1e-12)
 
 
 @pytest.mark.parametrize(

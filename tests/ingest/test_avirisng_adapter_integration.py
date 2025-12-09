@@ -18,8 +18,7 @@ pytestmark = pytest.mark.physics_and_metadata
 def _write_aviris_fixture(path):
     wavelengths = np.array([410.0, 870.0, 1050.0, 2100.0], dtype=np.float64)
     radiance = (
-        np.arange(2 * 2 * wavelengths.size, dtype=np.float64).reshape(wavelengths.size, 2, 2)
-        + 5.0
+        np.arange(2 * 2 * wavelengths.size, dtype=np.float64).reshape(wavelengths.size, 2, 2) + 5.0
     )
 
     ds = xr.Dataset(
@@ -64,4 +63,3 @@ def test_avirisng_ingest_respects_physics_and_metadata(tmp_path):
     p1, p99 = np.nanpercentile(valid_reflectance, [1, 99])
     assert p1 >= 0.0
     assert p99 <= 1.2
-

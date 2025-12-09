@@ -92,7 +92,8 @@ def check_cube_health(
     if cube.value_kind == QuantityKind.RADIANCE:
         if min_val < -1e-6:
             log.error(
-                "Radiance cube has negative values", extra={"min": min_val, "sensor": resolved_sensor}
+                "Radiance cube has negative values",
+                extra={"min": min_val, "sensor": resolved_sensor},
             )
         if max_val > 1e5:
             log.warning(
@@ -127,5 +128,9 @@ def check_cube_health(
         if srf_band_count and srf_band_count != cube_band_count:
             log.warning(
                 "SRF band count mismatch with cube",
-                extra={"srf_bands": srf_band_count, "cube_bands": cube_band_count, "sensor": resolved_sensor},
+                extra={
+                    "srf_bands": srf_band_count,
+                    "cube_bands": cube_band_count,
+                    "sensor": resolved_sensor,
+                },
             )

@@ -107,7 +107,11 @@ def compute_lwir_emissivity_proxy(bt_spectrum: Spectrum) -> tuple[float, Spectru
 
     if bt_spectrum.kind != QuantityKind.BRIGHTNESS_T:
         raise ValueError("Input spectrum must be a brightness temperature spectrum")
-    if bt_spectrum.units not in {TemperatureUnits.KELVIN, TemperatureUnits.KELVIN.value, ValueUnits.TEMPERATURE_K}:
+    if bt_spectrum.units not in {
+        TemperatureUnits.KELVIN,
+        TemperatureUnits.KELVIN.value,
+        ValueUnits.TEMPERATURE_K,
+    }:
         raise ValueError("Brightness temperature spectrum must be in Kelvin")
 
     values = np.asarray(bt_spectrum.values, dtype=np.float64)
@@ -170,7 +174,9 @@ def lwir_pipeline_for_sample(
     }
 
 
-def tes_lwirt(spectrum: Spectrum, ancillary: dict) -> Tuple[np.ndarray, Spectrum, np.ndarray, np.ndarray]:
+def tes_lwirt(
+    spectrum: Spectrum, ancillary: dict
+) -> Tuple[np.ndarray, Spectrum, np.ndarray, np.ndarray]:
     """Perform TES for LWIR radiance spectra.
 
     Parameters

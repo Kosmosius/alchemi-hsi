@@ -44,7 +44,10 @@ def evaluate_sensor_acceptance(
         return "needs_finetune"
 
     estimated_fwhm = np.array(
-        [_estimate_fwhm(nm, resp) for nm, resp in zip(srf_matrix.bands_nm, srf_matrix.bands_resp, strict=True)]
+        [
+            _estimate_fwhm(nm, resp)
+            for nm, resp in zip(srf_matrix.bands_nm, srf_matrix.bands_resp, strict=True)
+        ]
     )
     if estimated_fwhm.shape != sensor_spec.band_widths_nm.shape:
         return "needs_finetune"
@@ -55,7 +58,12 @@ def evaluate_sensor_acceptance(
 
     if sensor_spec.absorption_windows_nm:
         for start, end in sensor_spec.absorption_windows_nm:
-            if srf_matrix.centers_nm[(srf_matrix.centers_nm >= start) & (srf_matrix.centers_nm <= end)].size == 0:
+            if (
+                srf_matrix.centers_nm[
+                    (srf_matrix.centers_nm >= start) & (srf_matrix.centers_nm <= end)
+                ].size
+                == 0
+            ):
                 return "needs_finetune"
 
     return "accepted"

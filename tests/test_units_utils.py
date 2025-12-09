@@ -58,4 +58,3 @@ def test_temperature_celsius_normalized():
     )
     assert spec.units == ValueUnits.TEMPERATURE_K
     assert np.isclose(spec.values[0], 273.15)
-

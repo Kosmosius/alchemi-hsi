@@ -117,11 +117,16 @@ def test_sample_round_trip() -> None:
 
     esun_band = np.array([180.0, 190.0])
     to_reflectance = radiance_sample_to_toa_reflectance(
-        sample, esun_ref=Spectrum(wavelength_nm=wavelengths.nm, values=esun_band, kind=QuantityKind.RADIANCE)
+        sample,
+        esun_ref=Spectrum(
+            wavelength_nm=wavelengths.nm, values=esun_band, kind=QuantityKind.RADIANCE
+        ),
     )
     back_to_radiance = toa_reflectance_sample_to_radiance(
         to_reflectance,
-        esun_ref=Spectrum(wavelength_nm=wavelengths.nm, values=esun_band, kind=QuantityKind.RADIANCE),
+        esun_ref=Spectrum(
+            wavelength_nm=wavelengths.nm, values=esun_band, kind=QuantityKind.RADIANCE
+        ),
     )
 
     np.testing.assert_allclose(back_to_radiance.spectrum.values, radiance_values)

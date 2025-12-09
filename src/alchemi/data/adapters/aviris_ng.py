@@ -56,7 +56,10 @@ def _resolve_wavelengths(ds: xr.Dataset) -> np.ndarray:
 
 
 def _quality_masks(
-    band_mask: np.ndarray, *, deep_water_vapour: np.ndarray | None = None, bad_detector: np.ndarray | None = None
+    band_mask: np.ndarray,
+    *,
+    deep_water_vapour: np.ndarray | None = None,
+    bad_detector: np.ndarray | None = None,
 ) -> Dict[str, np.ndarray]:
     valid = np.asarray(band_mask, dtype=bool).copy()
     if deep_water_vapour is not None:
@@ -135,9 +138,13 @@ def _build_sample(
     band_mask = np.asarray(band_mask, dtype=bool)
     valid_mask = band_mask & ~deep_water_vapour
     fwhm = np.asarray(ds["fwhm_nm"].values, dtype=np.float64) if "fwhm_nm" in ds else None
-    srf_matrix, provenance, widths = _srf_matrix_for_avirisng(wavelengths, srf_blind=srf_blind, fwhm=fwhm)
+    srf_matrix, provenance, widths = _srf_matrix_for_avirisng(
+        wavelengths, srf_blind=srf_blind, fwhm=fwhm
+    )
 
-    spectrum = Spectrum(wavelength_nm=wavelengths.astype(np.float64), values=values, kind=spectrum_kind)
+    spectrum = Spectrum(
+        wavelength_nm=wavelengths.astype(np.float64), values=values, kind=spectrum_kind
+    )
     ancillary = {
         "source_path": path,
         "y": int(y),
@@ -166,7 +173,13 @@ def iter_aviris_ng_pixels(path: str, *, srf_blind: bool = False) -> Iterable[Sam
         for x in range(radiance.shape[1]):
             values = np.asarray(radiance[y, x, :], dtype=np.float64)
             yield _build_sample(
-                ds=ds, path=path, y=y, x=x, values=values, spectrum_kind="radiance", srf_blind=srf_blind
+                ds=ds,
+                path=path,
+                y=y,
+                x=x,
+                values=values,
+                spectrum_kind="radiance",
+                srf_blind=srf_blind,
             )
 
 
@@ -189,7 +202,13 @@ def iter_aviris_ng_reflectance_pixels(path: str, *, srf_blind: bool = False) -> 
         for x in range(reflectance.shape[1]):
             values = np.asarray(reflectance[y, x, :], dtype=np.float64)
             yield _build_sample(
-                ds=ds, path=path, y=y, x=x, values=values, spectrum_kind="reflectance", srf_blind=srf_blind
+                ds=ds,
+                path=path,
+                y=y,
+                x=x,
+                values=values,
+                spectrum_kind="reflectance",
+                srf_blind=srf_blind,
             )
 
 

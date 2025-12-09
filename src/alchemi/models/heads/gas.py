@@ -1,4 +1,5 @@
 """Gas detection head using spectral windows and spatial context."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

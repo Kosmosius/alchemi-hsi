@@ -13,7 +13,15 @@ from alchemi.types import QuantityKind, RadianceUnits, Spectrum, WavelengthGrid,
 
 
 class _DummySample:
-    def __init__(self, spectrum, band_meta=None, srf_matrix=None, ancillary=None, acquisition_time=None, viewing_geometry=None):
+    def __init__(
+        self,
+        spectrum,
+        band_meta=None,
+        srf_matrix=None,
+        ancillary=None,
+        acquisition_time=None,
+        viewing_geometry=None,
+    ):
         self.spectrum = spectrum
         self.band_meta = band_meta
         self.srf_matrix = srf_matrix
@@ -108,4 +116,6 @@ def test_earth_sun_distance_for_sample_metadata_priority():
     assert earth_sun_distance_for_sample(ancillary_sample) == 0.99
 
     dated_sample = _DummySample(None, acquisition_time=datetime(2024, 1, 3))
-    assert earth_sun_distance_for_sample(dated_sample) == earth_sun_distance_au(dated_sample.acquisition_time)
+    assert earth_sun_distance_for_sample(dated_sample) == earth_sun_distance_au(
+        dated_sample.acquisition_time
+    )

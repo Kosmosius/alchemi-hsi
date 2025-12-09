@@ -147,8 +147,7 @@ def fix_monotonic(wavelength_nm: np.ndarray, *, eps: float = 0.0) -> np.ndarray:
         msg = "Monotonicity violations exceed fixable tolerance"
         raise ValueError(msg)
 
-    logger.warning(
-        "Applying monotonicity fix; downstream resampling may be preferable.")
+    logger.warning("Applying monotonicity fix; downstream resampling may be preferable.")
     fixed = arr.copy()
     step = max(margin, _DEFAULT_FIX_STEP)
     for idx in range(1, fixed.size):

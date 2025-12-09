@@ -98,7 +98,9 @@ def build_mako_sensor_srf(
     wavelengths_nm: np.ndarray | None = None, *, fwhm_nm: float = _DEFAULT_FWHM_NM
 ) -> SensorSRF:
     legacy = build_mako_srf_from_header(
-        mako_lwir_grid_nm() if wavelengths_nm is None else np.asarray(wavelengths_nm, dtype=np.float64),
+        mako_lwir_grid_nm()
+        if wavelengths_nm is None
+        else np.asarray(wavelengths_nm, dtype=np.float64),
         fwhm_nm=fwhm_nm,
     )
     return sensor_srf_from_legacy(legacy, provenance=SRFProvenance.GAUSSIAN)

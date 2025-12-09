@@ -1,4 +1,4 @@
-# TODO: migrated from legacy structure – reconcile with new design.
+# TODO: migrated from legacy structure - reconcile with new design.
 """ALCHEMI: physics-aware any-sensor hyperspectral foundation model.
 
 This package bundles the reusable library code for ingestion, physics, modeling,

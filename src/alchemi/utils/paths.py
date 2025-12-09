@@ -41,4 +41,3 @@ def resolve_path(path: StrPath, base: StrPath | None = None) -> Path:
     if base is not None:
         return Path(base).expanduser().resolve() / raw
     return find_project_root() / raw
-
