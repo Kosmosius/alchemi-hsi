@@ -46,18 +46,30 @@ def _is_physics_metadata_only_run(config) -> bool:
     return "physics_and_metadata" in (mark_expr or "")
 
 
-def pytest_ignore_collect(path, config) -> bool:  # pragma: no cover - pytest hook
+def pytest_ignore_collect(collection_path: Path, config) -> bool:  # pragma: no cover - pytest hook
+    """Optionally skip tests when running with -m physics_and_metadata.
+
+    This hook used to take a ``path`` argument based on :mod:`py.path`.
+    Newer versions of pytest pass a :class:`pathlib.Path` ``collection_path``
+    instead, and the old argument is deprecated and scheduled for removal.
+
+    To keep the code compatible with both older and newer pytest versions,
+    we rely solely on ``collection_path`` here and avoid the deprecated
+    ``path`` argument entirely.
+    """
+
     if not _is_physics_metadata_only_run(config):
         return False
 
     root = Path(config.rootdir).resolve()
-    candidate = Path(str(path)).resolve()
+    candidate = collection_path.resolve()
     try:
         relative = candidate.relative_to(root)
     except ValueError:
         relative = candidate
 
-    if path.isdir():
+    if candidate.is_dir():
         return not any(target.is_relative_to(relative) for target in _PHYSICS_METADATA_TARGETS)
 
     return relative not in _PHYSICS_METADATA_TARGETS
+
