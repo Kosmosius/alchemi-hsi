@@ -199,6 +199,58 @@ def scale_radiance_between_wavelength_units(
 
 
 # ---------------------------------------------------------------------------
+# Wavenumber <-> wavelength conversions with radiance rescaling
+# ---------------------------------------------------------------------------
+
+
+def radiance_wavenumber_cm1_to_wavelength_nm(
+    radiance_per_cm1: NDArray[np.float64],
+    wavenumber_cm1: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Convert radiance defined per wavenumber to per-nanometre units.
+
+    Parameters
+    ----------
+    radiance_per_cm1:
+        Radiance density expressed per ``cm⁻¹`` (e.g., W·m⁻²·sr⁻¹·(cm⁻¹)⁻¹).
+    wavenumber_cm1:
+        Wavenumber grid in ``cm⁻¹``. Must be strictly positive but need not be
+        monotonic; the transformation is applied element-wise.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        ``(wavelength_nm, radiance_per_nm)`` where the radiance is scaled by the
+        Jacobian ``|dν̃/dλ_nm| = 1e7 / λ_nm²`` to preserve energy per bin.
+    """
+
+    k = np.asarray(wavenumber_cm1, dtype=np.float64)
+    if np.any(k <= 0):
+        raise ValueError("Wavenumbers must be positive")
+
+    wavelength_nm = wavenumber_cm1_to_wavelength_nm(k)
+    jacobian = 1.0e7 / np.square(wavelength_nm)
+    radiance_nm = np.asarray(radiance_per_cm1, dtype=np.float64) * jacobian
+    return wavelength_nm, radiance_nm
+
+
+def radiance_wavelength_nm_to_wavenumber_cm1(
+    radiance_per_nm: NDArray[np.float64],
+    wavelength_nm: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Convert radiance defined per nanometre to per-wavenumber units."""
+
+    wavelength_nm_arr = np.asarray(wavelength_nm, dtype=np.float64)
+    if np.any(wavelength_nm_arr <= 0):
+        raise ValueError("Wavelengths must be positive")
+
+    wavenumber_cm1 = 1.0e7 / wavelength_nm_arr
+    jacobian = np.square(wavelength_nm_arr) / 1.0e7
+    radiance_cm1 = np.asarray(radiance_per_nm, dtype=np.float64) * jacobian
+    return wavenumber_cm1, radiance_cm1
+
+
+# ---------------------------------------------------------------------------
 # Wavelength conversions
 # ---------------------------------------------------------------------------
 

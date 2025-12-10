@@ -13,6 +13,7 @@ import warnings
 
 import numpy as np
 
+from alchemi.physics import units as phys_units
 from alchemi.spectral.sample import Sample
 from alchemi.spectral.srf import SRFMatrix
 from alchemi.srf.hytes import hytes_srf_matrix
@@ -23,6 +24,7 @@ from alchemi.types import (
     Spectrum,
     TemperatureUnits,
     WavelengthGrid,
+    ValueUnits,
 )
 
 __all__ = [
@@ -82,6 +84,29 @@ def _as_float64_arrays(*arrays: np.ndarray) -> tuple[np.ndarray, ...]:
     """Cast inputs to ``np.float64`` ndarrays without unnecessary copies."""
 
     return tuple(np.asarray(arr, dtype=np.float64) for arr in arrays)
+
+
+def _radiance_values_nm(spectrum: Spectrum) -> tuple[np.ndarray, np.ndarray]:
+    if spectrum.kind != QuantityKind.RADIANCE:
+        raise ValueError("Input spectrum must represent radiance")
+
+    units = phys_units.normalize_units(
+        spectrum.units or RadianceUnits.W_M2_SR_NM, QuantityKind.RADIANCE
+    )
+    values, canonical_units = phys_units.normalize_values_to_canonical(
+        np.asarray(spectrum.values, dtype=np.float64),
+        units,
+        QuantityKind.RADIANCE,
+    )
+    if canonical_units != ValueUnits.RADIANCE_W_M2_SR_NM:
+        msg = (
+            "Radiance spectrum must be W·m⁻²·sr⁻¹·nm⁻¹; normalise using"
+            " alchemi.physics.units helpers."
+        )
+        raise ValueError(msg)
+
+    wavelengths = np.asarray(spectrum.wavelengths.nm, dtype=np.float64)
+    return wavelengths, values
 
 
 # ---------------------------------------------------------------------------
@@ -559,13 +584,8 @@ def radiance_spectrum_to_bt(
     optionally accepts ``temps_grid_K`` to tune the inversion grid.
     """
 
-    if spectrum.kind != QuantityKind.RADIANCE:
-        raise ValueError("Input spectrum must represent radiance")
-
     srfs, srf_wl = _resolve_srf_inputs(srf_matrix, srf_wavelength_nm)
-
-    radiance_vals = np.asarray(spectrum.values, dtype=np.float64)
-    wavelengths = np.asarray(spectrum.wavelengths.nm, dtype=np.float64)
+    wavelengths, radiance_vals = _radiance_values_nm(spectrum)
 
     if method == "central_lambda":
         if srfs is not None:
