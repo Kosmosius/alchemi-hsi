@@ -27,6 +27,7 @@ from .resampling import (
     convolve_to_bands,
     generate_gaussian_srf,
     interpolate_to_centers,
+    SyntheticSensorConfig,
     simulate_virtual_sensor,
 )
 from .continuum import (
@@ -114,6 +115,7 @@ __all__ = [
     "radiance_to_toa_reflectance",
     "radiance_to_reflectance",
     "radiance_to_reflectance_avirisng",
+    "SyntheticSensorConfig",
     "radiance_sample_to_toa_reflectance",
     "simulate_virtual_sensor",
     "random_swirlike_atmosphere",

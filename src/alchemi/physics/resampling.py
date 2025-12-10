@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
@@ -16,8 +17,43 @@ __all__ = [
     "convolve_to_bands_batched",
     "interpolate_to_centers",
     "generate_gaussian_srf",
+    "SyntheticSensorConfig",
     "simulate_virtual_sensor",
 ]
+
+
+@dataclass(slots=True)
+class SyntheticSensorConfig:
+    """Configuration for generating reproducible virtual sensors.
+
+    The configuration samples :attr:`n_bands` Gaussian bandpasses within
+    :attr:`spectral_range_nm`, drawing full-width-half-max values between
+    :attr:`min_fwhm_nm` and :attr:`max_fwhm_nm`. All random draws use
+    :attr:`seed` to ensure reproducibility for training-time SRF
+    randomisation and lab–overhead alignment robustness tests.
+    """
+
+    spectral_range_nm: tuple[float, float]
+    n_bands: int
+    min_fwhm_nm: float
+    max_fwhm_nm: float
+    seed: int | None = None
+
+    def validate(self) -> None:
+        start, end = self.spectral_range_nm
+        if not np.isfinite(start) or not np.isfinite(end):
+            raise ValueError("spectral_range_nm bounds must be finite")
+        if end <= start:
+            raise ValueError("spectral_range_nm upper bound must exceed lower bound")
+        if self.n_bands <= 0:
+            raise ValueError("n_bands must be positive")
+        if self.min_fwhm_nm <= 0 or self.max_fwhm_nm <= 0:
+            raise ValueError("FWHM bounds must be positive")
+        if self.max_fwhm_nm < self.min_fwhm_nm:
+            raise ValueError("max_fwhm_nm must be >= min_fwhm_nm")
+
+    def rng(self) -> np.random.Generator:
+        return np.random.default_rng(self.seed)
 
 
 def _normalize_response(resp: np.ndarray, nm: np.ndarray) -> np.ndarray:
@@ -367,8 +403,118 @@ def simulate_virtual_sensor(
     num_bands: int,
     fwhm_nm: float | None = None,
     sensor_name: str = "virtual_sensor",
-) -> Spectrum:
+    ) -> Spectrum:
     """Generate a virtual sensor SRF and convolve the provided spectrum."""
 
     srf = generate_gaussian_srf(sensor_name, range_nm, num_bands, fwhm_nm)
     return convolve_to_bands(high_res, srf)
+
+
+def _sample_band_metadata(
+    cfg: SyntheticSensorConfig, rng: np.random.Generator
+) -> tuple[np.ndarray, np.ndarray]:
+    cfg.validate()
+
+    start, end = cfg.spectral_range_nm
+    centers = rng.uniform(start, end, size=cfg.n_bands)
+    centers.sort()
+
+    if cfg.min_fwhm_nm == cfg.max_fwhm_nm:
+        widths = np.full(cfg.n_bands, cfg.min_fwhm_nm, dtype=np.float64)
+    else:
+        widths = rng.uniform(cfg.min_fwhm_nm, cfg.max_fwhm_nm, size=cfg.n_bands)
+
+    return centers, widths
+
+
+def _apply_perturbations(
+    centers_nm: np.ndarray,
+    widths_nm: np.ndarray,
+    perturb_centers_nm: float | tuple[float, float],
+    perturb_width_factor: float | tuple[float, float],
+    spectral_range_nm: tuple[float, float],
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray]:
+    def _range_to_bounds(value: float | tuple[float, float]) -> tuple[float, float]:
+        if isinstance(value, tuple):
+            if len(value) != 2:
+                raise ValueError("Perturbation tuple must have exactly two entries")
+            lo, hi = float(value[0]), float(value[1])
+        else:
+            mag = float(value)
+            if mag < 0:
+                raise ValueError("Perturbation magnitudes must be non-negative")
+            lo, hi = -mag, mag
+        if hi < lo:
+            raise ValueError("Perturbation upper bound must be >= lower bound")
+        return lo, hi
+
+    center_lo, center_hi = _range_to_bounds(perturb_centers_nm)
+    width_lo, width_hi = _range_to_bounds(perturb_width_factor)
+
+    if center_lo == center_hi == 0.0:
+        perturbed_centers = centers_nm.copy()
+    else:
+        shifts = rng.uniform(center_lo, center_hi, size=centers_nm.shape)
+        perturbed_centers = centers_nm + shifts
+        np.clip(perturbed_centers, spectral_range_nm[0], spectral_range_nm[1], out=perturbed_centers)
+
+    if width_lo == width_hi == 0.0:
+        perturbed_widths = widths_nm.copy()
+    else:
+        factors = 1.0 + rng.uniform(width_lo, width_hi, size=widths_nm.shape)
+        perturbed_widths = widths_nm * factors
+
+    perturbed_widths = np.clip(perturbed_widths, np.finfo(np.float64).eps, None)
+    return perturbed_centers, perturbed_widths
+
+
+def _gaussian_rows(
+    centers_nm: np.ndarray, widths_nm: np.ndarray, wavelengths_nm: np.ndarray
+) -> np.ndarray:
+    sigma = widths_nm / (2.0 * np.sqrt(2.0 * np.log(2.0)))
+    sigma = sigma[:, np.newaxis]
+    shifted = wavelengths_nm[np.newaxis, :] - centers_nm[:, np.newaxis]
+    resp = np.exp(-0.5 * (shifted / sigma) ** 2)
+
+    normalized = np.empty_like(resp)
+    for idx, row in enumerate(resp):
+        normalized[idx] = _normalize_response(row, wavelengths_nm)
+    return normalized
+
+
+def simulate_virtual_sensor(
+    lab_wavelengths_nm: np.ndarray,
+    lab_spectra: np.ndarray,
+    cfg: SyntheticSensorConfig,
+    perturb_centers_nm: float | tuple[float, float] = 0.0,
+    perturb_width_factor: float | tuple[float, float] = 0.0,
+) -> tuple[np.ndarray, DenseSRFMatrix, np.ndarray]:
+    """Sample a virtual Gaussian sensor and project lab spectra onto it.
+
+    This helper underpins SRF robustness experiments, lab–overhead alignment
+    sensitivity checks, and sensor randomisation during training. Band centres
+    and widths are drawn from the configuration, optionally perturbed to mimic
+    calibration drifts before constructing Gaussian SRFs on the lab
+    wavelength grid. The resulting SRFs preserve flat spectra (unit-area rows)
+    so a constant lab spectrum remains constant after convolution.
+    """
+
+    wavelengths = np.asarray(lab_wavelengths_nm, dtype=np.float64)
+    check_monotonic(wavelengths, strict=True)
+
+    spectra = np.asarray(lab_spectra, dtype=np.float64)
+    if spectra.shape[-1] != wavelengths.shape[0]:
+        raise ValueError("lab_spectra last dimension must match lab_wavelengths_nm length")
+
+    rng = cfg.rng()
+    centers, widths = _sample_band_metadata(cfg, rng)
+    centers, widths = _apply_perturbations(
+        centers, widths, perturb_centers_nm, perturb_width_factor, cfg.spectral_range_nm, rng
+    )
+
+    srfs = _gaussian_rows(centers, widths, wavelengths)
+    dense_srf = DenseSRFMatrix(wavelength_nm=wavelengths, matrix=srfs)
+
+    band_spectra = convolve_to_bands_batched(spectra, wavelengths, dense_srf)
+    return centers, dense_srf, band_spectra
