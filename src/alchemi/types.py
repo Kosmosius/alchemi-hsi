@@ -22,6 +22,7 @@ else:  # pragma: no cover - avoid circular import at runtime
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "BandDefinition",
     "QuantityKind",
     "RadianceUnits",
     "ReflectanceUnits",
@@ -37,6 +38,23 @@ __all__ = [
     "WAVELENGTH_GRID_MONOTONICITY_EPS",
     "WAVELENGTH_GRID_DUPLICATE_EPS",
 ]
+
+
+@dataclass(frozen=True)
+class BandDefinition:
+    """Describe a spectral absorption feature."""
+
+    lambda_center_nm: float
+    lambda_left_nm: float
+    lambda_right_nm: float
+    name: str | None = None
+    family: str | None = None
+    metadata: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        if not (self.lambda_left_nm < self.lambda_center_nm < self.lambda_right_nm):
+            msg = "Band bounds must satisfy left < center < right"
+            raise ValueError(msg)
 
 
 class QuantityKind(str, Enum):

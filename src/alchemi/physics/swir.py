@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from alchemi.physics.continuum import (
+    BandDefinition,
     build_continuum as _build_continuum,
     continuum_remove as _continuum_remove,
     compute_band_metrics as _compute_band_metrics,
@@ -60,9 +61,11 @@ def band_depth(
         spec = Spectrum.from_reflectance(WavelengthGrid(wl), spec_vals)
         metrics = _compute_band_metrics(
             spec,
-            lambda_left_nm=float(left_nm),
-            lambda_center_nm=float(center_nm),
-            lambda_right_nm=float(right_nm),
+            band=BandDefinition(
+                lambda_center_nm=float(center_nm),
+                lambda_left_nm=float(left_nm),
+                lambda_right_nm=float(right_nm),
+            ),
             method="anchors",
             anchors=[(float(left_nm), float(right_nm))],
         )

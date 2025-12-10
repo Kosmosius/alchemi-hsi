@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 import numpy as np
 
-from alchemi.types import QuantityKind, Spectrum, WavelengthGrid
+from alchemi.types import BandDefinition, QuantityKind, Spectrum, WavelengthGrid
 
 __all__ = [
     "BandMetrics",
+    "BandDefinition",
     "build_continuum",
     "compute_anchor_continuum",
     "compute_band_depth",
+    "compute_band_area",
+    "compute_band_asymmetry",
+    "compute_composite_depth_ratio",
     "compute_band_metrics",
     "compute_convex_hull_continuum",
     "continuum_remove",
@@ -321,7 +325,7 @@ def continuum_remove(
     method: str = "convex_hull",
     anchors: Iterable[float | int] | None = None,
     smoothing: str | None = None,
-    continuum: Spectrum | None = None,
+    continuum: Spectrum | np.ndarray | None = None,
 ) -> Spectrum:
     """Apply continuum removal, returning a new reflectance spectrum."""
 
@@ -329,12 +333,17 @@ def continuum_remove(
         continuum_vals = build_continuum(
             spectrum, method=method, anchors=anchors, smoothing=smoothing
         )
-    else:
+    elif isinstance(continuum, Spectrum):
         wl, cont_vals = _validate_reflectance_spectrum(continuum)
         if not np.allclose(wl, spectrum.wavelengths.nm):
             msg = "Continuum wavelength grid must match the spectrum"
             raise ValueError(msg)
         continuum_vals = cont_vals
+    else:
+        continuum_vals = np.asarray(continuum, dtype=np.float64)
+        if continuum_vals.shape != spectrum.values.shape:
+            msg = "Continuum array shape must match the spectrum values"
+            raise ValueError(msg)
 
     safe_continuum = np.clip(continuum_vals, _MIN_DENOM, None)
     removed_vals = spectrum.values / safe_continuum
@@ -364,105 +373,236 @@ class BandMetrics:
     depth: float
     area: float
     asymmetry: float
-    lambda_center_nm: float
-    lambda_left_nm: float
-    lambda_right_nm: float
+    band: BandDefinition
+
+    @property
+    def lambda_center_nm(self) -> float:  # pragma: no cover - trivial
+        return self.band.lambda_center_nm
+
+    @property
+    def lambda_left_nm(self) -> float:  # pragma: no cover - trivial
+        return self.band.lambda_left_nm
+
+    @property
+    def lambda_right_nm(self) -> float:  # pragma: no cover - trivial
+        return self.band.lambda_right_nm
 
 
 def _extract_value(wl: np.ndarray, vals: np.ndarray, target: float) -> float:
-    return float(np.interp(target, wl, vals))
+    valid = np.isfinite(vals)
+    if not np.any(valid):
+        return float("nan")
+    return float(np.interp(target, wl[valid], vals[valid]))
+
+
+def _mask_values(values: np.ndarray, mask: np.ndarray | None) -> np.ndarray:
+    return np.where(mask, np.nan, values) if mask is not None else values
+
+
+def _reshape_output(values: list[float], shape: tuple[int, ...]) -> float | np.ndarray:
+    arr = np.asarray(values, dtype=np.float64).reshape(shape)
+    return float(arr) if arr.shape == () else arr
+
+
+def _reshape_metrics(values: list[BandMetrics], shape: tuple[int, ...]) -> BandMetrics | np.ndarray:
+    arr = np.asarray(values, dtype=object).reshape(shape)
+    return arr.item() if arr.shape == () else arr
+
+
+def _ensure_continuum_removed(
+    spectrum: Spectrum,
+    *,
+    continuum: np.ndarray | Spectrum | None,
+    method: str,
+    anchors: Iterable[float | int] | None,
+    smoothing: str | None,
+) -> Spectrum:
+    if spectrum.meta.get("continuum_removed"):
+        return spectrum
+    return continuum_remove(
+        spectrum,
+        method=method,
+        anchors=anchors,
+        smoothing=smoothing,
+        continuum=continuum if isinstance(continuum, (Spectrum, np.ndarray)) else None,
+    )
+
+
+def _band_window(wl: np.ndarray, values: np.ndarray, band: BandDefinition) -> tuple[np.ndarray, np.ndarray]:
+    within = (wl >= band.lambda_left_nm) & (wl <= band.lambda_right_nm)
+    wl_band = wl[within]
+    vals_band = values[within]
+    if wl_band.size < 2:
+        wl_band = np.asarray([band.lambda_left_nm, band.lambda_right_nm], dtype=np.float64)
+        vals_band = np.asarray(
+            [
+                _extract_value(wl, values, band.lambda_left_nm),
+                _extract_value(wl, values, band.lambda_right_nm),
+            ]
+        )
+    return wl_band, vals_band
+
+
+def _band_depth_from_removed(continuum_removed: Spectrum, band: BandDefinition) -> float | np.ndarray:
+    wl, vals = _validate_reflectance_spectrum(continuum_removed)
+    vals = _mask_values(vals, continuum_removed.mask)
+    flat_vals = vals.reshape(-1, wl.size)
+    depths: list[float] = []
+
+    for spec_vals in flat_vals:
+        center_val = _extract_value(wl, spec_vals, band.lambda_center_nm)
+        depths.append(1.0 - center_val)
+
+    return _reshape_output(depths, vals.shape[:-1])
+
+
+def _compute_band_depth_removed(continuum_removed: Spectrum, band: BandDefinition) -> float | np.ndarray:
+    return _band_depth_from_removed(continuum_removed, band)
+
+
+def compute_band_area(continuum_removed: Spectrum, band: BandDefinition) -> float | np.ndarray:
+    """Integrate band area over the wavelength interval."""
+
+    wl, vals = _validate_reflectance_spectrum(continuum_removed)
+    vals = _mask_values(vals, continuum_removed.mask)
+    flat_vals = vals.reshape(-1, wl.size)
+    areas: list[float] = []
+
+    for spec_vals in flat_vals:
+        wl_band, removed_band = _band_window(wl, spec_vals, band)
+        valid = np.isfinite(removed_band)
+        if np.count_nonzero(valid) < 2:
+            areas.append(float("nan"))
+            continue
+        area = np.trapezoid(1.0 - removed_band[valid], wl_band[valid])
+        areas.append(float(area))
+
+    return _reshape_output(areas, vals.shape[:-1])
+
+
+def compute_band_asymmetry(continuum_removed: Spectrum, band: BandDefinition) -> float | np.ndarray:
+    """Compute left/right area ratio for a band."""
+
+    wl, vals = _validate_reflectance_spectrum(continuum_removed)
+    vals = _mask_values(vals, continuum_removed.mask)
+    flat_vals = vals.reshape(-1, wl.size)
+    asym: list[float] = []
+
+    for spec_vals in flat_vals:
+        wl_band, removed_band = _band_window(wl, spec_vals, band)
+        valid = np.isfinite(removed_band)
+        if np.count_nonzero(valid) < 2:
+            asym.append(float("nan"))
+            continue
+        wl_band = wl_band[valid]
+        removed_band = removed_band[valid]
+        left_mask = wl_band <= band.lambda_center_nm
+        right_mask = wl_band >= band.lambda_center_nm
+        left_area = np.trapezoid(1.0 - removed_band[left_mask], wl_band[left_mask]) if np.any(left_mask) else 0.0
+        right_area = np.trapezoid(1.0 - removed_band[right_mask], wl_band[right_mask]) if np.any(right_mask) else 0.0
+        asym.append(float(left_area / right_area) if right_area != 0 else float("nan"))
+
+    return _reshape_output(asym, vals.shape[:-1])
 
 
 def compute_band_metrics(
     spectrum: Spectrum,
     *,
-    lambda_left_nm: float,
-    lambda_center_nm: float,
-    lambda_right_nm: float,
+    band: BandDefinition,
     continuum: np.ndarray | Spectrum | None = None,
     method: str = "convex_hull",
     anchors: Iterable[float | int] | None = None,
     smoothing: str | None = None,
-) -> BandMetrics:
-    """Compute band depth, area, and asymmetry for a spectral feature."""
+) -> BandMetrics | np.ndarray:
+    """Compute depth, area, and asymmetry for a band.
 
-    if not (lambda_left_nm < lambda_center_nm < lambda_right_nm):
-        msg = "Band bounds must satisfy left < center < right"
-        raise ValueError(msg)
+    If ``spectrum`` is already continuum-removed (``meta['continuum_removed']``),
+    metrics are computed directly. Otherwise a continuum is built using the
+    provided options before applying the metrics to the continuum-removed
+    spectrum. Results are shaped to match any leading spatial dimensions.
+    """
 
-    wl = np.asarray(spectrum.wavelengths.nm, dtype=np.float64)
-    vals = np.asarray(spectrum.values, dtype=np.float64)
-
-    if vals.ndim != 1:
-        msg = "Band metrics require a one-dimensional spectrum"
-        raise ValueError(msg)
-
-    if continuum is None:
-        continuum_arr = build_continuum(
-            spectrum, method=method, anchors=anchors, smoothing=smoothing
-        )
-    elif isinstance(continuum, Spectrum):
-        wl_cont, continuum_arr = _validate_reflectance_spectrum(continuum)
-        if not np.allclose(wl_cont, wl):
-            msg = "Continuum wavelength grid must match the spectrum"
-            raise ValueError(msg)
-    else:
-        continuum_arr = continuum
-    safe_cont = np.clip(continuum_arr, _MIN_DENOM, None)
-    removed = vals / safe_cont
-
-    center_val = _extract_value(wl, vals, lambda_center_nm)
-    cont_center = _extract_value(wl, continuum_arr, lambda_center_nm)
-    depth = 0.0 if cont_center <= 0 else 1.0 - center_val / cont_center
-
-    within = (wl >= lambda_left_nm) & (wl <= lambda_right_nm)
-    wl_band = wl[within]
-    removed_band = removed[within]
-    if wl_band.size < 2:
-        wl_band = np.asarray([lambda_left_nm, lambda_right_nm], dtype=np.float64)
-        removed_band = np.asarray(
-            [
-                _extract_value(wl, removed, lambda_left_nm),
-                _extract_value(wl, removed, lambda_right_nm),
-            ]
-        )
-
-    band_area = np.trapezoid(1.0 - removed_band, wl_band)
-
-    mid = lambda_center_nm
-    left_mask = wl_band <= mid
-    right_mask = wl_band >= mid
-    left_area = (
-        np.trapezoid(1.0 - removed_band[left_mask], wl_band[left_mask])
-        if np.any(left_mask)
-        else 0.0
+    removed = _ensure_continuum_removed(
+        spectrum,
+        continuum=continuum,
+        method=method,
+        anchors=anchors,
+        smoothing=smoothing,
     )
-    right_area = (
-        np.trapezoid(1.0 - removed_band[right_mask], wl_band[right_mask])
-        if np.any(right_mask)
-        else 0.0
-    )
-    asymmetry = left_area / right_area if right_area != 0 else np.nan
 
-    return BandMetrics(
-        depth=float(depth),
-        area=float(band_area),
-        asymmetry=float(asymmetry),
-        lambda_center_nm=float(lambda_center_nm),
-        lambda_left_nm=float(lambda_left_nm),
-        lambda_right_nm=float(lambda_right_nm),
-    )
+    depth = _compute_band_depth_removed(removed, band)
+    area = compute_band_area(removed, band)
+    asymmetry = compute_band_asymmetry(removed, band)
+
+    if isinstance(depth, float):
+        return BandMetrics(depth=float(depth), area=float(area), asymmetry=float(asymmetry), band=band)
+
+    metrics: list[BandMetrics] = []
+    for d, a, asym in zip(depth.reshape(-1), np.asarray(area).reshape(-1), np.asarray(asymmetry).reshape(-1), strict=False):
+        metrics.append(BandMetrics(depth=float(d), area=float(a), asymmetry=float(asym), band=band))
+
+    return _reshape_metrics(metrics, np.shape(depth))
 
 
 def compute_band_depth(
-    spectrum: Spectrum, lambda_center_nm: float, lambda_left_nm: float, lambda_right_nm: float
-) -> float:
-    """Backward-compatible single-point band depth using the shared utilities."""
+    spectrum: Spectrum,
+    lambda_center_nm: float | None = None,
+    lambda_left_nm: float | None = None,
+    lambda_right_nm: float | None = None,
+    band: BandDefinition | None = None,
+    continuum: np.ndarray | Spectrum | None = None,
+    method: str = "convex_hull",
+    anchors: Iterable[float | int] | None = None,
+    smoothing: str | None = None,
+) -> float | np.ndarray:
+    """Backward-compatible single-point band depth.
 
-    metrics = compute_band_metrics(
+    The preferred usage is ``compute_band_depth(continuum_removed, band=...)``
+    where ``continuum_removed`` is a continuum-normalised reflectance spectrum.
+    Legacy positional bounds are still accepted for compatibility with existing
+    callers.
+    """
+
+    band_def = band
+    if band_def is None:
+        if None in {lambda_center_nm, lambda_left_nm, lambda_right_nm}:
+            msg = "Either a BandDefinition or explicit wavelengths must be provided"
+            raise ValueError(msg)
+        band_def = BandDefinition(
+            lambda_center_nm=float(lambda_center_nm),
+            lambda_left_nm=float(lambda_left_nm),
+            lambda_right_nm=float(lambda_right_nm),
+        )
+
+    removed = _ensure_continuum_removed(
         spectrum,
-        lambda_left_nm=lambda_left_nm,
-        lambda_center_nm=lambda_center_nm,
-        lambda_right_nm=lambda_right_nm,
+        continuum=continuum,
+        method=method,
+        anchors=anchors,
+        smoothing=smoothing,
     )
-    return metrics.depth
+    return _band_depth_from_removed(removed, band_def)
+
+
+def compute_composite_depth_ratio(
+    band_metrics: Mapping[str, BandMetrics],
+    numerator_weights: Mapping[str, float],
+    denominator_weights: Mapping[str, float] | None = None,
+) -> float:
+    """Compute a weighted depth ratio used by multi-band diagnostics."""
+
+    def _weighted_sum(weights: Mapping[str, float]) -> float:
+        total = 0.0
+        for key, weight in weights.items():
+            if key not in band_metrics:
+                msg = f"Band metric {key!r} not provided"
+                raise KeyError(msg)
+            total += weight * float(band_metrics[key].depth)
+        return total
+
+    numerator = _weighted_sum(numerator_weights)
+    if denominator_weights is None:
+        return numerator
+
+    denominator = _weighted_sum(denominator_weights)
+    return float(np.nan) if denominator == 0 else float(numerator / denominator)

@@ -10,7 +10,7 @@ from alchemi.physics.continuum import (
     compute_band_metrics,
     continuum_remove,
 )
-from alchemi.types import Spectrum, WavelengthGrid
+from alchemi.types import BandDefinition, Spectrum, WavelengthGrid
 
 
 def _synthetic_reflectance(wavelengths: np.ndarray) -> np.ndarray:
@@ -66,9 +66,7 @@ def test_band_metrics_gaussian_feature() -> None:
 
     metrics = compute_band_metrics(
         spectrum,
-        lambda_left_nm=1350.0,
-        lambda_center_nm=1500.0,
-        lambda_right_nm=1650.0,
+        band=BandDefinition(lambda_center_nm=1500.0, lambda_left_nm=1350.0, lambda_right_nm=1650.0),
     )
 
     expected_area = float(
@@ -93,9 +91,7 @@ def test_band_metrics_gaussian_feature() -> None:
     skew_spectrum = Spectrum.from_reflectance(WavelengthGrid(wavelengths), 1.0 - skew_absorption)
     skew_metrics = compute_band_metrics(
         skew_spectrum,
-        lambda_left_nm=1350.0,
-        lambda_center_nm=1500.0,
-        lambda_right_nm=1650.0,
+        band=BandDefinition(lambda_center_nm=1500.0, lambda_left_nm=1350.0, lambda_right_nm=1650.0),
     )
 
     assert skew_metrics.asymmetry < 0.9
