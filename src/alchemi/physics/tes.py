@@ -32,6 +32,8 @@ def radiance_spectrum_to_bt_spectrum(
     srf_matrix: np.ndarray | None = None,
     srf_wavelength_nm: np.ndarray | None = None,
     method: str = "central_lambda",
+    temps_grid_K: np.ndarray | None = None,
+    strict: bool = False,
 ) -> Spectrum:
     """Convert an LWIR radiance :class:`Spectrum` to brightness temperature."""
 
@@ -43,6 +45,8 @@ def radiance_spectrum_to_bt_spectrum(
         srf_matrix=srf_matrix,
         srf_wavelength_nm=srf_wavelength_nm,
         method=method,
+        temps_grid_K=temps_grid_K,
+        strict=strict,
     )
     return bt
 
@@ -73,6 +77,8 @@ def radiance_sample_to_bt_sample(
     srf_matrix: np.ndarray | None = None,
     srf_wavelength_nm: np.ndarray | None = None,
     method: str = "central_lambda",
+    temps_grid_K: np.ndarray | None = None,
+    strict: bool = False,
 ) -> Sample:
     """Convert a radiance :class:`Sample` to brightness temperature."""
 
@@ -87,6 +93,8 @@ def radiance_sample_to_bt_sample(
         srf_matrix=matrix,
         srf_wavelength_nm=wl,
         method=method,
+        temps_grid_K=temps_grid_K,
+        strict=strict,
     )
 
     return Sample(

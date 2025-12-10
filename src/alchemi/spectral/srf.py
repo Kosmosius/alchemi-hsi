@@ -15,6 +15,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .spectrum import Spectrum
+from alchemi.types import SRFMatrix as LegacySRFMatrix
 
 
 @dataclass
@@ -141,3 +142,19 @@ class SensorSRF:
         """Return a dense :class:`SRFMatrix` view of the SRFs."""
 
         return SRFMatrix(wavelength_nm=self.wavelength_grid_nm, matrix=self.srfs)
+
+    def to_matrix(self) -> LegacySRFMatrix:
+        """Return a legacy :class:`alchemi.types.SRFMatrix` representation."""
+
+        bands_nm = [np.asarray(self.wavelength_grid_nm, dtype=float).copy() for _ in range(self.band_count)]
+        bands_resp = [np.asarray(row, dtype=float).copy() for row in self.srfs]
+        return LegacySRFMatrix(
+            sensor=self.sensor_id,
+            centers_nm=np.asarray(self.band_centers_nm, dtype=float).copy(),
+            bands_nm=bands_nm,
+            bands_resp=bands_resp,
+            version=str(self.meta.get("version", "v1")) if self.meta else "v1",
+            cache_key=self.meta.get("cache_key") if self.meta else None,
+            bad_band_mask=np.asarray(self.valid_mask, dtype=bool).copy() if self.valid_mask is not None else None,
+            bad_band_windows_nm=self.meta.get("bad_band_windows_nm") if self.meta else None,
+        )
