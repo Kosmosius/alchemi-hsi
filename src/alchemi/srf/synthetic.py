@@ -340,7 +340,7 @@ def _normalize_and_validate_srf(
     flat = Spectrum(
         wavelength_nm=wl,
         values=np.ones(wl.shape[0], dtype=np.float64),
-        kind=QuantityKind.REFLECTANCE,
+        kind=QuantityKind.SURFACE_REFLECTANCE,
         units=ValueUnits.REFLECTANCE_FRACTION,
     )
     matrix.assert_flat_spectrum_preserved(flat, tol=tol)

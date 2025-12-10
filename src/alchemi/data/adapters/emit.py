@@ -27,7 +27,7 @@ from alchemi.registry import srfs
 from alchemi.spectral import BandMetadata, Sample, Spectrum, ViewingGeometry
 from alchemi.spectral.sample import GeoMeta
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
-from alchemi.types import QuantityKind, ValueUnits
+from alchemi.types import QuantityKind, ValueUnits, WavelengthGrid
 from alchemi.physics import units as qty_units
 from alchemi.srf.utils import build_gaussian_srf_matrix, default_band_widths, validate_srf_alignment
 
@@ -373,10 +373,9 @@ def iter_emit_l2a_pixels(
     for y in range(scaled.shape[0]):
         for x in range(scaled.shape[1]):
             values = scaled[y, x, :]
-            spectrum = Spectrum(
-                wavelength_nm=wavelengths,
-                values=values,
-                kind="reflectance",
+            spectrum = Spectrum.from_surface_reflectance(
+                WavelengthGrid(wavelengths),
+                values,
                 units=ValueUnits.REFLECTANCE_FRACTION,
             )
             quality_masks = {name: mask[y, x, :] for name, mask in quality_base.items()}

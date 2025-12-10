@@ -54,7 +54,11 @@ def validate_spectrum_physics(spectrum: Spectrum) -> None:
         if spectrum.units != RadianceUnits.W_M2_SR_NM:
             msg = "Radiance spectrum must use W·m⁻²·sr⁻¹·nm⁻¹ units"
             raise ValueError(msg)
-    elif spectrum.kind == QuantityKind.REFLECTANCE:
+    elif spectrum.kind in {
+        QuantityKind.REFLECTANCE,
+        QuantityKind.SURFACE_REFLECTANCE,
+        QuantityKind.TOA_REFLECTANCE,
+    }:
         if spectrum.units != ReflectanceUnits.FRACTION:
             msg = "Reflectance spectrum must be a dimensionless fraction"
             raise ValueError(msg)

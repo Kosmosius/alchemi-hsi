@@ -28,7 +28,7 @@ from alchemi.registry.sensors import DEFAULT_SENSOR_REGISTRY
 from alchemi.spectral import BandMetadata, Sample, Spectrum, ViewingGeometry
 from alchemi.spectral.sample import GeoMeta
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
-from alchemi.types import SRFMatrix as LegacySRFMatrix, ValueUnits
+from alchemi.types import SRFMatrix as LegacySRFMatrix, ValueUnits, WavelengthGrid
 from alchemi.srf.utils import build_gaussian_srf_matrix, default_band_widths, validate_srf_alignment
 
 from ..io import enmap as io_enmap
@@ -455,10 +455,9 @@ def iter_enmap_l2a_pixels(
     for y in range(scaled.shape[0]):
         for x in range(scaled.shape[1]):
             values = np.asarray(scaled[y, x, :], dtype=np.float64)
-            spectrum = Spectrum(
-                wavelength_nm=wavelengths,
-                values=values,
-                kind="reflectance",
+            spectrum = Spectrum.from_surface_reflectance(
+                WavelengthGrid(wavelengths),
+                values,
                 units=ValueUnits.REFLECTANCE_FRACTION,
             )
             quality_masks = {name: mask.copy() for name, mask in quality_base.items()}

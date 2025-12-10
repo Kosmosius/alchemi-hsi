@@ -36,7 +36,7 @@ def continuum_remove(
         raise ValueError(msg)
 
     anchors = [(float(left_nm), float(right_nm))]
-    spectrum = Spectrum.from_reflectance(WavelengthGrid(wl), refl)
+    spectrum = Spectrum.from_surface_reflectance(WavelengthGrid(wl), refl)
     continuum = _build_continuum(spectrum, method="anchors", anchors=anchors)
     removed = _continuum_remove(spectrum, method="anchors", anchors=anchors).values
     return continuum, removed
@@ -52,7 +52,7 @@ def band_depth(
     wl = np.asarray(wavelength_nm, dtype=np.float64)
     refl = np.asarray(reflectance, dtype=np.float64)
 
-    spectrum = Spectrum.from_reflectance(WavelengthGrid(wl), refl)
+    spectrum = Spectrum.from_surface_reflectance(WavelengthGrid(wl), refl)
     flat_vals = spectrum.values.reshape(-1, wl.size)
     depths = np.empty(flat_vals.shape[0], dtype=np.float64)
 

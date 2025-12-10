@@ -110,7 +110,7 @@ def _as_spectrum(candidate: _LabSpectrum) -> Spectrum:
     return Spectrum(
         wavelengths=wavelengths,
         values=np.asarray(values, dtype=np.float64),
-        kind=QuantityKind.REFLECTANCE,
+        kind=QuantityKind.SURFACE_REFLECTANCE,
         units=ReflectanceUnits.FRACTION,
     )
 
@@ -217,7 +217,7 @@ def _pairs_from_projection(
         sensor_spectrum = Spectrum(
             wavelengths=sensor_wl,
             values=sensor_arr[idx],
-            kind=QuantityKind.REFLECTANCE,
+            kind=QuantityKind.SURFACE_REFLECTANCE,
             units=ReflectanceUnits.FRACTION,
             mask=None if sensor_mask is None else np.asarray(sensor_mask, dtype=bool),
         )

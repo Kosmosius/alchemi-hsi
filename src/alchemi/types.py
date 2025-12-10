@@ -41,7 +41,9 @@ __all__ = [
 
 class QuantityKind(str, Enum):
     RADIANCE = "radiance"
-    REFLECTANCE = "reflectance"
+    TOA_REFLECTANCE = "toa_reflectance"
+    SURFACE_REFLECTANCE = "surface_reflectance"
+    REFLECTANCE = "reflectance"  # Legacy alias; prefer explicit TOA/SURFACE kinds
     BRIGHTNESS_T = "brightness_temperature"
     BT = "brightness_temperature"  # Alias for backwards compatibility
 
@@ -94,6 +96,10 @@ _QUANTITY_ALIASES = {
     "reflectance": QuantityKind.REFLECTANCE,
     "brightness_temperature": QuantityKind.BRIGHTNESS_T,
     "brightness_temp": QuantityKind.BRIGHTNESS_T,
+    "toa_reflectance": QuantityKind.TOA_REFLECTANCE,
+    "toa reflectance": QuantityKind.TOA_REFLECTANCE,
+    "surface_reflectance": QuantityKind.SURFACE_REFLECTANCE,
+    "surface reflectance": QuantityKind.SURFACE_REFLECTANCE,
     "bt": QuantityKind.BRIGHTNESS_T,
 }
 
@@ -135,10 +141,25 @@ _UNIT_ALIASES: dict[ValueUnits, Iterable[str]] = {
     ),
 }
 
+_REFLECTANCE_KINDS = (
+    QuantityKind.REFLECTANCE,
+    QuantityKind.TOA_REFLECTANCE,
+    QuantityKind.SURFACE_REFLECTANCE,
+)
+
+
 _EXPECTED_UNITS: dict[QuantityKind, tuple[ValueUnits, ...]] = {
     QuantityKind.RADIANCE: (
         ValueUnits.RADIANCE_W_M2_SR_NM,
         ValueUnits.RADIANCE_W_M2_SR_UM,
+    ),
+    QuantityKind.TOA_REFLECTANCE: (
+        ValueUnits.REFLECTANCE_FRACTION,
+        ValueUnits.REFLECTANCE_PERCENT,
+    ),
+    QuantityKind.SURFACE_REFLECTANCE: (
+        ValueUnits.REFLECTANCE_FRACTION,
+        ValueUnits.REFLECTANCE_PERCENT,
     ),
     QuantityKind.REFLECTANCE: (
         ValueUnits.REFLECTANCE_FRACTION,
@@ -396,6 +417,14 @@ class Spectrum:
             self.mask = m
 
         self.kind = _normalize_quantity_kind(self.kind)
+        if self.kind == QuantityKind.REFLECTANCE:
+            warnings.warn(
+                "QuantityKind.REFLECTANCE is deprecated; use SURFACE_REFLECTANCE or "
+                "TOA_REFLECTANCE explicitly.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.kind = QuantityKind.SURFACE_REFLECTANCE
 
         # Normalize units / values using shared utilities, with a
         # backward-compatible default + legacy string/enum handling.
@@ -429,7 +458,7 @@ class Spectrum:
         self._validate_values()
 
     def _validate_values(self) -> None:
-        if self.kind == QuantityKind.REFLECTANCE:
+        if self.kind in _REFLECTANCE_KINDS:
             if np.any(self.values < 0) or np.any(self.values > 1.0 + REFLECTANCE_MAX_EPS):
                 msg = "Reflectance values must be within [0, 1 + eps]"
                 raise ValueError(msg)
@@ -539,10 +568,53 @@ class Spectrum:
         mask: NDArray[np.bool_] | None = None,
         meta: dict[str, Any] | None = None,
     ) -> Spectrum:
+        warnings.warn(
+            "Spectrum.from_reflectance is deprecated; use from_surface_reflectance or "
+            "from_toa_reflectance explicitly.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls.from_surface_reflectance(
+            wavelengths,
+            values,
+            units=units,
+            mask=mask,
+            meta=meta,
+        )
+
+    @classmethod
+    def from_toa_reflectance(
+        cls,
+        wavelengths: WavelengthGrid,
+        values: NDArray[np.float64],
+        *,
+        units: ReflectanceUnits | ValueUnits | str = ReflectanceUnits.FRACTION,
+        mask: NDArray[np.bool_] | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Spectrum:
         return cls(
             wavelengths=wavelengths,
             values=values,
-            kind=QuantityKind.REFLECTANCE,
+            kind=QuantityKind.TOA_REFLECTANCE,
+            units=units,
+            mask=mask,
+            meta=meta or {},
+        )
+
+    @classmethod
+    def from_surface_reflectance(
+        cls,
+        wavelengths: WavelengthGrid,
+        values: NDArray[np.float64],
+        *,
+        units: ReflectanceUnits | ValueUnits | str = ReflectanceUnits.FRACTION,
+        mask: NDArray[np.bool_] | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Spectrum:
+        return cls(
+            wavelengths=wavelengths,
+            values=values,
+            kind=QuantityKind.SURFACE_REFLECTANCE,
             units=units,
             mask=mask,
             meta=meta or {},
