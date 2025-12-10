@@ -13,10 +13,12 @@ from alchemi.types import QuantityKind, Spectrum, WavelengthGrid
 __all__ = [
     "BandMetrics",
     "build_continuum",
+    "compute_anchor_continuum",
     "compute_band_depth",
     "compute_band_metrics",
     "compute_convex_hull_continuum",
     "continuum_remove",
+    "smooth_continuum",
 ]
 
 
@@ -46,14 +48,6 @@ def _upper_hull_indices(wavelengths: np.ndarray, values: np.ndarray) -> list[int
         hull.append(idx)
 
     return hull
-
-
-def _interpolate_segments(
-    anchors_wl: Iterable[float], anchors_val: Iterable[float], wl: np.ndarray
-) -> np.ndarray:
-    anchors_wl_arr = np.asarray(list(anchors_wl), dtype=np.float64)
-    anchors_val_arr = np.asarray(list(anchors_val), dtype=np.float64)
-    return np.interp(wl, anchors_wl_arr, anchors_val_arr)
 
 
 def _natural_cubic_spline_coefficients(
@@ -103,51 +97,7 @@ def _compute_convex_hull_continuum(
     return wl[hull_idx], values[hull_idx]
 
 
-def _anchor_continuum_points(
-    wl: np.ndarray, vals: np.ndarray, anchors: list[tuple[float, float]] | None
-) -> tuple[np.ndarray, np.ndarray]:
-    anchor_points: list[float] = []
-    if anchors:
-        for left, right in anchors:
-            anchor_points.extend([left, right])
-
-    anchor_points.append(float(wl[0]))
-    anchor_points.append(float(wl[-1]))
-    anchor_points = sorted(set(anchor_points))
-
-    anchor_vals = [float(np.interp(pt, wl, vals)) for pt in anchor_points]
-    return np.asarray(anchor_points, dtype=np.float64), np.asarray(anchor_vals, dtype=np.float64)
-
-
-def build_continuum(
-    spectrum: Spectrum,
-    *,
-    method: str = "convex_hull",
-    anchors: list[tuple[float, float]] | None = None,
-    smoothing: str | None = None,
-) -> np.ndarray:
-    """Construct a continuum for a reflectance-like spectrum.
-
-    Parameters
-    ----------
-    spectrum:
-        Reflectance :class:`~alchemi.types.Spectrum` with strictly increasing
-        wavelength grid (nm). Radiance or brightness temperature spectra are
-        not supported.
-    method:
-        Continuum construction method. ``"convex_hull"`` builds the upper
-        convex hull of (λ, R) and linearly interpolates between hull vertices.
-        ``"anchors"`` uses user-provided anchor pairs to define piecewise
-        linear segments.
-    anchors:
-        Optional list of ``(λ_l, λ_r)`` anchor tuples in nanometres used by the
-        ``"anchors"`` method.
-    smoothing:
-        Optional smoothing applied to the hull vertices. ``"polyN"`` fits a
-        degree-N polynomial to hull points. ``"spline"`` evaluates a natural
-        cubic spline through the hull vertices.
-    """
-
+def _validate_reflectance_spectrum(spectrum: Spectrum) -> tuple[np.ndarray, np.ndarray]:
     if spectrum.kind not in {
         QuantityKind.REFLECTANCE,
         QuantityKind.SURFACE_REFLECTANCE,
@@ -165,62 +115,230 @@ def build_continuum(
         msg = "Last dimension of values must match wavelength grid length"
         raise ValueError(msg)
 
+    return wl, vals
+
+
+def _interpolate_continuum(
+    wl: np.ndarray, anchor_wl: np.ndarray, anchor_vals: np.ndarray
+) -> np.ndarray:
+    return np.interp(wl, anchor_wl, anchor_vals)
+
+
+def compute_convex_hull_continuum(spectrum: Spectrum) -> Spectrum:
+    """Compute an upper-hull continuum for a reflectance spectrum.
+
+    The continuum is formed by selecting the upper convex hull of the
+    (λ, R(λ)) points and linearly interpolating between those hull vertices.
+    This is a robust default for unknown spectra (lab or overhead) because it
+    requires no prior knowledge of absorption locations.
+    """
+
+    wl, vals = _validate_reflectance_spectrum(spectrum)
     flat_vals = vals.reshape(-1, wl.size)
     continua = np.empty_like(flat_vals)
 
     for idx, spec_vals in enumerate(flat_vals):
-        if method == "convex_hull":
-            hull_wl, hull_vals = _compute_convex_hull_continuum(wl, spec_vals)
-        elif method == "anchors":
-            if anchors is None:
-                msg = "anchors method requires anchors to be provided"
-                raise ValueError(msg)
-            hull_wl, hull_vals = _anchor_continuum_points(wl, spec_vals, anchors)
+        hull_wl, hull_vals = _compute_convex_hull_continuum(wl, spec_vals)
+        continua[idx] = _interpolate_continuum(wl, hull_wl, hull_vals)
+
+    continuum_vals = continua.reshape(vals.shape)
+    return Spectrum.from_reflectance(
+        WavelengthGrid(wl),
+        continuum_vals,
+        units=spectrum.units,
+        mask=spectrum.mask,
+        meta=spectrum.meta.copy(),
+    )
+
+
+def _normalize_anchor_points(wl: np.ndarray, anchors: Iterable[float | int]) -> np.ndarray:
+    anchor_points: list[float] = []
+    for anchor in anchors:
+        if isinstance(anchor, (list, tuple)) and len(anchor) == 2:
+            anchor_points.extend(anchor)  # type: ignore[arg-type]
         else:
-            msg = f"Unknown continuum method: {method}"
+            anchor_points.append(anchor)  # type: ignore[arg-type]
+
+    if not anchor_points:
+        msg = "At least one anchor is required for anchor-based continua"
+        raise ValueError(msg)
+
+    normalized: list[float] = []
+    for pt in anchor_points:
+        if isinstance(pt, (int, np.integer)):
+            idx = int(pt)
+            if idx < 0 or idx >= wl.size:
+                msg = "Anchor index is out of bounds for wavelength grid"
+                raise IndexError(msg)
+            normalized.append(float(wl[idx]))
+        else:
+            normalized.append(float(pt))
+
+    normalized.extend([float(wl[0]), float(wl[-1])])
+    return np.asarray(sorted(set(normalized)), dtype=np.float64)
+
+
+def compute_anchor_continuum(spectrum: Spectrum, anchors: Iterable[float | int]) -> Spectrum:
+    """Compute a piecewise-linear continuum using user-provided anchors.
+
+    The anchors may be specified as wavelengths (nm) or integer band indices.
+    Endpoints are implicitly included to ensure the continuum spans the entire
+    spectrum. This mode is useful when shoulder locations are known from prior
+    knowledge (e.g. laboratory measurements or configuration presets).
+    """
+
+    wl, vals = _validate_reflectance_spectrum(spectrum)
+    anchor_points = _normalize_anchor_points(wl, anchors)
+
+    flat_vals = vals.reshape(-1, wl.size)
+    continua = np.empty_like(flat_vals)
+
+    for idx, spec_vals in enumerate(flat_vals):
+        anchor_vals = np.interp(anchor_points, wl, spec_vals)
+        continua[idx] = _interpolate_continuum(wl, anchor_points, anchor_vals)
+
+    continuum_vals = continua.reshape(vals.shape)
+    return Spectrum.from_reflectance(
+        WavelengthGrid(wl),
+        continuum_vals,
+        units=spectrum.units,
+        mask=spectrum.mask,
+        meta=spectrum.meta.copy(),
+    )
+
+
+def smooth_continuum(
+    continuum: Spectrum, *, method: str = "poly", order: int = 2
+) -> Spectrum:
+    """Optionally smooth a continuum spectrum using polynomial or spline fits.
+
+    Smoothing is off by default in :func:`build_continuum` but can be enabled to
+    suppress high-frequency noise while retaining the broader continuum shape
+    for both laboratory and overhead spectra.
+    """
+
+    wl, vals = _validate_reflectance_spectrum(continuum)
+    flat_vals = vals.reshape(-1, wl.size)
+    smoothed = np.empty_like(flat_vals)
+
+    for idx, spec_vals in enumerate(flat_vals):
+        if method == "poly":
+            degree = min(order, max(1, wl.size - 1))
+            coeffs = np.polyfit(wl, spec_vals, deg=degree)
+            smoothed[idx] = np.polyval(coeffs, wl)
+        elif method == "spline":
+            if wl.size < 3:
+                smoothed[idx] = spec_vals
+            else:
+                b, c, d = _natural_cubic_spline_coefficients(wl, spec_vals)
+                smoothed[idx] = _evaluate_natural_cubic_spline(wl, spec_vals, b, c, d, wl)
+        else:
+            msg = f"Unknown smoothing option: {method}"
             raise ValueError(msg)
 
-        if smoothing:
-            if smoothing.startswith("poly"):
-                match = re.match(r"poly(\d+)", smoothing)
-                if not match:
-                    msg = f"Invalid polynomial smoothing specifier: {smoothing}"
-                    raise ValueError(msg)
-                degree = int(match.group(1))
-                degree = min(degree, max(1, hull_wl.size - 1))
-                coeffs = np.polyfit(hull_wl, hull_vals, deg=degree)
-                smoothed = np.polyval(coeffs, wl)
-                continuum = smoothed
-            elif smoothing == "spline":
-                if hull_wl.size < 3:
-                    continuum = _interpolate_segments(hull_wl, hull_vals, wl)
-                else:
-                    b, c, d = _natural_cubic_spline_coefficients(hull_wl, hull_vals)
-                    continuum = _evaluate_natural_cubic_spline(hull_wl, hull_vals, b, c, d, wl)
-            else:
-                msg = f"Unknown smoothing option: {smoothing}"
+    smoothed_vals = smoothed.reshape(vals.shape)
+    meta = continuum.meta.copy()
+    meta.update({"continuum_smoothing_method": method, "continuum_smoothing_order": order})
+
+    return Spectrum.from_reflectance(
+        WavelengthGrid(wl),
+        smoothed_vals,
+        units=continuum.units,
+        mask=continuum.mask,
+        meta=meta,
+    )
+
+
+def build_continuum(
+    spectrum: Spectrum,
+    *,
+    method: str = "convex_hull",
+    anchors: Iterable[float | int] | None = None,
+    smoothing: str | None = None,
+    smoothing_order: int | None = None,
+) -> np.ndarray:
+    """Construct a continuum for a reflectance-like spectrum.
+
+    Parameters
+    ----------
+    spectrum:
+        Reflectance :class:`~alchemi.types.Spectrum` with strictly increasing
+        wavelength grid (nm). Radiance or brightness temperature spectra are
+        not supported.
+    method:
+        Continuum construction method. ``"convex_hull"`` builds the upper
+        convex hull of (λ, R) and linearly interpolates between hull vertices.
+        ``"anchors"`` uses user-provided anchor wavelengths or band indices to
+        define piecewise linear segments.
+    anchors:
+        Anchors used by the ``"anchors"`` method. Values can be wavelengths or
+        integer indices into the wavelength grid. Endpoints are implicitly
+        included.
+    smoothing:
+        Optional smoothing applied to the continuum. ``"poly"`` fits a
+        polynomial of degree ``smoothing_order`` (defaults to 2). ``"spline"``
+        evaluates a natural cubic spline through the continuum points. Legacy
+        ``"polyN"`` strings are still accepted.
+
+    Notes
+    -----
+    The convex hull option is a safe default when absorption shoulders are not
+    known in advance (e.g. arbitrary lab or airborne spectra). Anchor continua
+    should be preferred when shoulder wavelengths or band indices are known a
+    priori to prevent over-estimating shallow absorptions.
+    """
+
+    if method == "convex_hull":
+        continuum_spec = compute_convex_hull_continuum(spectrum)
+    elif method == "anchors":
+        if anchors is None:
+            msg = "anchors method requires anchors to be provided"
+            raise ValueError(msg)
+        continuum_spec = compute_anchor_continuum(spectrum, anchors)
+    else:
+        msg = f"Unknown continuum method: {method}"
+        raise ValueError(msg)
+
+    if smoothing:
+        if smoothing.startswith("poly") and smoothing != "poly":
+            match = re.match(r"poly(\d+)", smoothing)
+            if not match:
+                msg = f"Invalid polynomial smoothing specifier: {smoothing}"
                 raise ValueError(msg)
+            smoothing_order = int(match.group(1))
+            smoothing_method = "poly"
         else:
-            continuum = _interpolate_segments(hull_wl, hull_vals, wl)
+            smoothing_method = smoothing
+        order = 2 if smoothing_order is None else smoothing_order
+        continuum_spec = smooth_continuum(continuum_spec, method=smoothing_method, order=order)
 
-        continua[idx] = continuum
-
-    return continua.reshape(vals.shape)
+    return np.asarray(continuum_spec.values)
 
 
 def continuum_remove(
     spectrum: Spectrum,
     *,
     method: str = "convex_hull",
-    anchors: list[tuple[float, float]] | None = None,
+    anchors: Iterable[float | int] | None = None,
     smoothing: str | None = None,
+    continuum: Spectrum | None = None,
 ) -> Spectrum:
     """Apply continuum removal, returning a new reflectance spectrum."""
 
-    continuum = build_continuum(spectrum, method=method, anchors=anchors, smoothing=smoothing)
-    safe_continuum = np.clip(continuum, _MIN_DENOM, None)
+    if continuum is None:
+        continuum_vals = build_continuum(
+            spectrum, method=method, anchors=anchors, smoothing=smoothing
+        )
+    else:
+        wl, cont_vals = _validate_reflectance_spectrum(continuum)
+        if not np.allclose(wl, spectrum.wavelengths.nm):
+            msg = "Continuum wavelength grid must match the spectrum"
+            raise ValueError(msg)
+        continuum_vals = cont_vals
+
+    safe_continuum = np.clip(continuum_vals, _MIN_DENOM, None)
     removed_vals = spectrum.values / safe_continuum
-    removed_vals = np.where(continuum <= 0, np.nan, removed_vals)
+    removed_vals = np.where(continuum_vals <= 0, np.nan, removed_vals)
 
     meta = spectrum.meta.copy()
     meta.update(
@@ -261,9 +379,9 @@ def compute_band_metrics(
     lambda_left_nm: float,
     lambda_center_nm: float,
     lambda_right_nm: float,
-    continuum: np.ndarray | None = None,
+    continuum: np.ndarray | Spectrum | None = None,
     method: str = "convex_hull",
-    anchors: list[tuple[float, float]] | None = None,
+    anchors: Iterable[float | int] | None = None,
     smoothing: str | None = None,
 ) -> BandMetrics:
     """Compute band depth, area, and asymmetry for a spectral feature."""
@@ -279,11 +397,17 @@ def compute_band_metrics(
         msg = "Band metrics require a one-dimensional spectrum"
         raise ValueError(msg)
 
-    continuum_arr = (
-        build_continuum(spectrum, method=method, anchors=anchors, smoothing=smoothing)
-        if continuum is None
-        else continuum
-    )
+    if continuum is None:
+        continuum_arr = build_continuum(
+            spectrum, method=method, anchors=anchors, smoothing=smoothing
+        )
+    elif isinstance(continuum, Spectrum):
+        wl_cont, continuum_arr = _validate_reflectance_spectrum(continuum)
+        if not np.allclose(wl_cont, wl):
+            msg = "Continuum wavelength grid must match the spectrum"
+            raise ValueError(msg)
+    else:
+        continuum_arr = continuum
     safe_cont = np.clip(continuum_arr, _MIN_DENOM, None)
     removed = vals / safe_cont
 
@@ -327,19 +451,6 @@ def compute_band_metrics(
         lambda_center_nm=float(lambda_center_nm),
         lambda_left_nm=float(lambda_left_nm),
         lambda_right_nm=float(lambda_right_nm),
-    )
-
-
-def compute_convex_hull_continuum(spectrum: Spectrum) -> Spectrum:
-    """Backward-compatible wrapper returning a continuum spectrum."""
-
-    continuum = build_continuum(spectrum, method="convex_hull")
-    return Spectrum.from_reflectance(
-        WavelengthGrid(np.asarray(spectrum.wavelengths.nm, dtype=np.float64)),
-        continuum,
-        units=spectrum.units,
-        mask=spectrum.mask,
-        meta=spectrum.meta.copy(),
     )
 
 
