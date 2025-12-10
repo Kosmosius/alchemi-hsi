@@ -8,7 +8,6 @@ from typing import Iterable
 
 import numpy as np
 
-from ..registry import srfs
 from ..spectral.srf import SensorSRF, SRFProvenance
 from ..types import SRFMatrix, SRFMatrix as LegacySRFMatrix
 
@@ -120,6 +119,8 @@ class SRFRegistry:
         if key in self._overrides:
             return self._overrides[key]
         try:
+            from alchemi.registry import srfs
+
             return srfs.get_srf(sensor_id, base_path=self._root)
         except FileNotFoundError:
             return None
@@ -134,6 +135,8 @@ class SRFRegistry:
         sensors = set(self._overrides.keys())
         if self._root is None:
             try:
+                from alchemi.registry import srfs
+
                 sensors.update(
                     path.stem.split("_srfs")[0] for path in Path(srfs._SRF_ROOT).glob("*_srfs.*")
                 )
