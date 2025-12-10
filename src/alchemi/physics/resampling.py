@@ -6,11 +6,13 @@ from typing import Literal
 
 import numpy as np
 
+from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
 from alchemi.types import Spectrum, SRFMatrix, WavelengthGrid
 from alchemi.utils.integrate import np_integrate
 
 __all__ = [
     "convolve_to_bands",
+    "convolve_to_bands_batched",
     "interpolate_to_centers",
     "generate_gaussian_srf",
     "simulate_virtual_sensor",
@@ -25,7 +27,11 @@ def _normalize_response(resp: np.ndarray, nm: np.ndarray) -> np.ndarray:
 
 
 def convolve_to_bands(high_res: Spectrum, srf: SRFMatrix) -> Spectrum:
-    """Convolve a high-resolution spectrum to sensor bands using SRF rows."""
+    """Convolve a high-resolution spectrum to sensor bands using SRF rows.
+
+    For batched or dense SRF workflows, prefer
+    :func:`convolve_to_bands_batched`.
+    """
 
     nm_hi = np.asarray(high_res.wavelengths.nm, dtype=np.float64)
     values_hi = np.asarray(high_res.values, dtype=np.float64)
@@ -50,6 +56,77 @@ def convolve_to_bands(high_res: Spectrum, srf: SRFMatrix) -> Spectrum:
         mask=srf.bad_band_mask,
         meta=high_res.meta.copy(),
     )
+
+
+def _as_dense_srf_matrix(
+    srf_matrix: np.ndarray | DenseSRFMatrix,
+    srf_wavelength_nm: np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    if isinstance(srf_matrix, DenseSRFMatrix):
+        wavelength = np.asarray(srf_matrix.wavelength_nm, dtype=np.float64)
+        matrix = np.asarray(srf_matrix.matrix, dtype=np.float64)
+    else:
+        matrix = np.asarray(srf_matrix, dtype=np.float64)
+        if matrix.ndim != 2:
+            msg = "srf_matrix must be 2-D (bands x wavelengths)"
+            raise ValueError(msg)
+        if srf_wavelength_nm is None:
+            msg = "srf_wavelength_nm must be provided when srf_matrix is an array"
+            raise ValueError(msg)
+        wavelength = np.asarray(srf_wavelength_nm, dtype=np.float64)
+
+    if wavelength.ndim != 1:
+        msg = "srf_wavelength_nm must be 1-D"
+        raise ValueError(msg)
+    if matrix.shape[1] != wavelength.shape[0]:
+        msg = "srf_matrix column count must match srf_wavelength_nm length"
+        raise ValueError(msg)
+    return matrix, wavelength
+
+
+def convolve_to_bands_batched(
+    spectra: np.ndarray,
+    wavelengths_nm: np.ndarray,
+    srf_matrix: np.ndarray | DenseSRFMatrix,
+    srf_wavelength_nm: np.ndarray | None = None,
+) -> np.ndarray:
+    """Vectorized SRF convolution for batches or cubes of high-res spectra."""
+
+    spectra_arr = np.asarray(spectra, dtype=np.float64)
+    wavelengths = np.asarray(wavelengths_nm, dtype=np.float64)
+    if spectra_arr.ndim < 1:
+        raise ValueError("spectra must have at least one dimension")
+    if wavelengths.ndim != 1:
+        raise ValueError("wavelengths_nm must be 1-D")
+    if spectra_arr.shape[-1] != wavelengths.shape[0]:
+        msg = "spectra last dimension must match wavelengths_nm length"
+        raise ValueError(msg)
+
+    dense_srf, srf_wavelength = _as_dense_srf_matrix(srf_matrix, srf_wavelength_nm)
+    if dense_srf.ndim != 2:
+        raise ValueError("srf_matrix must be 2-D (bands x wavelengths)")
+
+    orig_shape = spectra_arr.shape[:-1]
+    flat_spectra = spectra_arr.reshape(-1, spectra_arr.shape[-1])
+
+    if not np.array_equal(wavelengths, srf_wavelength):
+        interpolated = np.empty((flat_spectra.shape[0], srf_wavelength.shape[0]))
+        for idx, row in enumerate(flat_spectra):
+            interpolated[idx] = np.interp(srf_wavelength, wavelengths, row)
+        flat_spectra = interpolated
+    else:
+        flat_spectra = flat_spectra.copy()
+
+    integrals = np.trapz(dense_srf, x=srf_wavelength, axis=1)
+    if np.any(~np.isfinite(integrals)) or np.any(integrals <= 0.0):
+        msg = "SRF rows must integrate to a positive finite area"
+        raise ValueError(msg)
+    resp_norm = dense_srf / integrals[:, np.newaxis]
+
+    product = resp_norm[np.newaxis, :, :] * flat_spectra[:, np.newaxis, :]
+    band_values = np.trapz(product, x=srf_wavelength, axis=2)
+
+    return band_values.reshape(*orig_shape, dense_srf.shape[0])
 
 
 def interpolate_to_centers(
