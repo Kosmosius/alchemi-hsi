@@ -85,7 +85,7 @@ WAVELENGTH_GRID_MONOTONICITY_EPS = 0.0
 WAVELENGTH_GRID_DUPLICATE_EPS = 1e-12
 """Absolute tolerance (in nm) for detecting repeated wavelengths."""
 
-REFLECTANCE_MAX_EPS = 1e3
+REFLECTANCE_MAX_EPS = 1e-3
 BT_PLAUSIBLE_MIN_K = 150.0
 BT_PLAUSIBLE_MAX_K = 400.0
 
@@ -135,14 +135,20 @@ _UNIT_ALIASES: dict[ValueUnits, Iterable[str]] = {
     ),
 }
 
-_EXPECTED_UNITS: dict[QuantityKind, set[ValueUnits]] = {
-    QuantityKind.RADIANCE: {ValueUnits.RADIANCE_W_M2_SR_NM, ValueUnits.RADIANCE_W_M2_SR_UM},
-    QuantityKind.REFLECTANCE: {ValueUnits.REFLECTANCE_FRACTION, ValueUnits.REFLECTANCE_PERCENT},
-    QuantityKind.BRIGHTNESS_T: {
+_EXPECTED_UNITS: dict[QuantityKind, tuple[ValueUnits, ...]] = {
+    QuantityKind.RADIANCE: (
+        ValueUnits.RADIANCE_W_M2_SR_NM,
+        ValueUnits.RADIANCE_W_M2_SR_UM,
+    ),
+    QuantityKind.REFLECTANCE: (
+        ValueUnits.REFLECTANCE_FRACTION,
+        ValueUnits.REFLECTANCE_PERCENT,
+    ),
+    QuantityKind.BRIGHTNESS_T: (
         ValueUnits.TEMPERATURE_K,
         ValueUnits.TEMPERATURE_C,
         ValueUnits.TEMPERATURE_F,
-    },
+    ),
 }
 
 
@@ -590,6 +596,18 @@ class Spectrum:
         kind: QuantityKind | SpectrumKind | str,
         units: ValueUnits | RadianceUnits | ReflectanceUnits | TemperatureUnits | str | None = None,
     ) -> Spectrum:
+        """Construct a spectrum from wavenumber samples in ``cm⁻¹``.
+
+        The input ``values`` are interpreted as being defined per unit wavenumber
+        (e.g., W·m⁻²·sr⁻¹·(cm⁻¹)⁻¹ when ``kind`` is radiance). Wavelengths are
+        converted via ``λ_nm = 1e7 / ν̃_cm``. For radiance, we rescale to per-nm
+        units using the Jacobian of the change of variables ``ν̃ = 1 / λ``:
+
+        ``L_λ = L_ν̃ * |dν̃/dλ_nm| = L_ν̃ * (1e7 / λ_nm²)``,
+
+        which preserves energy per bin when moving between wavenumber- and
+        wavelength-parameterized descriptions.
+        """
         wavenumber_cm = np.asarray(wavenumber_cm, dtype=np.float64)
         if np.any(wavenumber_cm <= 0):
             raise ValueError("wavenumber_cm must be positive")
