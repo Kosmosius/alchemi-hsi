@@ -80,6 +80,7 @@ def sensor_srf_from_legacy(
         meta={
             "version": getattr(legacy, "version", None),
             "cache_key": getattr(legacy, "cache_key", None),
+            "bad_band_windows_nm": getattr(legacy, "bad_band_windows_nm", None),
         },
     )
 

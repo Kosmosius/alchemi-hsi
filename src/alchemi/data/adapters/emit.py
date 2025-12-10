@@ -11,7 +11,7 @@ import xarray as xr
 from alchemi.registry import srfs
 from alchemi.spectral import BandMetadata, Sample, Spectrum
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
-from alchemi.types import QuantityKind, SRFMatrix as LegacySRFMatrix, ValueUnits
+from alchemi.types import QuantityKind, ValueUnits
 from alchemi.physics import units as qty_units
 from alchemi.srf.utils import build_gaussian_srf_matrix, default_band_widths, validate_srf_alignment
 
@@ -97,65 +97,43 @@ def _quality_masks(
     return quality
 
 
-def _coerce_srf_matrix(
-    srf_matrix: Any | None, wavelengths_nm: np.ndarray | None = None
-) -> Any | None:
-    if srf_matrix is None:
-        return None
-    if hasattr(srf_matrix, "matrix"):
-        return srf_matrix
-    if isinstance(srf_matrix, LegacySRFMatrix):
-        grid = (
-            np.asarray(wavelengths_nm, dtype=np.float64)
-            if wavelengths_nm is not None
-            else np.unique(
-                np.concatenate([np.asarray(b, dtype=np.float64) for b in srf_matrix.bands_nm])
-            )
-        )
-        dense = np.zeros((len(srf_matrix.bands_nm), grid.shape[0]), dtype=np.float64)
-        for idx, (nm, resp) in enumerate(
-            zip(srf_matrix.bands_nm, srf_matrix.bands_resp, strict=True)
-        ):
-            nm_arr = np.asarray(nm, dtype=np.float64)
-            resp_arr = np.asarray(resp, dtype=np.float64)
-            dense[idx] = np.interp(grid, nm_arr, resp_arr, left=0.0, right=0.0)
-            area = float(np.trapezoid(dense[idx], x=grid))
-            if area > 0.0:
-                dense[idx] /= area
-        return DenseSRFMatrix(wavelength_nm=grid, matrix=dense)
-    return srf_matrix
-
-
 def _resolve_emit_srf(
     wavelengths: np.ndarray,
     *,
     srf_blind: bool,
-) -> tuple[DenseSRFMatrix | None, np.ndarray, str, str]:
+) -> tuple[
+    DenseSRFMatrix | None, np.ndarray, str, str, np.ndarray | None, list[tuple[float, float]] | None
+]:
     widths = default_band_widths("emit", wavelengths)
     srf_matrix: DenseSRFMatrix | None = None
     srf_source = "none"
     srf_mode = "srf-blind" if srf_blind else "srf-aware"
+    srf_bad_mask: np.ndarray | None = None
+    srf_bad_windows: list[tuple[float, float]] | None = None
 
     if not srf_blind:
         try:
-            raw_srf = srfs.get_srf("emit")
+            sensor_srf = srfs.get_sensor_srf("emit")
         except FileNotFoundError:
-            raw_srf = None
-        if (
-            raw_srf is not None
-            and np.asarray(raw_srf.centers_nm, dtype=np.float64).shape[0] == wavelengths.shape[0]
-        ):
-            dense = _coerce_srf_matrix(raw_srf, wavelengths_nm=wavelengths)
-            if dense is not None:
+            sensor_srf = None
+        if sensor_srf is not None and sensor_srf.band_centers_nm.shape[0] == wavelengths.shape[0]:
+            if np.allclose(sensor_srf.band_centers_nm, wavelengths, atol=0.5):
+                dense = sensor_srf.as_matrix()
                 validate_srf_alignment(wavelengths, dense.matrix, centers_nm=wavelengths)
                 srf_matrix = dense
-                srf_source = "official"
+                srf_source = sensor_srf.provenance.value
+                srf_bad_mask = None if sensor_srf.valid_mask is None else ~sensor_srf.valid_mask
+                raw_windows = sensor_srf.meta.get("bad_band_windows_nm") if sensor_srf.meta else None
+                if raw_windows is not None:
+                    srf_bad_windows = [(float(lo), float(hi)) for lo, hi in raw_windows]
 
     if srf_matrix is None and np.all(np.isfinite(widths)):
         srf_matrix = build_gaussian_srf_matrix(wavelengths, widths, sensor="emit")
         srf_source = "gaussian"
+        srf_bad_mask = None
+        srf_bad_windows = None
 
-    return srf_matrix, widths, srf_source, srf_mode
+    return srf_matrix, widths, srf_source, srf_mode, srf_bad_mask, srf_bad_windows
 
 
 def iter_emit_pixels(
@@ -176,12 +154,25 @@ def iter_emit_pixels(
     radiance = ds["radiance"]
     scaled = _normalize_radiance_units(radiance, ds)
 
-    srf_matrix, widths, srf_source, srf_mode = _resolve_emit_srf(wavelengths, srf_blind=srf_blind)
+    srf_matrix, widths, srf_source, srf_mode, srf_bad_mask, srf_windows = _resolve_emit_srf(
+        wavelengths, srf_blind=srf_blind
+    )
     srf_masks: list[np.ndarray] = []
-    if srf_matrix is not None and getattr(srf_matrix, "bad_band_mask", None) is not None:
-        srf_masks.append(~np.asarray(srf_matrix.bad_band_mask, dtype=bool))
+    if srf_bad_mask is not None:
+        srf_masks.append(~np.asarray(srf_bad_mask, dtype=bool))
 
     quality_base = _quality_masks(ds, radiance, include_quality, extra_band_masks=srf_masks)
+
+    if srf_bad_mask is not None:
+        quality_base["srf_bad_band"] = np.broadcast_to(np.asarray(srf_bad_mask, dtype=bool), radiance.shape)
+    if srf_windows is not None:
+        window_mask = np.zeros_like(wavelengths, dtype=bool)
+        for start, end in srf_windows:
+            window_mask |= (wavelengths >= start) & (wavelengths <= end)
+        quality_base["srf_bad_window"] = np.broadcast_to(window_mask, radiance.shape)
+        quality_base["valid_band"] = np.asarray(quality_base["valid_band"], dtype=bool) & ~np.broadcast_to(
+            window_mask, radiance.shape
+        )
 
     valid_mask = np.asarray(quality_base["valid_band"], dtype=bool)
     if valid_mask.ndim == 3:
@@ -258,12 +249,25 @@ def iter_emit_l2a_pixels(
         raise KeyError("Dataset does not contain 'reflectance' variable")
 
     scaled = _normalize_reflectance_values(reflectance)
-    srf_matrix, widths, srf_source, srf_mode = _resolve_emit_srf(wavelengths, srf_blind=srf_blind)
+    srf_matrix, widths, srf_source, srf_mode, srf_bad_mask, srf_windows = _resolve_emit_srf(
+        wavelengths, srf_blind=srf_blind
+    )
     srf_masks: list[np.ndarray] = []
-    if srf_matrix is not None and getattr(srf_matrix, "bad_band_mask", None) is not None:
-        srf_masks.append(~np.asarray(srf_matrix.bad_band_mask, dtype=bool))
+    if srf_bad_mask is not None:
+        srf_masks.append(~np.asarray(srf_bad_mask, dtype=bool))
 
     quality_base = _quality_masks(ds, reflectance, include_quality, extra_band_masks=srf_masks)
+    if srf_bad_mask is not None:
+        quality_base["srf_bad_band"] = np.broadcast_to(np.asarray(srf_bad_mask, dtype=bool), reflectance.shape)
+    if srf_windows is not None:
+        window_mask = np.zeros_like(wavelengths, dtype=bool)
+        for start, end in srf_windows:
+            window_mask |= (wavelengths >= start) & (wavelengths <= end)
+        quality_base["srf_bad_window"] = np.broadcast_to(window_mask, reflectance.shape)
+        quality_base["valid_band"] = np.asarray(quality_base["valid_band"], dtype=bool) & ~np.broadcast_to(
+            window_mask, reflectance.shape
+        )
+
     valid_mask = np.asarray(quality_base["valid_band"], dtype=bool)
     if valid_mask.ndim == 3:
         valid_mask = valid_mask[0, 0, :]
