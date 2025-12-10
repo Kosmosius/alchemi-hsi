@@ -1,4 +1,16 @@
-"""Adapters for HyTES brightness-temperature and radiance products."""
+"""Adapters for HyTES brightness-temperature and radiance products.
+
+Adapter contract
+----------------
+* Input: HyTES L1B/L2 style datasets matching the shapes expected by the helper
+  loaders in :mod:`alchemi.data.io.hytes`.
+* Output: :class:`~alchemi.spectral.sample.Sample` instances on a nanometre grid
+  with canonical radiance units (W·m⁻²·sr⁻¹·nm⁻¹) or brightness temperatures in
+  Kelvin.
+* Band metadata: centres follow the HyTES wavelength grid; ``valid_mask``
+  combines mission band masks and SRF QA; ``srf_source`` records whether SRFs
+  come from the registry or Gaussian approximations.
+"""
 
 from __future__ import annotations
 
@@ -134,7 +146,15 @@ def _band_metadata(wavelengths: np.ndarray, valid: np.ndarray, *, srf_source: st
 
 
 def iter_hytes_pixels(path: str, *, srf_blind: bool = False) -> Iterable[Sample]:
-    """Yield HyTES brightness-temperature pixels as :class:`Sample` objects."""
+    """Yield HyTES brightness-temperature pixels as :class:`Sample` objects.
+
+    Each sample carries brightness temperature values (Kelvin) on the HyTES
+    nanometre wavelength grid with ``quality_masks`` including ``valid_band``,
+    detector QA, and SRF-derived masks. When an SRF is available, ``band_meta``
+    is populated with centres, optional widths, validity, and ``srf_source``
+    provenance, and ``srf_matrix`` accompanies the sample for downstream
+    resampling.
+    """
 
     ds = _load_ds(path)
     bt = ds["brightness_temp"] if "brightness_temp" in ds else ds["bt"]
@@ -192,7 +212,12 @@ def iter_hytes_pixels(path: str, *, srf_blind: bool = False) -> Iterable[Sample]
 
 
 def iter_hytes_radiance_pixels(path: str, *, srf_blind: bool = False) -> Iterable[Sample]:
-    """Yield HyTES pixels converted to radiance via Planck inversion."""
+    """Yield HyTES pixels converted to radiance via Planck inversion.
+
+    Wraps :func:`iter_hytes_pixels` and converts each brightness-temperature
+    sample to radiance (W·m⁻²·sr⁻¹·nm⁻¹) while preserving wavelength grids,
+    quality masks, and SRF metadata.
+    """
 
     for sample in iter_hytes_pixels(path, srf_blind=srf_blind):
         rad_sample = planck.bt_sample_to_radiance_sample(sample)

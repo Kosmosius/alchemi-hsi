@@ -42,7 +42,18 @@ class GeoMeta:
 
 @dataclass
 class BandMetadata:
-    """Per-band metadata covering centers, widths, validity, and SRF provenance."""
+    """Per-band metadata covering centers, widths, validity, and SRF provenance.
+
+    * ``center_nm`` must have length ``L`` (one entry per spectral band) and is
+      typically copied from ``Sample.spectrum.wavelength_nm``.
+    * ``valid_mask`` is a length-``L`` boolean array identifying bands that pass
+      all available quality gates.
+    * ``width_nm`` may be ``None`` (unknown) or length ``L``; if provided it
+      records the spectral width or FWHM per band.
+    * ``srf_source`` may be a scalar or length-``L`` array and records the SRF
+      provenance (e.g., ``"official"``, ``"gaussian"``, ``"none"``) used when
+      constructing SRF matrices and downstream resampling.
+    """
 
     center_nm: NDArray[np.floating]
     width_nm: NDArray[np.floating] | None
@@ -76,7 +87,35 @@ class BandMetadata:
 
 @dataclass
 class Sample:
-    """Canonical sample carrying a spectrum plus harmonised metadata."""
+    """Canonical per-pixel (or lab) sample used across adapters and datasets.
+
+    ``Sample`` is the Section-4 container that brings together a validated
+    :class:`~alchemi.spectral.spectrum.Spectrum`, per-band metadata, and
+    mission-specific ancillary fields. All adapters emit this type so downstream
+    consumers can rely on a common interface regardless of the source sensor.
+
+    Invariants enforced by :meth:`validate`
+    --------------------------------------
+    * ``spectrum.values`` and ``band_meta.center_nm`` must have the same length;
+      ``band_meta.valid_mask`` (and ``band_meta.width_nm`` when provided) share
+      that length.
+    * ``srf_matrix`` (when present) must be dense with shape ``(bands, L)`` and
+      use the same wavelength axis length ``L`` as the spectrum; if band
+      metadata are present the SRF row count must match the number of band
+      centres.
+    * ``quality_masks`` are 1-D boolean arrays of length ``L`` keyed by mask
+      name (e.g., ``valid_band``, ``deep_water_vapour``); the constructor
+      normalises and validates shapes.
+    * ``viewing_geometry`` and ``geo`` mappings are coerced into structured
+      dataclasses for consistency.
+
+    Cube helpers
+    ------------
+    :meth:`to_chip` embeds a single-pixel spectrum into a ``(1, 1, L)`` cube to
+    interoperate with routines expecting a hyperspectral chip. The inverse
+    :meth:`from_chip` extracts a pixel from a cube and returns a canonical
+    ``Sample`` with minimal metadata.
+    """
 
     spectrum: Spectrum
     sensor_id: str

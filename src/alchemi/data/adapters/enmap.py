@@ -2,6 +2,20 @@
 
 from __future__ import annotations
 
+"""EnMAP adapter emitting canonical :class:`~alchemi.spectral.sample.Sample` objects.
+
+Adapter contract
+----------------
+* Input: EnMAP L1B/L2A radiance or reflectance cubes matching the schema parsed
+  by :mod:`alchemi.data.io.enmap` utilities.
+* Output: :class:`~alchemi.spectral.sample.Sample` instances with wavelength
+  grids in nanometres and radiance/reflectance converted to canonical units.
+* Band metadata: centres come from the provided wavelength grid; ``valid_mask``
+  combines mission band masks, SRF QA, and water-vapour windows when available;
+  ``srf_source`` captures whether SRFs were sourced from the registry or a
+  Gaussian fallback.
+"""
+
 from collections.abc import Iterable
 from typing import Dict, List, Sequence, Tuple
 import warnings
@@ -222,7 +236,15 @@ def _resolve_enmap_srf(
 def iter_enmap_pixels(
     path_or_pair: str | tuple[str, str], *, srf_blind: bool = False
 ) -> Iterable[Sample]:
-    """Yield EnMAP L1B/L1C pixels as :class:`Sample` instances."""
+    """Yield EnMAP L1B/L1C radiance pixels as :class:`Sample` instances.
+
+    Each yielded sample contains a radiance :class:`~alchemi.spectral.spectrum.Spectrum`
+    on the EnMAP wavelength grid (nm) with shape ``(L,)``. ``quality_masks``
+    include ``valid_band`` plus mission masks, deep-water vapour windows, and
+    SRF-derived QA when available. ``band_meta`` is populated with centres,
+    widths/FWHM, validity, and SRF provenance; ``srf_matrix`` is attached when a
+    registry SRF matches the grid.
+    """
 
     ds = _normalize_l1_dataset(path_or_pair)
     wavelengths = _ensure_wavelengths_nm(ds)
@@ -298,6 +320,13 @@ def _normalize_reflectance(reflectance: xr.DataArray) -> np.ndarray:
 def iter_enmap_l2a_pixels(
     path_or_pair: str | tuple[str, str], *, include_quality: bool = True, srf_blind: bool = False
 ) -> Iterable[Sample]:
+    """Yield EnMAP L2A reflectance pixels as :class:`Sample` instances.
+
+    Returned samples carry reflectance fractions on the nanometre wavelength
+    grid with ``quality_masks`` mirroring :func:`iter_enmap_pixels` (mission QA,
+    water-vapour windows, SRF provenance) and band metadata populated with
+    centres, widths, validity, and SRF source labels.
+    """
     ds = (
         xr.load_dataset(path_or_pair)
         if not isinstance(path_or_pair, tuple)

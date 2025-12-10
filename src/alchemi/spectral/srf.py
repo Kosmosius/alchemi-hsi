@@ -19,7 +19,19 @@ from .spectrum import Spectrum
 
 @dataclass
 class SRFMatrix:
-    """Matrix-form SRFs sampled on a common wavelength grid."""
+    """Dense SRF matrix sampled on a shared wavelength grid.
+
+    The matrix is shaped ``(bands, wavelengths)`` and paired with
+    ``wavelength_nm`` so resampling and physics helpers can apply the Section-4
+    invariants:
+
+    * Rows represent band responses on the shared grid.
+    * :meth:`normalize_rows_trapz` enforces per-band unit area using trapezoidal
+      integration.
+    * :meth:`assert_nonnegative` and :meth:`assert_flat_spectrum_preserved`
+      provide quick checks for non-negative responses and conservation of a flat
+      spectrum after convolution.
+    """
 
     wavelength_nm: NDArray[np.floating]
     matrix: NDArray[np.floating]
@@ -79,7 +91,14 @@ class SRFProvenance(str, Enum):
 
 @dataclass
 class SensorSRF:
-    """Canonical SRF payload shared across sensor loaders and registry."""
+    """Canonical SRF payload returned by the sensor SRF registry.
+
+    Each ``SensorSRF`` bundles per-band SRFs sampled on a common wavelength grid
+    for a specific ``sensor_id``. Band centres (and optional widths) capture the
+    mission's nominal wavelengths, while ``valid_mask`` and ``meta`` (e.g.,
+    ``bad_band_windows_nm``) carry QA hints. ``as_matrix`` exposes a dense
+    :class:`SRFMatrix` suitable for physics utilities and resampling.
+    """
 
     sensor_id: str
     wavelength_grid_nm: NDArray[np.floating]

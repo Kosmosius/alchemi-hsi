@@ -313,11 +313,34 @@ class WavelengthGrid:
 class Spectrum:
     """Canonical spectral sample coupling wavelengths, values, and metadata.
 
-    ``Spectrum`` pairs a :class:`WavelengthGrid` (always stored in nanometres)
-    with a bands-last value array, a strongly typed :class:`QuantityKind`, and
-    normalised units. Construction enforces shape alignment and optional mask
-    compatibility so that downstream physics utilities can rely on consistent
-    invariants across M1.
+    Canonical representation
+    -----------------------
+    * ``wavelengths`` are always stored as a :class:`WavelengthGrid` in
+      **nanometres**, strictly increasing with ``shape == (L,)``.
+    * ``kind`` is a :class:`QuantityKind` describing the physical quantity:
+      ``radiance``, ``reflectance``, or ``brightness_temperature`` ("BT").
+    * ``units`` are normalised to canonical forms for the quantity:
+      W·m⁻²·sr⁻¹·nm⁻¹ for radiance, unitless fraction for reflectance, Kelvin
+      for brightness temperature. Conversions happen at construction time so
+      downstream code can assume these canonical units.
+
+    Factory helpers
+    ---------------
+    ``Spectrum`` exposes convenience constructors that perform unit conversion
+    and wavelength normalisation:
+
+    * :meth:`from_radiance` / :meth:`from_reflectance` /
+      :meth:`from_brightness_temperature` accept already-nanometre grids and
+      normalise provided units to the canonical choices above.
+    * :meth:`from_microns` rescales wavelength grids expressed in µm to nm and
+      converts radiance from per-µm to per-nm when applicable.
+    * :meth:`from_wavenumber` converts a wavenumber grid in ``cm⁻¹`` to nm and
+      rescales radiance by the Jacobian of ``ν̃ = 1/λ`` so that bin-integrated
+      energy is preserved.
+
+    Construction enforces shape alignment and optional mask compatibility so
+    that downstream physics utilities can rely on consistent invariants across
+    the Section-4 data model.
     """
 
     wavelengths: WavelengthGrid | Sequence[float] | NDArray[np.floating]

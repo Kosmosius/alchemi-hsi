@@ -1,4 +1,10 @@
-"""Radiance and top-of-atmosphere reflectance conversions."""
+"""Radiance and top-of-atmosphere reflectance conversions.
+
+All helpers operate on canonical :class:`~alchemi.spectral.sample.Sample`
+payloads: radiance in W·m⁻²·sr⁻¹·nm⁻¹ on a nanometre grid and reflectance as a
+unitless fraction. The routines mirror Section-4 semantics and preserve masks
+and metadata when moving between radiance and TOA reflectance.
+"""
 
 from __future__ import annotations
 
