@@ -10,6 +10,7 @@ single canonical implementation.
 from .sample import BandMetadata, GeoMeta, Sample, ViewingGeometry
 from .spectrum import Spectrum
 from .srf import SRFMatrix
+from .validate import validate_sample, validate_spectrum_physics
 
 __all__ = [
     "BandMetadata",
@@ -18,4 +19,6 @@ __all__ = [
     "SRFMatrix",
     "Spectrum",
     "ViewingGeometry",
+    "validate_sample",
+    "validate_spectrum_physics",
 ]
