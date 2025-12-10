@@ -178,41 +178,161 @@ def convolve_to_bands_batched(
 
 
 def interpolate_to_centers(
-    high_res: Spectrum,
-    centers_nm: np.ndarray,
+    source_wavelengths_nm: Spectrum | np.ndarray,
+    source_values: np.ndarray | None = None,
+    target_centers_nm: np.ndarray | None = None,
     mode: Literal["nearest", "linear", "spline"] = "linear",
-) -> Spectrum:
-    """Interpolate a spectrum to specified band centres."""
+    *,
+    fill_value: float | np.ndarray = np.nan,
+    allow_extrapolation: bool = False,
+    spline_kwargs: dict | None = None,
+) -> Spectrum | np.ndarray:
+    """Interpolate spectra to target centres using simple diagnostics-focused modes.
 
-    centers = np.asarray(centers_nm, dtype=np.float64)
-    nm_hi = np.asarray(high_res.wavelengths.nm, dtype=np.float64)
-    values_hi = np.asarray(high_res.values, dtype=np.float64)
+    This helper is intended for exploratory or diagnostic work when sensor
+    response functions (SRFs) are unavailable or bandpass effects are
+    secondary. For production pipelines with available SRFs, prefer the
+    convolution-based routines (:func:`convolve_to_bands` and
+    :func:`convolve_to_bands_batched`) to capture bandpass effects.
 
-    if mode not in {"nearest", "linear", "spline"}:
-        raise ValueError("mode must be 'nearest', 'linear', or 'spline'")
+    Parameters
+    ----------
+    source_wavelengths_nm:
+        Either a high-resolution :class:`~alchemi.types.Spectrum` or a
+        one-dimensional wavelength grid in nanometres.
+    source_values:
+        Spectral values aligned to ``source_wavelengths_nm``. When a
+        :class:`~alchemi.types.Spectrum` is provided as the first argument,
+        this parameter is treated as ``target_centers_nm`` for backwards
+        compatibility and may be ``None`` otherwise.
+    target_centers_nm:
+        Wavelength centres to which the spectrum should be interpolated. Must
+        be provided when using the array-based calling convention.
+    mode:
+        Interpolation kernel: ``"nearest"``, ``"linear"``, or ``"spline"``.
+    fill_value:
+        Value used outside the source wavelength range when
+        ``allow_extrapolation`` is ``False``. Defaults to ``np.nan`` for clear
+        signalling.
+    allow_extrapolation:
+        When ``True``, extrapolation uses endpoint values (for ``"nearest"``
+        and ``"linear"``) or cubic spline extrapolation. When ``False`` (the
+        default) out-of-range targets are filled with ``fill_value``.
+    spline_kwargs:
+        Optional keyword arguments forwarded to
+        :class:`scipy.interpolate.CubicSpline` when available.
 
-    if mode == "nearest":
-        idx = np.searchsorted(nm_hi, centers, side="left")
-        idx = np.clip(idx, 0, nm_hi.size - 1)
-        interp_vals = values_hi[idx]
-    elif mode == "linear":
-        interp_vals = np.interp(centers, nm_hi, values_hi)
-    else:  # spline
-        try:
-            from scipy.interpolate import CubicSpline
-        except Exception:  # pragma: no cover - optional dependency
-            interp_vals = np.interp(centers, nm_hi, values_hi)
-        else:
-            spline = CubicSpline(nm_hi, values_hi, extrapolate=True)
-            interp_vals = spline(centers)
+    Returns
+    -------
+    Spectrum | np.ndarray
+        An interpolated :class:`~alchemi.types.Spectrum` when a spectrum is
+        provided as input, otherwise a ``np.ndarray`` with the same leading
+        dimensions as ``source_values`` and a trailing dimension matching
+        ``target_centers_nm``.
+    """
 
-    return Spectrum(
-        wavelengths=WavelengthGrid(centers),
-        values=np.asarray(interp_vals, dtype=np.float64),
-        kind=high_res.kind,
-        units=high_res.units,
-        mask=None,
-        meta=high_res.meta.copy(),
+    def _interpolate_values(
+        wavelengths_nm: np.ndarray, values: np.ndarray, centers_nm: np.ndarray
+    ) -> np.ndarray:
+        check_monotonic(wavelengths_nm, strict=True)
+
+        centers = np.asarray(centers_nm, dtype=np.float64)
+        vals = np.asarray(values, dtype=np.float64)
+        wl = np.asarray(wavelengths_nm, dtype=np.float64)
+
+        if vals.shape[-1] != wl.shape[0]:
+            msg = "source_values last dimension must match source_wavelengths_nm length"
+            raise ValueError(msg)
+
+        flat_vals = vals.reshape(-1, vals.shape[-1])
+        result = np.empty((flat_vals.shape[0], centers.shape[0]), dtype=np.float64)
+
+        mode_local = mode.lower()
+        if mode_local not in {"nearest", "linear", "spline"}:
+            raise ValueError("mode must be 'nearest', 'linear', or 'spline'")
+
+        if mode_local == "nearest":
+            idx = np.searchsorted(wl, centers, side="left")
+            idx_right = np.clip(idx, 0, wl.size - 1)
+            idx_left = np.clip(idx - 1, 0, wl.size - 1)
+
+            dist_right = np.abs(wl[idx_right] - centers)
+            dist_left = np.abs(wl[idx_left] - centers)
+            nearest_idx = np.where(dist_left <= dist_right, idx_left, idx_right)
+
+            for row_idx, row in enumerate(flat_vals):
+                row_interp = row[nearest_idx]
+                if not allow_extrapolation:
+                    out_of_range = (centers < wl[0]) | (centers > wl[-1])
+                    row_interp = np.where(out_of_range, fill_value, row_interp)
+                result[row_idx] = row_interp
+
+        elif mode_local == "linear":
+            for row_idx, row in enumerate(flat_vals):
+                left = row[0] if allow_extrapolation else fill_value
+                right = row[-1] if allow_extrapolation else fill_value
+                result[row_idx] = np.interp(centers, wl, row, left=left, right=right)
+
+        else:  # spline
+            try:  # pragma: no cover - optional dependency
+                from scipy.interpolate import CubicSpline
+            except Exception:  # pragma: no cover - optional dependency
+                for row_idx, row in enumerate(flat_vals):
+                    left = row[0] if allow_extrapolation else fill_value
+                    right = row[-1] if allow_extrapolation else fill_value
+                    result[row_idx] = np.interp(
+                        centers, wl, row, left=left, right=right
+                    )
+            else:
+                if wl.size < 4:
+                    for row_idx, row in enumerate(flat_vals):
+                        left = row[0] if allow_extrapolation else fill_value
+                        right = row[-1] if allow_extrapolation else fill_value
+                        result[row_idx] = np.interp(
+                            centers, wl, row, left=left, right=right
+                        )
+                else:
+                    kwargs = spline_kwargs or {}
+                    for row_idx, row in enumerate(flat_vals):
+                        spline = CubicSpline(
+                            wl, row, extrapolate=allow_extrapolation, **kwargs
+                        )
+                        row_interp = spline(centers)
+                        if not allow_extrapolation:
+                            out_of_range = (centers < wl[0]) | (centers > wl[-1])
+                            row_interp = np.where(out_of_range, fill_value, row_interp)
+                        result[row_idx] = row_interp
+
+        return result.reshape(*vals.shape[:-1], centers.shape[0])
+
+    if isinstance(source_wavelengths_nm, Spectrum):
+        if source_values is None and target_centers_nm is None:
+            msg = "target_centers_nm must be provided when interpolating a Spectrum"
+            raise ValueError(msg)
+        centers = (
+            np.asarray(source_values, dtype=np.float64)
+            if target_centers_nm is None
+            else np.asarray(target_centers_nm, dtype=np.float64)
+        )
+        spectrum = source_wavelengths_nm
+        interpolated = _interpolate_values(spectrum.wavelengths.nm, spectrum.values, centers)
+        return Spectrum(
+            wavelengths=WavelengthGrid(centers),
+            values=np.asarray(interpolated, dtype=np.float64),
+            kind=spectrum.kind,
+            units=spectrum.units,
+            mask=None,
+            meta=spectrum.meta.copy(),
+        )
+
+    if source_values is None or target_centers_nm is None:
+        msg = "source_values and target_centers_nm must be provided for array inputs"
+        raise ValueError(msg)
+
+    return _interpolate_values(
+        np.asarray(source_wavelengths_nm, dtype=np.float64),
+        np.asarray(source_values, dtype=np.float64),
+        np.asarray(target_centers_nm, dtype=np.float64),
     )
 
 

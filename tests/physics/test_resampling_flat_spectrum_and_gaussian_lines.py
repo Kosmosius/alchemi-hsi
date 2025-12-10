@@ -50,6 +50,78 @@ def test_gaussian_line_survives_srf_convolution():
     assert convolved.values[peak_idx] >= convolved.values.mean()
 
 
+def test_linear_interpolation_matches_monotonic_line():
+    source_wavelengths = np.linspace(400.0, 500.0, 11)
+    slope = 2.5
+    intercept = -17.0
+    source_values = slope * source_wavelengths + intercept
+    target_centers = np.linspace(405.0, 495.0, 19)
+
+    interpolated = interpolate_to_centers(
+        source_wavelengths, source_values, target_centers, mode="linear"
+    )
+    expected = slope * target_centers + intercept
+
+    assert np.allclose(interpolated, expected, atol=1e-9)
+
+
+def test_nearest_neighbor_mode_matches_closest_source():
+    source_wavelengths = np.array([0.0, 1.0, 2.0, 3.0])
+    source_values = np.array([0.0, 10.0, 20.0, 30.0])
+    target_centers = np.array([0.1, 0.9, 1.6, 2.6, 3.4])
+
+    interpolated = interpolate_to_centers(
+        source_wavelengths, source_values, target_centers, mode="nearest"
+    )
+
+    assert np.allclose(interpolated[:-1], np.array([0.0, 10.0, 20.0, 30.0]))
+    assert np.isnan(interpolated[-1])
+
+
+def test_interpolation_vectorizes_over_leading_dimensions():
+    source_wavelengths = np.array([500.0, 505.0, 510.0])
+    source_values = np.array([[1.0, 2.0, 3.0], [10.0, 20.0, 30.0]])
+    target_centers = np.array([500.0, 507.5, 510.0])
+
+    interpolated = interpolate_to_centers(
+        source_wavelengths, source_values, target_centers, mode="linear"
+    )
+
+    assert interpolated.shape == (2, 3)
+    assert np.allclose(interpolated[0], np.array([1.0, 2.5, 3.0]))
+    assert np.allclose(interpolated[1], np.array([10.0, 25.0, 30.0]))
+
+
+def test_spline_interpolation_outperforms_linear_for_smooth_signal():
+    pytest.importorskip("scipy")
+
+    source_wavelengths = np.linspace(0.0, 2 * np.pi, 12)
+    source_values = np.sin(source_wavelengths)
+    target_centers = np.linspace(0.0, 2 * np.pi, 101)
+    truth = np.sin(target_centers)
+
+    linear = interpolate_to_centers(
+        source_wavelengths,
+        source_values,
+        target_centers,
+        mode="linear",
+        allow_extrapolation=True,
+    )
+    spline = interpolate_to_centers(
+        source_wavelengths,
+        source_values,
+        target_centers,
+        mode="spline",
+        allow_extrapolation=True,
+    )
+
+    linear_error = np.linalg.norm(linear - truth)
+    spline_error = np.linalg.norm(spline - truth)
+
+    assert spline_error < linear_error
+    assert np.isfinite(spline_error)
+
+
 def test_batched_convolution_matches_per_band_path():
     wavelengths = WavelengthGrid(np.linspace(400.0, 500.0, 50))
     flat_values = np.ones_like(wavelengths.nm)
