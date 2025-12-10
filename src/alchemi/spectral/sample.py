@@ -45,20 +45,28 @@ class BandMetadata:
     """Per-band metadata covering centers, widths, validity, and SRF provenance."""
 
     center_nm: NDArray[np.floating]
-    width_nm: NDArray[np.floating]
+    width_nm: NDArray[np.floating] | None
     valid_mask: NDArray[np.bool_]
     srf_source: NDArray[np.object_] | NDArray[np.str_] | list[str] | str = ""
 
     def __post_init__(self) -> None:
-        self.center_nm = np.asarray(self.center_nm, dtype=float)
-        self.width_nm = np.asarray(self.width_nm, dtype=float)
-        self.srf_source = np.asarray(self.srf_source if self.srf_source is not None else "")
-        self.valid_mask = np.asarray(self.valid_mask, dtype=bool)
+        self.center_nm = np.atleast_1d(np.asarray(self.center_nm, dtype=float)).reshape(-1)
+        self.width_nm = (
+            None
+            if self.width_nm is None
+            else np.atleast_1d(np.asarray(self.width_nm, dtype=float)).reshape(-1)
+        )
+        srf_source = self.srf_source if self.srf_source is not None else ""
+        srf_source_arr = np.atleast_1d(np.asarray(srf_source, dtype=object)).reshape(-1)
+        if srf_source_arr.size == 1:
+            srf_source_arr = np.full(self.center_nm.shape[0], srf_source_arr.item(), dtype=object)
+        self.srf_source = srf_source_arr
+        self.valid_mask = np.atleast_1d(np.asarray(self.valid_mask, dtype=bool)).reshape(-1)
 
     def validate_length(self, length: int) -> None:
         if self.center_nm.shape[0] != length:
             raise ValueError("center_nm length must match spectrum length")
-        if self.width_nm.shape[0] != length:
+        if self.width_nm is not None and self.width_nm.shape[0] != length:
             raise ValueError("width_nm length must match spectrum length")
         if self.srf_source.shape[0] != length:
             raise ValueError("srf_source length must match spectrum length")
