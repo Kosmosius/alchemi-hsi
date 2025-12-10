@@ -25,7 +25,7 @@ from alchemi.physics.continuum import (
     compute_band_depth,
     continuum_remove,
 )
-from alchemi.types import Spectrum, WavelengthGrid
+from alchemi.types import BandDefinition, Spectrum, WavelengthGrid
 
 
 pytestmark = pytest.mark.physics_and_metadata
@@ -75,9 +75,11 @@ def test_band_metrics_match_golden(spectrum_id: str, band_idx: int):
 
     metrics = compute_band_metrics(
         spectrum,
-        lambda_left_nm=band["lambda_left_nm"],
-        lambda_center_nm=band["lambda_center_nm"],
-        lambda_right_nm=band["lambda_right_nm"],
+        band=BandDefinition(
+            lambda_center_nm=band["lambda_center_nm"],
+            lambda_left_nm=band["lambda_left_nm"],
+            lambda_right_nm=band["lambda_right_nm"],
+        ),
     )
 
     np.testing.assert_allclose(metrics.depth, band["expected_depth"], rtol=1e-6, atol=1e-12)
@@ -119,9 +121,11 @@ def test_convex_hull_continuum_is_upper_envelope(spectrum_id: str):
     for band in entry["bands"]:
         metrics = compute_band_metrics(
             spectrum,
-            lambda_left_nm=band["lambda_left_nm"],
-            lambda_center_nm=band["lambda_center_nm"],
-            lambda_right_nm=band["lambda_right_nm"],
+            band=BandDefinition(
+                lambda_center_nm=band["lambda_center_nm"],
+                lambda_left_nm=band["lambda_left_nm"],
+                lambda_right_nm=band["lambda_right_nm"],
+            ),
             continuum=continuum.values,
         )
         assert not np.isnan(metrics.depth)

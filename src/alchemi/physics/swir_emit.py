@@ -12,7 +12,7 @@ from collections.abc import Iterable
 
 import numpy as np
 
-from alchemi.physics.continuum import build_continuum, compute_band_metrics
+from alchemi.physics.continuum import BandDefinition, build_continuum, compute_band_metrics
 from alchemi.types import Spectrum, WavelengthGrid
 
 _MIN_TAU = 1e-3
@@ -136,9 +136,11 @@ def band_depth(
         spec = Spectrum.from_reflectance(WavelengthGrid(wl), spec_vals)
         metrics = compute_band_metrics(
             spec,
-            lambda_left_nm=float(left_nm),
-            lambda_center_nm=float(center_nm),
-            lambda_right_nm=float(right_nm),
+            band=BandDefinition(
+                lambda_center_nm=float(center_nm),
+                lambda_left_nm=float(left_nm),
+                lambda_right_nm=float(right_nm),
+            ),
             method="anchors",
             anchors=[(float(left_nm), float(right_nm))],
         )
