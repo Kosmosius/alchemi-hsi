@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Tuple
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -22,8 +22,38 @@ __all__ = [
     "radiance_sample_to_bt_sample",
     "compute_lwir_emissivity_proxy",
     "lwir_pipeline_for_sample",
+    "TESResult",
     "tes_lwirt",
 ]
+
+
+@dataclass
+class TESResult:
+    """Container for temperature–emissivity separation outputs.
+
+    Parameters
+    ----------
+    temperature_K:
+        Surface temperature estimate(s) in Kelvin. Shape matches spatial layout
+        of the input (e.g., scalar, ``(..., 1)`` or ``(...,)`` for per-pixel
+        temperatures).
+    emissivity:
+        Emissivity spectrum with wavelengths aligned to the LWIR grid used for
+        retrieval. Values are dimensionless fractions (0–1). The underlying
+        :class:`~alchemi.types.Spectrum` should carry ``kind=REFLECTANCE`` and
+        ``units=ReflectanceUnits.FRACTION`` when populated.
+    sigma_T:
+        One-sigma uncertainties on temperature in Kelvin. Shape mirrors
+        ``temperature_K``.
+    sigma_emissivity:
+        One-sigma uncertainties on emissivity, aligned with the emissivity
+        spectrum wavelengths (same trailing spectral dimension as ``emissivity``).
+    """
+
+    temperature_K: np.ndarray | float
+    emissivity: Spectrum | np.ndarray
+    sigma_T: np.ndarray | float
+    sigma_emissivity: np.ndarray
 
 
 def radiance_spectrum_to_bt_spectrum(
@@ -240,30 +270,50 @@ def lwir_pipeline_for_sample(
 
 
 def tes_lwirt(
-    spectrum: Spectrum, ancillary: dict
-) -> Tuple[np.ndarray, Spectrum, np.ndarray, np.ndarray]:
-    """Perform TES for LWIR radiance spectra.
+    L: Spectrum,
+    wavelengths_nm: np.ndarray | None = None,
+    ancillary: dict | None = None,
+) -> TESResult:
+    """Forward-compatible LWIR TES entry point (placeholder).
 
-    Parameters
-    ----------
-    spectrum:
-        Longwave infrared radiance spectrum (typically microns to nm converted).
-    ancillary:
-        Dictionary of supporting information (e.g. view angles, atmospheric
-        profiles). Keys are yet to be finalised.
+    Problem statement
+    -----------------
+    Temperature–emissivity separation (TES) aims to solve for surface
+    temperature ``T`` and spectral emissivity ``ε(λ)`` from longwave radiance
+    measurements ``L(λ)``. In the LWIR regime this requires robust atmospheric
+    compensation, band-to-band spectral smoothing, emissivity normalisation (e.g.
+    NEM), and uncertainty propagation.
 
-    Returns
-    -------
-    Tuple[np.ndarray, Spectrum, np.ndarray, np.ndarray]
-        Tuple containing estimated temperature(s), emissivity spectrum,
-        uncertainties on temperature, and uncertainties on emissivity.
+    Desired behaviour
+    -----------------
+    When implemented, this function should ingest a radiance :class:`Spectrum`
+    ``L`` (W·m⁻²·sr⁻¹·µm⁻¹ or nm⁻¹), an optional wavelength grid ``wavelengths_nm``
+    used for resampling, and ancillary metadata (view geometry, atmospheric
+    state, surface type priors). It should return a :class:`TESResult` with
+    ``temperature_K``, emissivity :class:`~alchemi.types.Spectrum`, and
+    associated 1-sigma uncertainties, preserving spatial dimensions of the input
+    where applicable.
+
+    Acceptance criteria for future implementations
+    ----------------------------------------------
+    Synthetic evaluation should demonstrate:
+
+    * Absolute temperature errors ≤ 2 K across representative LWIR materials.
+    * Emissivity errors ≤ 0.02 (absolute) across bands after spectral smoothing.
+    * Forward-model consistency: reconstructed radiance from ``(T, ε)`` agrees
+      with input ``L`` within measurement noise when re-run through the LWIR
+      radiative transfer model and sensor SRFs.
 
     Notes
     -----
-    This is a placeholder that documents the intended API. A future
-    implementation should follow TES literature (e.g., ASTER TES) and provide
-    spectral smoothing, NEM/RMSE-based emissivity normalisation, and uncertainty
-    propagation.
+    v1.1 exposes this API as **research-grade only**. The full TES algorithm is
+    not shipped; callers should treat this as a stub. See the TES roadmap in the
+    documentation for implementation details and milestones.
     """
 
-    raise NotImplementedError("TES retrieval is not yet implemented")
+    msg = (
+        "TES retrieval (tes_lwirt) is research-grade and not implemented in v1.1. "
+        "See the TES roadmap and acceptance criteria in the documentation before "
+        "relying on this API."
+    )
+    raise NotImplementedError(msg)
