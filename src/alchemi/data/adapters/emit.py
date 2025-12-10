@@ -3,6 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+"""EMIT adapter producing canonical :class:`~alchemi.spectral.sample.Sample` objects.
+
+Adapter contract
+----------------
+* Input: EMIT L1B/L2A products following the mission schema expected by
+  :mod:`alchemi.data.io.emit` and :mod:`alchemi.data.io.emit_l2b`.
+* Output: per-pixel :class:`~alchemi.spectral.sample.Sample` instances whose
+  :class:`~alchemi.spectral.spectrum.Spectrum` uses a nanometre grid and
+  canonical units (radiance in W·m⁻²·sr⁻¹·nm⁻¹ or reflectance fraction).
+* Band metadata: ``BandMetadata.center_nm`` mirrors the EMIT wavelength grid;
+  ``valid_mask`` combines mission QA masks, deep-water vapour windows, and
+  SRF-derived masks; ``srf_source`` records whether the SRF came from the
+  registry or a Gaussian fallback.
+"""
+
 from typing import Any, Dict, List
 
 import numpy as np
@@ -139,14 +154,12 @@ def _resolve_emit_srf(
 def iter_emit_pixels(
     path: str, *, include_quality: bool = True, srf_blind: bool = False
 ) -> Iterable[Sample]:
-    """Iterate over pixels in an EMIT scene.
+    """Yield per-pixel radiance :class:`Sample` objects from an EMIT L1B scene.
 
-    Parameters
-    ----------
-    path:
-        Path to an EMIT L1B product supported by :func:`alchemi.data.io.load_emit_l1b`.
-    include_quality:
-        When ``True`` include QA masks packaged alongside the dataset if present.
+    The iterator walks over ``y``/``x`` and returns ``Sample`` instances with
+    spectra shaped ``(L,)`` on the EMIT wavelength grid (nm). ``quality_masks``
+    include ``valid_band`` plus mission masks (band_mask, water vapour, SRF QA),
+    and ``band_meta`` is populated with centres, widths, and SRF provenance.
     """
 
     ds = load_emit_l1b(path)
@@ -240,6 +253,12 @@ def _normalize_reflectance_values(reflectance: xr.DataArray) -> np.ndarray:
 def iter_emit_l2a_pixels(
     path: str, *, include_quality: bool = True, srf_blind: bool = False
 ) -> Iterable[Sample]:
+    """Yield per-pixel reflectance :class:`Sample` objects from an EMIT L2A scene.
+
+    Values are TOA/surface reflectance fractions on a nanometre grid. The
+    iterator mirrors :func:`iter_emit_pixels` but emits reflectance spectra and
+    the same set of per-band quality masks and SRF metadata.
+    """
     ds = _load_emit_l2a(path)
     wavelengths = _ensure_wavelengths_nm(ds)
     reflectance = ds.get("reflectance")

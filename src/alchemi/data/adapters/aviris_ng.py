@@ -1,8 +1,17 @@
 """Adapter stub for AVIRIS-NG scenes.
 
-This module mirrors the structure of :mod:`alchemi.data.adapters.emit` but
-inserts TODO markers where mission documentation is required to parse official
-products.
+Adapter contract
+----------------
+* Input: AVIRIS-NG radiance/reflectance deliveries matching the schema used by
+  the placeholder I/O in this module.
+* Output: :class:`~alchemi.spectral.sample.Sample` instances on a nanometre grid
+  with canonical radiance/reflectance units.
+* Band metadata: centres come from the product wavelength grid; ``valid_mask``
+  should combine mission QA and SRF-derived masks; ``srf_source`` records
+  registry vs. Gaussian provenance when available.
+
+The implementation still mirrors :mod:`alchemi.data.adapters.emit` but retains
+TODO markers for mission-specific parsing hooks.
 """
 
 from __future__ import annotations
@@ -164,7 +173,14 @@ def _build_sample(
 
 
 def iter_aviris_ng_pixels(path: str, *, srf_blind: bool = False) -> Iterable[Sample]:
-    """Iterate through an AVIRIS-NG cube yielding :class:`Sample` objects."""
+    """Iterate through an AVIRIS-NG cube yielding :class:`Sample` objects.
+
+    Each sample contains radiance values on the mission wavelength grid in nm
+    with canonical units. ``quality_masks`` include ``valid_band`` plus water
+    vapour and detector QA when present. Band metadata records centres, optional
+    widths, validity, and SRF provenance, and an SRF matrix is attached when a
+    registry/Gaussian SRF matches the grid.
+    """
 
     ds = load_avirisng_l1b(path)
     radiance = ds["radiance"]
@@ -190,7 +206,12 @@ def load_aviris_ng_scene(path: str, *, srf_blind: bool = False) -> List[Sample]:
 
 
 def iter_aviris_ng_reflectance_pixels(path: str, *, srf_blind: bool = False) -> Iterable[Sample]:
-    """Iterate through a precomputed AVIRIS-NG reflectance cube yielding Samples."""
+    """Iterate through a precomputed AVIRIS-NG reflectance cube yielding Samples.
+
+    Mirrors :func:`iter_aviris_ng_pixels` but emits reflectance fractions on the
+    nanometre wavelength grid with the same band metadata, SRF provenance, and
+    quality mask semantics.
+    """
 
     ds = xr.open_dataset(path).load()
     reflectance = ds["reflectance"].transpose("y", "x", "band")
