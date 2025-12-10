@@ -6,6 +6,7 @@ from typing import Iterable, List, Tuple
 
 import numpy as np
 
+from alchemi.physics.resampling import convolve_to_bands
 from alchemi.registry import ontology, srfs
 from alchemi.spectral import Sample, Spectrum
 
@@ -61,17 +62,6 @@ def generate_mixture_samples(
 
 
 def _convolve_to_bands(srf: object, wavelengths: np.ndarray, values: np.ndarray) -> np.ndarray:
-    centers = np.asarray(getattr(srf, "centers_nm"))
-    band_values: list[float] = []
-    for nm_band, resp in zip(getattr(srf, "bands_nm"), getattr(srf, "bands_resp"), strict=True):
-        nm_arr = np.asarray(nm_band, dtype=np.float64)
-        resp_arr = np.asarray(resp, dtype=np.float64)
-        if resp_arr.ndim == 0:
-            resp_arr = np.asarray([resp_arr], dtype=np.float64)
-        interp_vals = np.interp(nm_arr, wavelengths, values)
-        area = np.trapz(resp_arr, nm_arr)
-        resp_norm = resp_arr / area if area != 0 else resp_arr
-        band_values.append(float(np.trapz(interp_vals * resp_norm, nm_arr)))
-    if len(band_values) != centers.size:
-        centers = np.linspace(wavelengths.min(), wavelengths.max(), len(band_values))
-    return np.asarray(band_values, dtype=np.float64)
+    spectrum = Spectrum(wavelength_nm=wavelengths, values=values, kind="reflectance")
+    convolved = convolve_to_bands(spectrum, srf)
+    return np.asarray(convolved.values, dtype=np.float64)

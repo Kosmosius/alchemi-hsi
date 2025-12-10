@@ -9,6 +9,7 @@ import numpy as np
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
 from alchemi.types import Spectrum, SRFMatrix, WavelengthGrid
 from alchemi.utils.integrate import np_integrate
+from alchemi.wavelengths import check_monotonic
 
 __all__ = [
     "convolve_to_bands",
@@ -26,7 +27,42 @@ def _normalize_response(resp: np.ndarray, nm: np.ndarray) -> np.ndarray:
     return resp / area
 
 
-def convolve_to_bands(high_res: Spectrum, srf: SRFMatrix) -> Spectrum:
+def _compute_delta_wavelength(
+    wavelengths_nm: np.ndarray, delta_lambda_nm: np.ndarray | float | None
+) -> np.ndarray:
+    """Return per-sample wavelength intervals for integration weights."""
+
+    wl = np.asarray(wavelengths_nm, dtype=np.float64)
+    check_monotonic(wl, strict=True)
+
+    if delta_lambda_nm is None:
+        if wl.size == 1:
+            return np.ones_like(wl)
+
+        deltas = np.empty_like(wl)
+        step = np.diff(wl)
+        deltas[0] = step[0]
+        deltas[-1] = step[-1]
+        if wl.size > 2:
+            deltas[1:-1] = 0.5 * (step[1:] + step[:-1])
+    else:
+        deltas = np.asarray(delta_lambda_nm, dtype=np.float64)
+        deltas = np.broadcast_to(deltas, wl.shape)
+
+    if deltas.shape != wl.shape:
+        msg = "delta_lambda_nm must broadcast to wavelength grid shape"
+        raise ValueError(msg)
+    if np.any(~np.isfinite(deltas)):
+        raise ValueError("delta_lambda_nm must be finite")
+    if np.any(deltas <= 0.0):
+        raise ValueError("delta_lambda_nm values must be positive")
+
+    return deltas
+
+
+def convolve_to_bands(
+    high_res: Spectrum, srf: SRFMatrix, *, delta_lambda_nm: np.ndarray | float | None = None
+) -> Spectrum:
     """Convolve a high-resolution spectrum to sensor bands using SRF rows.
 
     For batched or dense SRF workflows, prefer
@@ -35,17 +71,21 @@ def convolve_to_bands(high_res: Spectrum, srf: SRFMatrix) -> Spectrum:
 
     nm_hi = np.asarray(high_res.wavelengths.nm, dtype=np.float64)
     values_hi = np.asarray(high_res.values, dtype=np.float64)
-    band_values: list[float] = []
 
+    dense_rows: list[np.ndarray] = []
     for nm_band, resp in zip(srf.bands_nm, srf.bands_resp, strict=True):
         nm_arr = np.asarray(nm_band, dtype=np.float64)
         resp_arr = np.asarray(resp, dtype=np.float64)
-        resp_norm = _normalize_response(resp_arr, nm_arr)
-        interp_vals = np.interp(nm_arr, nm_hi, values_hi)
-        band_value = float(np_integrate(interp_vals * resp_norm, nm_arr))
-        band_values.append(band_value)
+        if resp_arr.ndim == 0:
+            resp_arr = resp_arr[np.newaxis]
+        interp_resp = np.interp(nm_hi, nm_arr, resp_arr, left=0.0, right=0.0)
+        dense_rows.append(_normalize_response(interp_resp, nm_hi))
 
-    band_array = np.asarray(band_values, dtype=np.float64)
+    dense_matrix = DenseSRFMatrix(wavelength_nm=nm_hi, matrix=np.vstack(dense_rows))
+    band_array = convolve_to_bands_batched(
+        values_hi[np.newaxis, :], nm_hi, dense_matrix, delta_lambda_nm=delta_lambda_nm
+    )[0]
+
     centers = np.asarray(srf.centers_nm, dtype=np.float64)
 
     return Spectrum(
@@ -89,6 +129,8 @@ def convolve_to_bands_batched(
     wavelengths_nm: np.ndarray,
     srf_matrix: np.ndarray | DenseSRFMatrix,
     srf_wavelength_nm: np.ndarray | None = None,
+    *,
+    delta_lambda_nm: np.ndarray | float | None = None,
 ) -> np.ndarray:
     """Vectorized SRF convolution for batches or cubes of high-res spectra."""
 
@@ -106,25 +148,31 @@ def convolve_to_bands_batched(
     if dense_srf.ndim != 2:
         raise ValueError("srf_matrix must be 2-D (bands x wavelengths)")
 
+    check_monotonic(wavelengths, strict=True)
+    check_monotonic(srf_wavelength, strict=True)
+
     orig_shape = spectra_arr.shape[:-1]
     flat_spectra = spectra_arr.reshape(-1, spectra_arr.shape[-1])
 
     if not np.array_equal(wavelengths, srf_wavelength):
-        interpolated = np.empty((flat_spectra.shape[0], srf_wavelength.shape[0]))
-        for idx, row in enumerate(flat_spectra):
-            interpolated[idx] = np.interp(srf_wavelength, wavelengths, row)
-        flat_spectra = interpolated
-    else:
-        flat_spectra = flat_spectra.copy()
+        regridded = np.empty((dense_srf.shape[0], wavelengths.shape[0]))
+        for idx, row in enumerate(dense_srf):
+            regridded[idx] = np.interp(wavelengths, srf_wavelength, row, left=0.0, right=0.0)
+        dense_srf = regridded
 
-    integrals = np.trapz(dense_srf, x=srf_wavelength, axis=1)
-    if np.any(~np.isfinite(integrals)) or np.any(integrals <= 0.0):
-        msg = "SRF rows must integrate to a positive finite area"
+    delta_lambda = _compute_delta_wavelength(wavelengths, delta_lambda_nm)
+
+    weighted_resp = dense_srf * delta_lambda[np.newaxis, :]
+    row_sums = np.sum(weighted_resp, axis=1)
+    if np.any(~np.isfinite(row_sums)):
+        raise ValueError("SRF weights must sum to finite values")
+    if np.any(row_sums <= 0.0):
+        msg = "SRF rows must integrate to a positive area when weighted"
         raise ValueError(msg)
-    resp_norm = dense_srf / integrals[:, np.newaxis]
 
-    product = resp_norm[np.newaxis, :, :] * flat_spectra[:, np.newaxis, :]
-    band_values = np.trapz(product, x=srf_wavelength, axis=2)
+    weights = weighted_resp / row_sums[:, np.newaxis]
+
+    band_values = flat_spectra @ weights.T
 
     return band_values.reshape(*orig_shape, dense_srf.shape[0])
 
