@@ -81,7 +81,7 @@ Normalisation rules and gotchas:
 ## SWIR trusted regime and LWIR scope
 
 - **SWIR trusted vs heavy regimes**: `alchemi.physics.rt_regime.classify_swir_regime` tags metadata as `trusted` or `heavy` using solar/view zenith, precipitable water vapour, aerosol optical depth, and cloud/haze flags. Helpers `swir_regime_for_sample`, `swir_regime_for_scene`, and `trusted_swir` attach or check the regime flag (`sample.ancillary["swir_regime"]`). Trusted vs heavy regimes gate evaluation stratification, lab alignment claims, and LoD sweeps.
-- **LWIR v1.1 scope**: LWIR operates in “brightness-temperature only” mode. BT spectra (kelvin) are used directly; full TES (temperature–emissivity separation) is future work (see stubs in `physics/tes.py`). Convert BT↔radiance via Planck utilities when needed; do not assume emissivity outputs in v1.1.
+- **LWIR v1.1 scope**: LWIR operates in “brightness-temperature only” mode. BT spectra (kelvin) are used directly; full TES (temperature–emissivity separation) is future work and exposed only as a forward-compatible stub (`physics.tes.tes_lwirt`). The acceptance bar for future TES implementations: ≤2 K temperature error, ≤0.02 emissivity error (absolute), and forward-model consistency between retrieved ``(T, ε)`` and measured radiance. Convert BT↔radiance via Planck utilities when needed; do not assume emissivity outputs in v1.1.
 
 ## Ingest + physics examples (REPL-ready snippets)
 
