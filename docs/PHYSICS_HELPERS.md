@@ -4,7 +4,8 @@ This note summarizes the equations implemented in `alchemi.physics`, the unit
 conventions assumed throughout the helpers, and common pitfalls to avoid when
 working with radiance, reflectance, and continuum analytics. Each section
 links back to the helper's Python docstring and shows a short numerical
-example.
+example. For an overview of the physics layer's scope and explicit non-goals,
+see [PHYSICS_LAYER.md](./PHYSICS_LAYER.md).
 
 ## Unit conventions
 

@@ -1,3 +1,12 @@
+"""SWIR single-layer helpers.
+
+The utilities here implement the simple two-term radiance model consisting of a
+bulk transmittance (``tau``) and an additive path radiance (``Lpath``). This is
+**not** a full atmospheric correction: callers should obtain surface
+reflectance from mission L2A products or external radiative transfer pipelines
+and treat these helpers as TOA-facing approximations.
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -14,12 +23,26 @@ from alchemi.types import Spectrum, WavelengthGrid
 def reflectance_to_radiance(
     R: np.ndarray, E0: np.ndarray, cos_sun: float, tau: float, Lpath: float
 ) -> np.ndarray:
+    """Approximate reflectance → TOA radiance using a 1-layer model.
+
+    The model assumes a single effective transmittance term and additive path
+    radiance; it does not recover surface reflectance and should be used for
+    TOA-level simulations or quick-look conversions only.
+    """
+
     return tau * (E0 * cos_sun / np.pi) * R + Lpath
 
 
 def radiance_to_reflectance(
     L: np.ndarray, E0: np.ndarray, cos_sun: float, tau: float, Lpath: float
 ) -> np.ndarray:
+    """Approximate TOA radiance → reflectance inversion.
+
+    Uses the same single-layer assumptions as :func:`reflectance_to_radiance`
+    and clips the result to [0, 1.5] for numerical stability. Surface
+    reflectance retrieval should instead rely on L2A products.
+    """
+
     denom = np.clip(tau * (E0 * cos_sun / np.pi), 1e-12, None)
     return np.clip((L - Lpath) / denom, 0.0, 1.5)
 
@@ -27,6 +50,8 @@ def radiance_to_reflectance(
 def continuum_remove(
     wavelength_nm: np.ndarray, reflectance: np.ndarray, left_nm: float, right_nm: float
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Continuum removal convenience wrapper (no atmospheric modeling)."""
+
     wl = np.asarray(wavelength_nm, dtype=np.float64)
     refl = np.asarray(reflectance, dtype=np.float64)
 
@@ -50,6 +75,8 @@ def band_depth(
     left_nm: float,
     right_nm: float,
 ) -> float:
+    """Compute a continuum-removed band depth from surface reflectance."""
+
     wl = np.asarray(wavelength_nm, dtype=np.float64)
     refl = np.asarray(reflectance, dtype=np.float64)
 

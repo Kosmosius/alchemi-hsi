@@ -40,7 +40,11 @@ def reflectance_to_radiance_avirisng(
     L_path: float | np.ndarray = 0.0,
     band_mask: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Convert reflectance to radiance for AVIRIS-NG with bad-band handling."""
+    """Convert reflectance to radiance for AVIRIS-NG with bad-band handling.
+
+    Uses the single-layer TOA approximation; surface reflectance should be
+    sourced from L2A products rather than inferred here.
+    """
 
     mask = _resolve_band_mask(wl_nm, band_mask)
 
@@ -79,7 +83,11 @@ def radiance_to_reflectance_avirisng(
     L_path: float | np.ndarray = 0.0,
     band_mask: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Convert radiance to reflectance for AVIRIS-NG with bad-band handling."""
+    """Convert radiance to reflectance for AVIRIS-NG with bad-band handling.
+
+    The inversion mirrors :func:`reflectance_to_radiance_avirisng` and remains a
+    TOA-level approximation rather than a full atmospheric correction.
+    """
 
     mask = _resolve_band_mask(wl_nm, band_mask)
 
