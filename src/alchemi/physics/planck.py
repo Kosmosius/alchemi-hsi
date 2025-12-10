@@ -35,7 +35,11 @@ __all__ = [
     "invert_band_averaged_radiance_to_bt",
     "hytes_band_averaged_radiance_to_bt",
     "radiance_spectrum_to_bt",
+    "radiance_spectrum_to_bt_central",
+    "radiance_spectrum_to_bt_band",
     "bt_spectrum_to_radiance",
+    "bt_spectrum_to_radiance_central",
+    "bt_spectrum_to_radiance_band",
     "radiance_sample_to_bt_sample",
     "bt_sample_to_radiance_sample",
     "bt_K_to_radiance",
@@ -348,7 +352,7 @@ def band_averaged_radiance(
 
     temps_arr = np.asarray(temps, dtype=np.float64)
 
-    if temps_arr.shape[-1] == srfs.shape[0] and temps_arr.ndim > 0:
+    if temps_arr.ndim > 0 and temps_arr.shape[-1] == srfs.shape[0]:
         temps_b = temps_arr[..., :, None]
         radiance = planck_radiance_wavelength(wl, temps_b)
         numerator = np.trapezoid(radiance * srfs[None, ...], x=wl, axis=-1)
@@ -363,7 +367,9 @@ def band_averaged_radiance(
     radiance = planck_radiance_wavelength(wl, temps_b)
 
     radiance_flat = radiance.reshape(-1, wl.shape[0])
-    numerator_flat = np.tensordot(radiance_flat, srfs, axes=([1], [1]))
+    numerator_flat = np.trapezoid(
+        radiance_flat[:, None, :] * srfs[None, ...], x=wl, axis=2
+    )
     denominator = np.trapezoid(srfs, x=wl, axis=-1)
 
     if np.any(~np.isfinite(denominator)) or np.any(denominator <= 0):
@@ -538,8 +544,19 @@ def radiance_spectrum_to_bt(
 ) -> Spectrum:
     """Convert a radiance spectrum to brightness temperature.
 
-    ``method="band"`` performs SRF-weighted band averaging using the provided
-    SRF matrix and supports configurable temperature grids via ``temps_grid_K``.
+    Two approximations are available via ``method``:
+
+    - ``"central_lambda"`` (default): uses the SRF's effective band centre
+      (λ_eff) or the spectrum's native wavelength grid if no SRF is provided.
+      This is the recommended choice for narrow bands or when SRFs are
+      unavailable.
+    - ``"band"``: performs full SRF-weighted band averaging using
+      ``srf_matrix``/``srf_wavelength_nm`` and numerically inverts the result.
+      Prefer this for HyTES-like or other broad, non-trivial SRFs when accurate
+      band-averaged BTs are required.
+
+    ``"band"`` requires a valid SRF matrix aligned to ``srf_wavelength_nm`` and
+    optionally accepts ``temps_grid_K`` to tune the inversion grid.
     """
 
     if spectrum.kind != QuantityKind.RADIANCE:
@@ -581,6 +598,52 @@ def radiance_spectrum_to_bt(
     )
 
 
+def radiance_spectrum_to_bt_central(
+    spectrum: Spectrum,
+    *,
+    srf_matrix: np.ndarray | SRFMatrix | None = None,
+    srf_wavelength_nm: np.ndarray | None = None,
+) -> Spectrum:
+    """Brightness temperature using the central-wavelength approximation.
+
+    This explicitly selects ``method="central_lambda"`` in
+    :func:`radiance_spectrum_to_bt`, which applies Planck inversion at λ_eff.
+    Use for narrow bands or when SRF details are not available.
+    """
+
+    return radiance_spectrum_to_bt(
+        spectrum,
+        srf_matrix=srf_matrix,
+        srf_wavelength_nm=srf_wavelength_nm,
+        method="central_lambda",
+    )
+
+
+def radiance_spectrum_to_bt_band(
+    spectrum: Spectrum,
+    *,
+    srf_matrix: np.ndarray | SRFMatrix,
+    srf_wavelength_nm: np.ndarray,
+    temps_grid_K: np.ndarray | None = None,
+    strict: bool = False,
+) -> Spectrum:
+    """Brightness temperature using SRF-based band averaging.
+
+    This explicitly selects ``method="band"`` in :func:`radiance_spectrum_to_bt`
+    and requires an SRF matrix aligned to ``srf_wavelength_nm``. Recommended for
+    wide or structured SRFs (e.g., HyTES) when band-averaged accuracy matters.
+    """
+
+    return radiance_spectrum_to_bt(
+        spectrum,
+        srf_matrix=srf_matrix,
+        srf_wavelength_nm=srf_wavelength_nm,
+        method="band",
+        temps_grid_K=temps_grid_K,
+        strict=strict,
+    )
+
+
 def bt_spectrum_to_radiance(
     spectrum_bt: Spectrum,
     *,
@@ -590,9 +653,14 @@ def bt_spectrum_to_radiance(
 ) -> Spectrum:
     """Convert brightness temperatures back to spectral radiance.
 
-    When ``method="band"`` the output corresponds to SRF-averaged radiance per
-    band. ``method="central_lambda"`` uses either the provided SRF effective
-    wavelengths or the spectrum's native wavelengths.
+    - ``"central_lambda"`` (default): evaluates Planck's law at λ_eff (derived
+      from SRFs when provided, otherwise the spectrum wavelengths). Use for
+      narrow bands or when SRFs are absent.
+    - ``"band"``: returns SRF-averaged radiance per band using the provided SRF
+      matrix/wavelength grid. Choose this for structured or wide SRFs when a
+      true band-average is needed.
+
+    ``"band"`` requires a valid SRF matrix aligned to ``srf_wavelength_nm``.
     """
 
     if spectrum_bt.kind != QuantityKind.BRIGHTNESS_T:
@@ -631,6 +699,38 @@ def bt_spectrum_to_radiance(
     )
 
 
+def bt_spectrum_to_radiance_central(
+    spectrum_bt: Spectrum,
+    *,
+    srf_matrix: np.ndarray | SRFMatrix | None = None,
+    srf_wavelength_nm: np.ndarray | None = None,
+) -> Spectrum:
+    """Radiance from BTs using the central-wavelength approximation."""
+
+    return bt_spectrum_to_radiance(
+        spectrum_bt,
+        srf_matrix=srf_matrix,
+        srf_wavelength_nm=srf_wavelength_nm,
+        method="central_lambda",
+    )
+
+
+def bt_spectrum_to_radiance_band(
+    spectrum_bt: Spectrum,
+    *,
+    srf_matrix: np.ndarray | SRFMatrix,
+    srf_wavelength_nm: np.ndarray,
+) -> Spectrum:
+    """Radiance from BTs using SRF-based band averaging."""
+
+    return bt_spectrum_to_radiance(
+        spectrum_bt,
+        srf_matrix=srf_matrix,
+        srf_wavelength_nm=srf_wavelength_nm,
+        method="band",
+    )
+
+
 def radiance_sample_to_bt_sample(
     sample: Sample,
     *,
@@ -640,7 +740,12 @@ def radiance_sample_to_bt_sample(
     temps_grid_K: np.ndarray | None = None,
     strict: bool = False,
 ) -> Sample:
-    """Convert a radiance :class:`Sample` to brightness temperature."""
+    """Convert a radiance :class:`Sample` to brightness temperature.
+
+    The ``method`` argument mirrors :func:`radiance_spectrum_to_bt`. Use
+    ``"central_lambda"`` for narrow bands or absent SRFs; use ``"band"`` with a
+    valid SRF matrix/grid when SRF-weighted band averages are required.
+    """
 
     matrix = srf_matrix
     wl = srf_wavelength_nm
@@ -676,7 +781,11 @@ def bt_sample_to_radiance_sample(
     srf_wavelength_nm: np.ndarray | None = None,
     method: str = "central_lambda",
 ) -> Sample:
-    """Convert a brightness-temperature :class:`Sample` back to radiance."""
+    """Convert a brightness-temperature :class:`Sample` back to radiance.
+
+    The ``method`` argument mirrors :func:`bt_spectrum_to_radiance`. The
+    ``"band"`` option requires SRF information to return SRF-averaged radiance.
+    """
 
     matrix = srf_matrix
     wl = srf_wavelength_nm
@@ -709,12 +818,16 @@ def bt_sample_to_radiance_sample(
 
 
 def radiance_to_bt(spectrum: Spectrum, srf: SRFMatrix | None = None) -> Spectrum:
+    """Convert radiance to BT using the central-wavelength approximation."""
+
     return radiance_spectrum_to_bt(
         spectrum, srf_matrix=srf, srf_wavelength_nm=None, method="central_lambda"
     )
 
 
 def bt_to_radiance(spectrum: Spectrum, srf: SRFMatrix | None = None) -> Spectrum:
+    """Convert BT to radiance using the central-wavelength approximation."""
+
     return bt_spectrum_to_radiance(
         spectrum, srf_matrix=srf, srf_wavelength_nm=None, method="central_lambda"
     )
