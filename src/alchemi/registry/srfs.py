@@ -6,6 +6,8 @@ from typing import Any
 
 import numpy as np
 
+from ..spectral.srf import SensorSRF, SRFProvenance
+from ..srf.registry import sensor_srf_from_legacy
 from ..types import SRFMatrix
 
 _SRF_ROOT = Path("resources/srfs")
@@ -85,6 +87,9 @@ def get_srf(sensor_id: str, base_path: str | Path | None = None) -> SRFMatrix:
     with optional ``.npy``/``.npz`` files that contain an equivalent
     dictionary. Each band is normalized individually using trapezoidal
     integration to ensure unit area.
+
+    For new code prefer :func:`get_sensor_srf`, which returns the canonical
+    :class:`~alchemi.spectral.srf.SensorSRF` payload along with SRF metadata.
     """
 
     root = Path(base_path) if base_path is not None else _SRF_ROOT
@@ -103,6 +108,40 @@ def get_srf(sensor_id: str, base_path: str | Path | None = None) -> SRFMatrix:
     return srf
 
 
+def get_sensor_srf(sensor_id: str, base_path: str | Path | None = None) -> SensorSRF:
+    """Load a canonical :class:`~alchemi.spectral.srf.SensorSRF` for ``sensor_id``.
+
+    This helper wraps the legacy :class:`~alchemi.types.SRFMatrix` loader for
+    compatibility with existing SRF resources while exposing the public SensorSRF
+    API used by modern adapters. Per-band SRFs are normalized so that a flat
+    spectrum remains flat after convolution.
+
+    Parameters
+    ----------
+    sensor_id:
+        Sensor identifier matching a file under ``resources/srfs``.
+    base_path:
+        Optional override for the SRF resource root. Defaults to
+        ``resources/srfs`` within the repository.
+    """
+
+    legacy = get_srf(sensor_id, base_path=base_path)
+    valid_mask = None
+    if legacy.bad_band_mask is not None:
+        valid_mask = ~np.asarray(legacy.bad_band_mask, dtype=bool)
+
+    sensor_srf = sensor_srf_from_legacy(
+        legacy,
+        provenance=SRFProvenance.OFFICIAL,
+        valid_mask=valid_mask,
+    )
+    meta = dict(sensor_srf.meta)
+    if legacy.bad_band_windows_nm is not None:
+        meta["bad_band_windows_nm"] = list(legacy.bad_band_windows_nm)
+    sensor_srf.meta = meta
+    return sensor_srf
+
+
 def get_band_srf(sensor_id: str, band_idx: int) -> np.ndarray:
     srf = get_srf(sensor_id)
     try:
@@ -112,4 +151,4 @@ def get_band_srf(sensor_id: str, band_idx: int) -> np.ndarray:
         raise IndexError(msg) from exc
 
 
-__all__ = ["get_srf", "get_band_srf"]
+__all__ = ["get_srf", "get_band_srf", "get_sensor_srf"]

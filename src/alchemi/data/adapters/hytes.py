@@ -12,7 +12,7 @@ from alchemi.physics import planck
 from alchemi.registry import srfs
 from alchemi.spectral import BandMetadata, Sample, Spectrum
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
-from alchemi.types import SRFMatrix as LegacySRFMatrix, ValueUnits
+from alchemi.types import ValueUnits
 from alchemi.srf.utils import build_gaussian_srf_matrix, default_band_widths, validate_srf_alignment
 
 from ..io.hytes import _ensure_kelvin, load_hytes_l1b_bt
@@ -40,34 +40,24 @@ def _coerce_srf_matrix(
     widths = default_band_widths("hytes", wavelengths_nm)
     if not srf_blind:
         try:
-            raw: LegacySRFMatrix | None = srfs.get_srf("hytes")
+            sensor_srf = srfs.get_sensor_srf("hytes")
         except Exception:
-            raw = None
+            sensor_srf = None
 
-        if raw is not None:
-            centers = np.asarray(raw.centers_nm, dtype=np.float64)
-            if centers.shape[0] == wavelengths_nm.shape[0]:
-                matrix = np.zeros((centers.shape[0], wavelengths_nm.shape[0]), dtype=np.float64)
-                areas: list[float] = []
-                for idx, (nm, resp) in enumerate(zip(raw.bands_nm, raw.bands_resp, strict=True)):
-                    nm_arr = np.asarray(nm, dtype=np.float64)
-                    resp_arr = np.asarray(resp, dtype=np.float64)
-                    matrix[idx, :] = np.interp(
-                        wavelengths_nm, nm_arr, resp_arr, left=0.0, right=0.0
-                    )
-                    area = float(np.trapz(matrix[idx, :], x=wavelengths_nm))
-                    areas.append(area)
-                    if area > 0:
-                        matrix[idx, :] /= area
-
-                if areas and not np.any(np.asarray(areas) <= 0.0):
-                    dense = DenseSRFMatrix(wavelength_nm=wavelengths_nm, matrix=matrix)
-                    validate_srf_alignment(wavelengths_nm, dense.matrix, centers_nm=wavelengths_nm)
-                    provenance = "official"
-                    version = str(getattr(raw, "version", ""))
-                    if "gaussian" in version.lower():
-                        provenance = "gaussian"
-                    return dense, provenance, raw.bad_band_mask, raw.bad_band_windows_nm, widths
+        if sensor_srf is not None and sensor_srf.band_centers_nm.shape[0] == wavelengths_nm.shape[0]:
+            if np.allclose(sensor_srf.band_centers_nm, wavelengths_nm, atol=0.75):
+                dense = sensor_srf.as_matrix()
+                validate_srf_alignment(wavelengths_nm, dense.matrix, centers_nm=wavelengths_nm)
+                provenance = sensor_srf.provenance.value
+                raw_widths = (
+                    np.asarray(sensor_srf.band_widths_nm, dtype=np.float64)
+                    if sensor_srf.band_widths_nm is not None
+                    else widths
+                )
+                srf_bad_mask = None if sensor_srf.valid_mask is None else ~sensor_srf.valid_mask
+                raw_windows = sensor_srf.meta.get("bad_band_windows_nm") if sensor_srf.meta else None
+                srf_windows = None if raw_windows is None else [(float(a), float(b)) for a, b in raw_windows]
+                return dense, provenance, srf_bad_mask, srf_windows, raw_widths
 
     dense = build_gaussian_srf_matrix(wavelengths_nm, widths, sensor="hytes")
     return dense, "gaussian", None, None, widths
