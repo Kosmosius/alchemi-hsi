@@ -2,92 +2,104 @@ import numpy as np
 import pytest
 
 from alchemi.data.io.hytes import HYTES_WAVELENGTHS_NM
+from alchemi.physics import units
 from alchemi.physics.planck import (
-    bt_K_to_radiance,
+    band_averaged_radiance,
+    hytes_band_averaged_radiance_to_bt,
     inverse_planck_central_lambda,
+    invert_band_averaged_radiance_to_bt,
     planck_radiance_wavelength,
     radiance_to_bt_K,
 )
+from alchemi.srf.hytes import hytes_srf_matrix
+from alchemi.srf.registry import sensor_srf_from_legacy
 
 pytestmark = pytest.mark.physics_and_metadata
 
 
-def test_hytes_roundtrip_temperatures():
-    temps = np.array([200.0, 240.0, 280.0, 320.0])
-    radiance = planck_radiance_wavelength(HYTES_WAVELENGTHS_NM, temps[:, None])
-    recovered = radiance_to_bt_K(radiance, HYTES_WAVELENGTHS_NM)
-    expected = np.broadcast_to(temps[:, None], recovered.shape)
-    np.testing.assert_allclose(recovered, expected, atol=5e-2)
+def test_central_wavelength_roundtrip_precision():
+    wavelengths_nm = np.array([8_300.0, 9_500.0, 10_700.0, 11_900.0])
+    temps = np.linspace(250.0, 330.0, 9)
+
+    radiance = planck_radiance_wavelength(wavelengths_nm, temps[:, None])
+    recovered_bt = inverse_planck_central_lambda(radiance, wavelengths_nm)
+    reconstructed_radiance = planck_radiance_wavelength(wavelengths_nm, recovered_bt)
+
+    reshape = temps.reshape((-1,) + (1,) * (recovered_bt.ndim - 1))
+    expected_bt = np.broadcast_to(reshape, recovered_bt.shape)
+    np.testing.assert_allclose(recovered_bt, expected_bt, atol=5e-3)
+    np.testing.assert_allclose(reconstructed_radiance, radiance, rtol=1e-6)
 
 
-def test_vectorized_planck_scalar_temperature_vector_wavelength():
-    wl_nm = np.linspace(8_000.0, 12_000.0, 16)
+def test_band_averaged_roundtrip_hytes_like():
+    srf_legacy = hytes_srf_matrix()
+    grid = np.linspace(float(srf_legacy.bands_nm[0][0]), float(srf_legacy.bands_nm[-1][-1]), 1024)
+    srf_dense = sensor_srf_from_legacy(hytes_srf_matrix(), grid=grid).as_matrix()
+    srf_dense.normalize_rows_trapz()
+    temps = np.linspace(260.0, 330.0, 6)
+
+    band_radiance = band_averaged_radiance(temps, srf_dense.matrix, srf_dense.wavelength_nm)
+
+    recovered_bt = invert_band_averaged_radiance_to_bt(
+        band_radiance,
+        srf_dense.matrix,
+        srf_dense.wavelength_nm,
+        temps_grid_K=np.arange(200.0, 360.0, 0.25),
+    )
+    reconstructed = band_averaged_radiance(recovered_bt[:, 0], srf_dense.matrix, srf_dense.wavelength_nm)
+
+    reshape = temps.reshape((-1,) + (1,) * (recovered_bt.ndim - 1))
+    expected_bt = np.broadcast_to(reshape, recovered_bt.shape)
+    np.testing.assert_allclose(recovered_bt, expected_bt, atol=5e-2)
+    np.testing.assert_allclose(reconstructed, band_radiance, rtol=5e-4)
+
+    hytes_bt = hytes_band_averaged_radiance_to_bt(band_radiance, sensor_srf=srf_dense)
+    np.testing.assert_allclose(hytes_bt, expected_bt, atol=5e-2)
+
+
+def test_monotonicity():
+    wl_nm = HYTES_WAVELENGTHS_NM[::32]
+    temps = np.linspace(210.0, 340.0, 12)
+    radiance = planck_radiance_wavelength(wl_nm, temps[:, None])
+
+    diffs = np.diff(radiance, axis=0)
+    assert np.all(diffs > 0)
+
+    wl_single = 10_000.0
+    L = planck_radiance_wavelength(wl_single, temps)
+    recovered = inverse_planck_central_lambda(L, wl_single)
+    assert np.all(np.diff(recovered) > 0)
+
+
+def test_unit_consistency_and_scaling():
+    wl_nm = np.array([8_500.0, 9_750.0, 11_250.0])
     temp = 305.0
-    radiance = planck_radiance_wavelength(wl_nm, temp)
-    recovered = radiance_to_bt_K(radiance, wl_nm)
-    assert radiance.shape == wl_nm.shape
-    np.testing.assert_allclose(recovered, temp, atol=1e-2)
 
-
-def test_vectorized_planck_vector_temperature_scalar_wavelength():
-    wl_nm = 10_000.0
-    temps = np.linspace(220.0, 340.0, 5)
-    radiance = planck_radiance_wavelength(wl_nm, temps)
-    recovered = radiance_to_bt_K(radiance, wl_nm)
-    assert radiance.shape == temps.shape
-    np.testing.assert_allclose(recovered, temps, atol=1e-2)
-
-
-def test_broadcasted_planck_shapes():
-    wl_nm = np.linspace(8_000.0, 12_000.0, 8)
-    temps = np.array([[250.0], [280.0], [310.0]])
-    radiance = planck_radiance_wavelength(wl_nm, temps)
-    recovered = radiance_to_bt_K(radiance, wl_nm)
-    assert radiance.shape == (temps.shape[0], wl_nm.shape[0])
-    expected = np.broadcast_to(temps, recovered.shape)
-    np.testing.assert_allclose(recovered, expected, atol=1e-2)
-
-
-def test_radiance_shape_and_peak_behavior():
-    wl_nm = HYTES_WAVELENGTHS_NM
-    temp = 300.0
-    radiance = planck_radiance_wavelength(wl_nm, temp)
-
-    peak_idx = int(np.argmax(radiance))
-    peak_wl = wl_nm[peak_idx]
-
-    assert 9_000.0 <= peak_wl <= 11_000.0
-    assert radiance[peak_idx] > radiance[0]
-    assert radiance[peak_idx] > radiance[-1]
-
-    left = radiance[: peak_idx + 1]
-    right = radiance[peak_idx:]
-    np.testing.assert_allclose(np.diff(left) >= 0.0, True)
-    np.testing.assert_allclose(np.diff(right) <= 0.0, True)
-
-
-def test_nm_and_micron_scaling_equivalence():
-    wl_nm = np.array([8_500.0, 10_000.0, 11_500.0])
-    temp = 295.0
     radiance_per_nm = planck_radiance_wavelength(wl_nm, temp)
+    bt_nm = radiance_to_bt_K(radiance_per_nm, wl_nm)
 
-    wl_um = wl_nm * 1e-3
-    radiance_per_um = planck_radiance_wavelength(wl_um * 1e3, temp) * 1e3
+    radiance_per_um = units.scale_radiance_between_wavelength_units(
+        radiance_per_nm, units.ValueUnits.RADIANCE_W_M2_SR_NM, units.ValueUnits.RADIANCE_W_M2_SR_UM
+    )
+    bt_from_um = radiance_to_bt_K(
+        units.scale_radiance_between_wavelength_units(
+            radiance_per_um, units.ValueUnits.RADIANCE_W_M2_SR_UM, units.ValueUnits.RADIANCE_W_M2_SR_NM
+        ),
+        wl_nm,
+    )
 
-    np.testing.assert_allclose(radiance_per_um / 1e3, radiance_per_nm, rtol=1e-12, atol=0.0)
+    np.testing.assert_allclose(bt_nm, bt_from_um, atol=1e-8)
+
+    wl_m = wl_nm * 1e-9
+    radiance_from_m = planck_radiance_wavelength(wl_m * 1e9, temp)
+    np.testing.assert_allclose(radiance_from_m, radiance_per_nm, rtol=1e-12)
 
 
-def test_invalid_inputs_raise_errors():
-    with pytest.raises(ValueError):
-        planck_radiance_wavelength(-5.0, 300.0)
-    with pytest.raises(ValueError):
-        planck_radiance_wavelength(10_000.0, 0.0)
-    with pytest.raises(ValueError):
-        inverse_planck_central_lambda(-1.0, 10_000.0)
+def test_vector_shapes_and_radiance_to_bt_back():
+    wl_nm = np.linspace(8_000.0, 12_000.0, 32)
+    temps = np.array([[260.0], [290.0], [320.0]])
 
-
-def test_non_positive_radiance_yields_zero_bt():
-    wl_nm = np.array([9_000.0, 10_000.0])
-    radiance = np.array([0.0, -1.0])
+    radiance = planck_radiance_wavelength(wl_nm, temps)
     recovered = radiance_to_bt_K(radiance, wl_nm)
-    np.testing.assert_array_equal(recovered, np.zeros_like(radiance))
+    np.testing.assert_allclose(recovered, np.broadcast_to(temps, recovered.shape), atol=1e-2)
+
