@@ -10,7 +10,12 @@ Notes on physical validity
 These conversions use the simplified TOA formulation from Section 5.2 which
 assumes moderate atmospheres (``SWIRRegime.TRUSTED``). Under heavy atmospheric
 conditions (e.g., high PWV/AOD or severe haze) the approximation can introduce
-spectral distortions; use external atmospheric correction in those cases.
+spectral distortions.
+
+The physics layer **does not perform atmospheric correction**—surface
+reflectance retrieval must come from upstream L2A products produced by mission
+pipelines or external radiative transfer tools. The helpers here are TOA-only
+and rely on caller-provided solar geometry metadata.
 """
 
 from __future__ import annotations
@@ -194,10 +199,11 @@ def radiance_to_toa_reflectance(
     strict_diagnostics: bool | None = None,
     swir_regime: SWIRRegime | bool | str | None = None,
 ) -> Spectrum:
-    """Convert radiance to TOA reflectance using Eq. (17) in Section 5.2.
+    """Convert radiance to **TOA** reflectance using Eq. (17) in Section 5.2.
 
     The approximation is physically justified for moderate atmospheres
-    (``SWIRRegime.TRUSTED``). Pass ``swir_regime`` when available to surface a
+    (``SWIRRegime.TRUSTED``) and intentionally stops short of estimating
+    surface reflectance. Pass ``swir_regime`` when available to surface a
     warning under heavy conditions where external atmospheric correction is
     preferred.
     """
@@ -233,7 +239,8 @@ def toa_reflectance_to_radiance(
 
     The inverse shares the same trusted SWIR regime assumptions as
     :func:`radiance_to_toa_reflectance` and will emit an optional warning when
-    used under heavy atmospheric conditions.
+    used under heavy atmospheric conditions. Surface reflectance should still be
+    sourced from mission L2A products rather than inverting TOA in isolation.
     """
 
     _validate_reflectance_units(spectrum)

@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+"""Lightweight radiance perturbations for data augmentation.
+
+These helpers intentionally use heuristic single-layer transmittance and path
+radiance terms to simulate *approximate* SWIR conditions for training and data
+augmentation experiments. They are not substitutes for physics-grade
+atmospheric correction, and downstream pipelines should continue to ingest
+mission-provided L2A surface reflectance when available.
+"""
+
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 RNGLike = np.random.Generator | np.random.RandomState
+
+__all__ = ["augment_radiance", "random_swirlike_atmosphere"]
+
 
 
 def _gaussian_smoother(
@@ -35,7 +47,12 @@ def random_swirlike_atmosphere(
     smooth_sigma_nm: float = 40.0,
     disable_water_bands: bool = False,
 ) -> tuple[NDArray[np.float64], float]:
-    """Sample a SWIR-like atmospheric state for a given wavelength grid."""
+    """Sample a heuristic SWIR-like atmospheric state for a wavelength grid.
+
+    The sampled transmittance and path-radiance fields mimic coarse absorption
+    structure but are not radiative transfer outputs; they are intended solely
+    for stochastic augmentation pipelines.
+    """
 
     wl_arr = np.asarray(wl_nm, dtype=np.float64)
     if wl_arr.ndim != 1:
@@ -81,7 +98,12 @@ def augment_radiance(
     strength: float = 1.0,
     **atmo_kwargs: Any,
 ) -> NDArray[np.float64]:
-    """Apply a random SWIR-like atmospheric perturbation to at-sensor radiances."""
+    """Apply a random SWIR-like perturbation to at-sensor radiances.
+
+    The perturbation is approximate and meant for data augmentation; it should
+    not be used as a replacement for mission L2A surface reflectance or proper
+    atmospheric correction during inference.
+    """
 
     if strength <= 0.0:
         return np.asarray(L).copy()
@@ -93,6 +115,3 @@ def augment_radiance(
     L_atmo = tau_broadcast * L_arr + L_path
     L_aug = strength * L_atmo + (1.0 - strength) * L_arr
     return np.maximum(L_aug, 0.0)
-
-
-__all__ = ["augment_radiance", "random_swirlike_atmosphere"]

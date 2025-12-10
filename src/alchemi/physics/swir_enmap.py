@@ -70,7 +70,7 @@ def reflectance_to_radiance_enmap(
     L_path: float | np.ndarray = 0.0,
     band_mask: np.ndarray | None = None,
 ) -> np.ndarray:
-    """EnMAP-specific reflectance→radiance using the same RT model as EMIT."""
+    """EnMAP-specific reflectance→radiance using a single-layer TOA model."""
     wl = np.asarray(wl_nm)
     E0_arr = np.asarray(E0)
     R_arr = np.asarray(R)
@@ -109,7 +109,7 @@ def radiance_to_reflectance_enmap(
     L_path: float | np.ndarray = 0.0,
     band_mask: np.ndarray | None = None,
 ) -> np.ndarray:
-    """EnMAP-specific radiance→reflectance inverse."""
+    """EnMAP-specific radiance→reflectance inverse (TOA approximation)."""
     wl = np.asarray(wl_nm)
     E0_arr = np.asarray(E0)
     L_arr = np.asarray(L)
