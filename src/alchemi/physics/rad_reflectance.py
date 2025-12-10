@@ -4,6 +4,13 @@ All helpers operate on canonical :class:`~alchemi.spectral.sample.Sample`
 payloads: radiance in W·m⁻²·sr⁻¹·nm⁻¹ on a nanometre grid and reflectance as a
 unitless fraction. The routines mirror Section-4 semantics and preserve masks
 and metadata when moving between radiance and TOA reflectance.
+
+Notes on physical validity
+--------------------------
+These conversions use the simplified TOA formulation from Section 5.2 which
+assumes moderate atmospheres (``SWIRRegime.TRUSTED``). Under heavy atmospheric
+conditions (e.g., high PWV/AOD or severe haze) the approximation can introduce
+spectral distortions; use external atmospheric correction in those cases.
 """
 
 from __future__ import annotations
@@ -14,6 +21,7 @@ import os
 import numpy as np
 
 from alchemi.physics import units
+from alchemi.physics.rt_regime import SWIRRegime
 from alchemi.physics.solar import (
     earth_sun_distance_for_sample,
     esun_for_sample,
@@ -35,6 +43,10 @@ _REFLECTANCE_WARN_THRESHOLD = 1.5
 _REFLECTANCE_FRACTION_WARN = 0.2
 _REFLECTANCE_DIAGNOSTIC_THRESHOLD = 1.2
 _REFLECTANCE_STRICT_ENV = "ALCHEMI_REFLECTANCE_STRICT"
+_HEAVY_ATMOS_WARNING = (
+    "TOA reflectance approximation invoked outside trusted SWIR regime; heavy "
+    "atmospheres can introduce domain shift and larger spectral distortions."
+)
 
 
 def _validate_shapes(
@@ -149,6 +161,30 @@ def _diagnose_reflectance(values: np.ndarray, *, strict: bool | None = None) -> 
         )
 
 
+def _normalize_swir_regime(
+    swir_regime: SWIRRegime | bool | str | None,
+) -> SWIRRegime | None:
+    if swir_regime is None:
+        return None
+    if isinstance(swir_regime, bool):
+        return SWIRRegime.TRUSTED if swir_regime else SWIRRegime.HEAVY
+    if isinstance(swir_regime, SWIRRegime):
+        return swir_regime
+    try:
+        return SWIRRegime(str(swir_regime))
+    except ValueError as exc:  # pragma: no cover - defensive for unexpected inputs
+        msg = "swir_regime must be SWIRRegime, bool, or None"
+        raise ValueError(msg) from exc
+
+
+def _warn_if_heavy_atmosphere(swir_regime: SWIRRegime | bool | str | None) -> None:
+    regime = _normalize_swir_regime(swir_regime)
+    if regime is None:
+        return
+    if regime == SWIRRegime.HEAVY:
+        logger.warning(_HEAVY_ATMOS_WARNING)
+
+
 def radiance_to_toa_reflectance(
     spectrum: Spectrum,
     *,
@@ -156,13 +192,22 @@ def radiance_to_toa_reflectance(
     d_au: float,
     solar_zenith_deg: float,
     strict_diagnostics: bool | None = None,
+    swir_regime: SWIRRegime | bool | str | None = None,
 ) -> Spectrum:
-    """Convert radiance to TOA reflectance using Eq. (17) in Section 5.2."""
+    """Convert radiance to TOA reflectance using Eq. (17) in Section 5.2.
+
+    The approximation is physically justified for moderate atmospheres
+    (``SWIRRegime.TRUSTED``). Pass ``swir_regime`` when available to surface a
+    warning under heavy conditions where external atmospheric correction is
+    preferred.
+    """
 
     radiance_values = _radiance_values_nm(spectrum)
     wavelengths, cos_theta = _validate_shapes(spectrum, esun_band, solar_zenith_deg)
 
     E_sun, distance2 = _validate_esun_and_distance(esun_band, d_au)
+
+    _warn_if_heavy_atmosphere(swir_regime)
 
     reflectance = (np.pi * radiance_values * distance2) / (E_sun * cos_theta)
     _diagnose_reflectance(reflectance, strict=strict_diagnostics)
@@ -182,14 +227,22 @@ def toa_reflectance_to_radiance(
     esun_band: np.ndarray,
     d_au: float,
     solar_zenith_deg: float,
+    swir_regime: SWIRRegime | bool | str | None = None,
 ) -> Spectrum:
-    """Convert TOA reflectance to radiance using the inverse of Eq. (17)."""
+    """Convert TOA reflectance to radiance using the inverse of Eq. (17).
+
+    The inverse shares the same trusted SWIR regime assumptions as
+    :func:`radiance_to_toa_reflectance` and will emit an optional warning when
+    used under heavy atmospheric conditions.
+    """
 
     _validate_reflectance_units(spectrum)
     wavelengths, cos_theta = _validate_shapes(spectrum, esun_band, solar_zenith_deg)
 
     reflectance = np.asarray(spectrum.values, dtype=np.float64)
     E_sun, distance2 = _validate_esun_and_distance(esun_band, d_au)
+
+    _warn_if_heavy_atmosphere(swir_regime)
 
     radiance = (reflectance * E_sun * cos_theta) / (np.pi * distance2)
 
@@ -231,6 +284,23 @@ def _resolve_esun_band(sample: Sample, esun_ref: Spectrum | None = None) -> np.n
     return np.asarray(esun_for_sample(sample), dtype=np.float64)
 
 
+def _resolve_sample_swir_regime(
+    sample: Sample, swir_regime: SWIRRegime | bool | str | None
+) -> SWIRRegime | None:
+    if swir_regime is not None:
+        return _normalize_swir_regime(swir_regime)
+
+    ancillary = getattr(sample, "ancillary", None) or {}
+    stored_regime = ancillary.get("swir_regime")
+    if stored_regime is None:
+        return None
+
+    try:
+        return _normalize_swir_regime(stored_regime)
+    except ValueError:
+        return None
+
+
 def radiance_sample_to_toa_reflectance(
     sample: Sample,
     *,
@@ -238,12 +308,22 @@ def radiance_sample_to_toa_reflectance(
     solar_zenith_deg: float | None = None,
     earth_sun_distance_au: float | None = None,
     strict_diagnostics: bool | None = None,
+    swir_regime: SWIRRegime | bool | str | None = None,
+    warn_outside_trusted: bool = True,
 ) -> Sample:
-    """Return a new Sample with the spectrum converted to TOA reflectance."""
+    """Return a new Sample with the spectrum converted to TOA reflectance.
+
+    When the sample (or override) carries a heavy SWIR regime tag, a warning is
+    emitted by default to remind callers that the approximation is less
+    reliable under those conditions. Set ``warn_outside_trusted=False`` to
+    suppress the warning.
+    """
 
     esun_band = _resolve_esun_band(sample, esun_ref)
     solar_zenith = _resolve_solar_zenith(sample, solar_zenith_deg)
     d_au = _resolve_earth_sun_distance(sample, earth_sun_distance_au)
+
+    resolved_regime = _resolve_sample_swir_regime(sample, swir_regime)
 
     reflectance = radiance_to_toa_reflectance(
         sample.spectrum,
@@ -251,6 +331,7 @@ def radiance_sample_to_toa_reflectance(
         d_au=d_au,
         solar_zenith_deg=solar_zenith,
         strict_diagnostics=strict_diagnostics,
+        swir_regime=resolved_regime if warn_outside_trusted else None,
     )
     return Sample(
         spectrum=reflectance,
@@ -271,15 +352,27 @@ def toa_reflectance_sample_to_radiance(
     esun_ref: Spectrum | None = None,
     solar_zenith_deg: float | None = None,
     earth_sun_distance_au: float | None = None,
+    swir_regime: SWIRRegime | bool | str | None = None,
+    warn_outside_trusted: bool = True,
 ) -> Sample:
-    """Return a new Sample with TOA reflectance converted back to radiance."""
+    """Return a new Sample with TOA reflectance converted back to radiance.
+
+    Mirrors :func:`radiance_sample_to_toa_reflectance` and surfaces the same
+    heavy-atmosphere warning unless ``warn_outside_trusted`` is disabled.
+    """
 
     esun_band = _resolve_esun_band(sample, esun_ref)
     solar_zenith = _resolve_solar_zenith(sample, solar_zenith_deg)
     d_au = _resolve_earth_sun_distance(sample, earth_sun_distance_au)
 
+    resolved_regime = _resolve_sample_swir_regime(sample, swir_regime)
+
     radiance = toa_reflectance_to_radiance(
-        sample.spectrum, esun_band=esun_band, d_au=d_au, solar_zenith_deg=solar_zenith
+        sample.spectrum,
+        esun_band=esun_band,
+        d_au=d_au,
+        solar_zenith_deg=solar_zenith,
+        swir_regime=resolved_regime if warn_outside_trusted else None,
     )
     return Sample(
         spectrum=radiance,
