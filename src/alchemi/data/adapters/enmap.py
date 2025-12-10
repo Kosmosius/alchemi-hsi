@@ -25,7 +25,8 @@ import xarray as xr
 
 from alchemi.registry import srfs
 from alchemi.registry.sensors import DEFAULT_SENSOR_REGISTRY
-from alchemi.spectral import BandMetadata, Sample, Spectrum
+from alchemi.spectral import BandMetadata, Sample, Spectrum, ViewingGeometry
+from alchemi.spectral.sample import GeoMeta
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
 from alchemi.types import SRFMatrix as LegacySRFMatrix, ValueUnits
 from alchemi.srf.utils import build_gaussian_srf_matrix, default_band_widths, validate_srf_alignment
@@ -81,6 +82,17 @@ def _normalize_l1_dataset(path_or_pair: str | tuple[str, str]) -> xr.Dataset:
     if band_mask is not None:
         ds["band_mask"] = ("band", np.asarray(band_mask, dtype=bool)[order])
 
+    for name in ["solar_zenith", "solar_azimuth", "view_zenith", "view_azimuth", "earth_sun_distance_au"]:
+        if name in raw:
+            ds[name] = raw[name]
+
+    coord_candidates = ["lat", "latitude", "lon", "longitude", "elev", "elevation", "height"]
+    for name in coord_candidates:
+        if name in raw.coords:
+            ds = ds.assign_coords({name: raw.coords[name]})
+        elif name in raw:
+            ds[name] = raw[name]
+
     ds.attrs.update(raw.attrs)
     ds.attrs.setdefault("sensor", "enmap")
     ds.attrs.setdefault("quantity", radiance.attrs.get("quantity"))
@@ -95,6 +107,63 @@ def _ensure_wavelengths_nm(ds: xr.Dataset) -> np.ndarray:
     if wavelengths.size > 1 and np.any(np.diff(wavelengths) <= 0):
         raise ValueError("wavelength_nm must be strictly increasing")
     return wavelengths
+
+
+def _extract_viewing_geometry(ds: xr.Dataset, y: int | None = None, x: int | None = None) -> ViewingGeometry | None:
+    def _value(name: str) -> float | None:
+        if name in ds:
+            arr = np.asarray(ds[name].values)
+            if arr.size == 1:
+                return float(arr.ravel()[0])
+            if y is not None and x is not None and arr.ndim >= 2:
+                return float(arr[y, x])
+        if name in ds.attrs:
+            try:
+                return float(ds.attrs[name])
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    solar_zenith = _value("solar_zenith")
+    solar_azimuth = _value("solar_azimuth")
+    view_zenith = _value("view_zenith")
+    view_azimuth = _value("view_azimuth")
+    earth_sun_distance = _value("earth_sun_distance_au")
+
+    if all(val is None for val in (solar_zenith, solar_azimuth, view_zenith, view_azimuth)):
+        return None
+
+    return ViewingGeometry(
+        solar_zenith_deg=float(solar_zenith) if solar_zenith is not None else np.nan,
+        solar_azimuth_deg=float(solar_azimuth) if solar_azimuth is not None else np.nan,
+        view_zenith_deg=float(view_zenith) if view_zenith is not None else np.nan,
+        view_azimuth_deg=float(view_azimuth) if view_azimuth is not None else np.nan,
+        earth_sun_distance_au=None if earth_sun_distance is None else float(earth_sun_distance),
+    )
+
+
+def _extract_geo(ds: xr.Dataset, y: int, x: int) -> GeoMeta | None:
+    def _coord(names: list[str]) -> float | None:
+        for name in names:
+            if name in ds.coords:
+                arr = np.asarray(ds.coords[name].values)
+            elif name in ds:
+                arr = np.asarray(ds[name].values)
+            else:
+                continue
+            if arr.size == 1:
+                return float(arr.ravel()[0])
+            if arr.ndim == 2:
+                return float(arr[y, x])
+        return None
+
+    lat = _coord(["lat", "latitude"])
+    lon = _coord(["lon", "longitude"])
+    elev = _coord(["elev", "elevation", "height"])
+
+    if lat is None or lon is None:
+        return None
+    return GeoMeta(lat=float(lat), lon=float(lon), elev=None if elev is None else float(elev))
 
 
 def _normalize_radiance_units(radiance: xr.DataArray) -> np.ndarray:
@@ -288,6 +357,9 @@ def iter_enmap_pixels(
                 wavelengths, widths, quality_masks["valid_band"], srf_source=srf_source
             )
 
+            viewing_geometry = _extract_viewing_geometry(ds, y=y, x=x)
+            geo = _extract_geo(ds, y, x)
+
             yield Sample(
                 spectrum=spectrum,
                 sensor_id="enmap",
@@ -300,7 +372,20 @@ def iter_enmap_pixels(
                     "x": int(x),
                     "srf_source": srf_source,
                     "srf_mode": srf_mode,
+                    **(
+                        {"solar_zenith_deg": float(viewing_geometry.solar_zenith_deg)}
+                        if viewing_geometry is not None and viewing_geometry.solar_zenith_deg is not None
+                        else {}
+                    ),
+                    **(
+                        {"earth_sun_distance_au": float(viewing_geometry.earth_sun_distance_au)}
+                        if viewing_geometry is not None
+                        and viewing_geometry.earth_sun_distance_au is not None
+                        else {}
+                    ),
                 },
+                viewing_geometry=viewing_geometry,
+                geo=geo,
             )
 
 
@@ -381,6 +466,9 @@ def iter_enmap_l2a_pixels(
                 wavelengths, widths, quality_masks["valid_band"], srf_source=srf_source
             )
 
+            viewing_geometry = _extract_viewing_geometry(ds, y=y, x=x)
+            geo = _extract_geo(ds, y, x)
+
             yield Sample(
                 spectrum=spectrum,
                 sensor_id="enmap",
@@ -393,7 +481,20 @@ def iter_enmap_l2a_pixels(
                     "x": int(x),
                     "srf_source": srf_source,
                     "srf_mode": srf_mode,
+                    **(
+                        {"solar_zenith_deg": float(viewing_geometry.solar_zenith_deg)}
+                        if viewing_geometry is not None and viewing_geometry.solar_zenith_deg is not None
+                        else {}
+                    ),
+                    **(
+                        {"earth_sun_distance_au": float(viewing_geometry.earth_sun_distance_au)}
+                        if viewing_geometry is not None
+                        and viewing_geometry.earth_sun_distance_au is not None
+                        else {}
+                    ),
                 },
+                viewing_geometry=viewing_geometry,
+                geo=geo,
             )
 
 

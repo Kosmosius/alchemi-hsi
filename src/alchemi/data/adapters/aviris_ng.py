@@ -23,7 +23,8 @@ import numpy as np
 import xarray as xr
 
 from alchemi.registry import srfs
-from alchemi.spectral import Sample, Spectrum
+from alchemi.spectral import Sample, Spectrum, ViewingGeometry
+from alchemi.spectral.sample import GeoMeta
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
 from alchemi.spectral.srf import SRFProvenance
 from alchemi.srf.registry import sensor_srf_from_legacy
@@ -131,6 +132,63 @@ def _build_band_mask(ds: xr.Dataset, wavelengths: np.ndarray) -> np.ndarray:
     return np.asarray(mask, dtype=bool)
 
 
+def _extract_viewing_geometry(ds: xr.Dataset, y: int | None = None, x: int | None = None) -> ViewingGeometry | None:
+    def _value(name: str) -> float | None:
+        if name in ds:
+            arr = np.asarray(ds[name].values)
+            if arr.size == 1:
+                return float(arr.ravel()[0])
+            if y is not None and x is not None and arr.ndim >= 2:
+                return float(arr[y, x])
+        if name in ds.attrs:
+            try:
+                return float(ds.attrs[name])
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    solar_zenith = _value("solar_zenith")
+    solar_azimuth = _value("solar_azimuth")
+    view_zenith = _value("view_zenith")
+    view_azimuth = _value("view_azimuth")
+    earth_sun_distance = _value("earth_sun_distance_au")
+
+    if all(val is None for val in (solar_zenith, solar_azimuth, view_zenith, view_azimuth)):
+        return None
+
+    return ViewingGeometry(
+        solar_zenith_deg=float(solar_zenith) if solar_zenith is not None else np.nan,
+        solar_azimuth_deg=float(solar_azimuth) if solar_azimuth is not None else np.nan,
+        view_zenith_deg=float(view_zenith) if view_zenith is not None else np.nan,
+        view_azimuth_deg=float(view_azimuth) if view_azimuth is not None else np.nan,
+        earth_sun_distance_au=None if earth_sun_distance is None else float(earth_sun_distance),
+    )
+
+
+def _extract_geo(ds: xr.Dataset, y: int, x: int) -> GeoMeta | None:
+    def _coord(names: list[str]) -> float | None:
+        for name in names:
+            if name in ds.coords:
+                arr = np.asarray(ds.coords[name].values)
+            elif name in ds:
+                arr = np.asarray(ds[name].values)
+            else:
+                continue
+            if arr.size == 1:
+                return float(arr.ravel()[0])
+            if arr.ndim == 2:
+                return float(arr[y, x])
+        return None
+
+    lat = _coord(["lat", "latitude"])
+    lon = _coord(["lon", "longitude"])
+    elev = _coord(["elev", "elevation", "height"])
+
+    if lat is None or lon is None:
+        return None
+    return GeoMeta(lat=float(lat), lon=float(lon), elev=None if elev is None else float(elev))
+
+
 def _build_sample(
     *,
     ds: xr.Dataset,
@@ -162,6 +220,14 @@ def _build_sample(
         "srf_source": provenance.value,
     }
 
+    viewing_geometry = _extract_viewing_geometry(ds, y=y, x=x)
+    if viewing_geometry is not None and viewing_geometry.solar_zenith_deg is not None:
+        ancillary["solar_zenith_deg"] = float(viewing_geometry.solar_zenith_deg)
+    if viewing_geometry is not None and viewing_geometry.earth_sun_distance_au is not None:
+        ancillary["earth_sun_distance_au"] = float(viewing_geometry.earth_sun_distance_au)
+
+    geo = _extract_geo(ds, y, x)
+
     return Sample(
         spectrum=spectrum,
         sensor_id=str(ds.attrs.get("sensor", "aviris-ng")),
@@ -169,6 +235,8 @@ def _build_sample(
         band_meta=_band_meta(wavelengths, valid_mask, widths, provenance),
         quality_masks=_quality_masks(valid_mask, deep_water_vapour=deep_water_vapour),
         ancillary=ancillary,
+        viewing_geometry=viewing_geometry,
+        geo=geo,
     )
 
 
