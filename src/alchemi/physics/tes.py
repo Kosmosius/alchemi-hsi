@@ -35,7 +35,17 @@ def radiance_spectrum_to_bt_spectrum(
     temps_grid_K: np.ndarray | None = None,
     strict: bool = False,
 ) -> Spectrum:
-    """Convert an LWIR radiance :class:`Spectrum` to brightness temperature."""
+    """Convert an LWIR radiance :class:`Spectrum` to brightness temperature.
+
+    ``method`` mirrors :func:`alchemi.physics.planck.radiance_spectrum_to_bt`:
+
+    - ``"central_lambda"`` (default): uses SRF effective centres or native
+      wavelengths. Recommended for narrow bands or when SRFs are unavailable.
+    - ``"band"``: performs SRF-weighted band inversion and requires
+      ``srf_matrix`` and ``srf_wavelength_nm``. Recommended for HyTES-like or
+      other broad SRFs where band-averaged BTs are needed. ``temps_grid_K`` can
+      tune the inversion grid and ``strict`` controls out-of-range handling.
+    """
 
     if spectrum.kind != QuantityKind.RADIANCE:
         raise ValueError("Input spectrum must have kind radiance")
@@ -58,7 +68,14 @@ def bt_spectrum_to_radiance_spectrum(
     srf_wavelength_nm: np.ndarray | None = None,
     method: str = "central_lambda",
 ) -> Spectrum:
-    """Convert a brightness-temperature :class:`Spectrum` back to radiance."""
+    """Convert a brightness-temperature :class:`Spectrum` back to radiance.
+
+    ``method`` mirrors :func:`alchemi.physics.planck.bt_spectrum_to_radiance`:
+
+    - ``"central_lambda"`` (default): Planck evaluation at SRF effective centres
+      or native wavelengths.
+    - ``"band"``: SRF-based band-averaged radiance, requiring aligned SRF data.
+    """
 
     if spectrum_bt.kind != QuantityKind.BRIGHTNESS_T:
         raise ValueError("Input spectrum must have kind brightness temperature")
@@ -80,7 +97,11 @@ def radiance_sample_to_bt_sample(
     temps_grid_K: np.ndarray | None = None,
     strict: bool = False,
 ) -> Sample:
-    """Convert a radiance :class:`Sample` to brightness temperature."""
+    """Convert a radiance :class:`Sample` to brightness temperature.
+
+    ``method`` follows :func:`radiance_spectrum_to_bt_spectrum`; ``"band"``
+    requires SRF information to compute SRF-averaged BTs.
+    """
 
     matrix = srf_matrix
     wl = srf_wavelength_nm
