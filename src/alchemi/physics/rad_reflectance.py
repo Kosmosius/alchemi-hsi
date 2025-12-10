@@ -9,6 +9,7 @@ and metadata when moving between radiance and TOA reflectance.
 from __future__ import annotations
 
 import logging
+import os
 
 import numpy as np
 
@@ -33,14 +34,16 @@ logger = logging.getLogger(__name__)
 _REFLECTANCE_WARN_THRESHOLD = 1.5
 _REFLECTANCE_FRACTION_WARN = 0.2
 _REFLECTANCE_DIAGNOSTIC_THRESHOLD = 1.2
+_REFLECTANCE_STRICT_ENV = "ALCHEMI_REFLECTANCE_STRICT"
 
 
 def _validate_shapes(
     spectrum: Spectrum, esun_band: np.ndarray, solar_zenith_deg: float
 ) -> tuple[np.ndarray, float]:
     wavelengths = np.asarray(spectrum.wavelengths.nm, dtype=np.float64)
-    if esun_band.shape[0] != wavelengths.shape[0]:
-        msg = "Solar irradiance array must match spectrum wavelengths"
+    esun_array = np.asarray(esun_band, dtype=np.float64)
+    if esun_array.ndim != 1 or esun_array.shape[0] != wavelengths.shape[0]:
+        msg = "Solar irradiance array must match spectrum wavelengths and be 1-D"
         raise ValueError(msg)
 
     if solar_zenith_deg < 0 or solar_zenith_deg > 90:
@@ -48,7 +51,7 @@ def _validate_shapes(
         raise ValueError(msg)
 
     cos_theta = float(np.cos(np.deg2rad(solar_zenith_deg)))
-    if cos_theta <= 0:
+    if cos_theta <= 0 or np.isclose(cos_theta, 0.0, atol=1e-12):
         msg = "Cosine of solar zenith must be positive"
         raise ValueError(msg)
 
@@ -88,22 +91,60 @@ def _validate_reflectance_units(spectrum: Spectrum) -> None:
         raise ValueError(msg)
 
 
-def _diagnose_reflectance(values: np.ndarray) -> None:
+def _validate_esun_and_distance(esun_band: np.ndarray, d_au: float) -> tuple[np.ndarray, float]:
+    E_sun = np.asarray(esun_band, dtype=np.float64)
+    if np.any(E_sun <= 0):
+        msg = "Solar irradiance must be strictly positive"
+        raise ValueError(msg)
+
+    distance = float(d_au)
+    if distance <= 0:
+        msg = "Earth-Sun distance must be positive (AU)"
+        raise ValueError(msg)
+    return E_sun, distance ** 2
+
+
+def _diagnose_reflectance(values: np.ndarray, *, strict: bool | None = None) -> None:
     diagnostic_fraction = float(np.mean(values > _REFLECTANCE_DIAGNOSTIC_THRESHOLD))
     warning_fraction = float(np.mean(values > _REFLECTANCE_WARN_THRESHOLD))
+    min_r = float(np.nanmin(values)) if values.size else float("nan")
     max_r = float(np.nanmax(values)) if values.size else float("nan")
+    strict_env = os.getenv(_REFLECTANCE_STRICT_ENV, "").strip().lower()
+    effective_strict = bool(strict) or strict_env in {"1", "true", "yes", "on"}
+
+    message = (
+        "TOA reflectance diagnostics: %.1f%% above %.1f, %.1f%% above %.1f; "
+        "range [%.3f, %.3f]"
+    )
     if warning_fraction > _REFLECTANCE_FRACTION_WARN:
+        if effective_strict:
+            msg = message % (
+                100.0 * diagnostic_fraction,
+                _REFLECTANCE_DIAGNOSTIC_THRESHOLD,
+                100.0 * warning_fraction,
+                _REFLECTANCE_WARN_THRESHOLD,
+                min_r,
+                max_r,
+            )
+            raise ValueError(msg)
+
         logger.warning(
-            "High TOA reflectance fraction: %.1f%% of bands exceed %.1f (max %.2f)",
+            message,
+            100.0 * diagnostic_fraction,
+            _REFLECTANCE_DIAGNOSTIC_THRESHOLD,
             100.0 * warning_fraction,
             _REFLECTANCE_WARN_THRESHOLD,
+            min_r,
             max_r,
         )
     else:
         logger.debug(
-            "TOA reflectance diagnostics: %.1f%% above %.1f, max %.2f",
+            message,
             100.0 * diagnostic_fraction,
             _REFLECTANCE_DIAGNOSTIC_THRESHOLD,
+            100.0 * warning_fraction,
+            _REFLECTANCE_WARN_THRESHOLD,
+            min_r,
             max_r,
         )
 
@@ -114,17 +155,17 @@ def radiance_to_toa_reflectance(
     esun_band: np.ndarray,
     d_au: float,
     solar_zenith_deg: float,
+    strict_diagnostics: bool | None = None,
 ) -> Spectrum:
     """Convert radiance to TOA reflectance using Eq. (17) in Section 5.2."""
 
     radiance_values = _radiance_values_nm(spectrum)
     wavelengths, cos_theta = _validate_shapes(spectrum, esun_band, solar_zenith_deg)
 
-    E_sun = np.asarray(esun_band, dtype=np.float64)
-    distance2 = float(d_au) ** 2
+    E_sun, distance2 = _validate_esun_and_distance(esun_band, d_au)
 
     reflectance = (np.pi * radiance_values * distance2) / (E_sun * cos_theta)
-    _diagnose_reflectance(reflectance)
+    _diagnose_reflectance(reflectance, strict=strict_diagnostics)
 
     return Spectrum.from_toa_reflectance(
         WavelengthGrid(wavelengths),
@@ -148,8 +189,7 @@ def toa_reflectance_to_radiance(
     wavelengths, cos_theta = _validate_shapes(spectrum, esun_band, solar_zenith_deg)
 
     reflectance = np.asarray(spectrum.values, dtype=np.float64)
-    E_sun = np.asarray(esun_band, dtype=np.float64)
-    distance2 = float(d_au) ** 2
+    E_sun, distance2 = _validate_esun_and_distance(esun_band, d_au)
 
     radiance = (reflectance * E_sun * cos_theta) / (np.pi * distance2)
 
@@ -197,6 +237,7 @@ def radiance_sample_to_toa_reflectance(
     esun_ref: Spectrum | None = None,
     solar_zenith_deg: float | None = None,
     earth_sun_distance_au: float | None = None,
+    strict_diagnostics: bool | None = None,
 ) -> Sample:
     """Return a new Sample with the spectrum converted to TOA reflectance."""
 
@@ -205,7 +246,11 @@ def radiance_sample_to_toa_reflectance(
     d_au = _resolve_earth_sun_distance(sample, earth_sun_distance_au)
 
     reflectance = radiance_to_toa_reflectance(
-        sample.spectrum, esun_band=esun_band, d_au=d_au, solar_zenith_deg=solar_zenith
+        sample.spectrum,
+        esun_band=esun_band,
+        d_au=d_au,
+        solar_zenith_deg=solar_zenith,
+        strict_diagnostics=strict_diagnostics,
     )
     return Sample(
         spectrum=reflectance,

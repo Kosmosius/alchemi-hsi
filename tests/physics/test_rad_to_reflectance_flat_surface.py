@@ -9,12 +9,13 @@ def test_flat_reflectance_roundtrip():
     wavelengths = WavelengthGrid(np.linspace(400.0, 500.0, 4))
     radiance_values = np.full(wavelengths.nm.shape, 5.0)
     solar_irradiance = np.full_like(wavelengths.nm, 200.0)
+    earth_sun_distance = 1.02
 
     radiance_spec = Spectrum.from_radiance(wavelengths, radiance_values)
     reflectance = radiance_to_toa_reflectance(
         radiance_spec,
         esun_band=solar_irradiance,
-        d_au=1.0,
+        d_au=earth_sun_distance,
         solar_zenith_deg=30.0,
     )
     assert reflectance.kind == QuantityKind.TOA_REFLECTANCE
@@ -23,7 +24,7 @@ def test_flat_reflectance_roundtrip():
     recovered = toa_reflectance_to_radiance(
         reflectance,
         esun_band=solar_irradiance,
-        d_au=1.0,
+        d_au=earth_sun_distance,
         solar_zenith_deg=30.0,
     )
     assert recovered.kind == QuantityKind.RADIANCE
@@ -44,3 +45,26 @@ def test_surface_reflectance_rejected_for_toa_inverse():
             d_au=1.0,
             solar_zenith_deg=30.0,
         )
+
+
+@pytest.mark.parametrize("solar_zenith_deg,d_au", [(0.1, 0.99), (60.0, 1.015)])
+def test_roundtrip_with_edge_angles_and_distance(solar_zenith_deg: float, d_au: float):
+    wavelengths = WavelengthGrid(np.linspace(350.0, 450.0, 5))
+    radiance_values = np.linspace(4.0, 6.0, wavelengths.nm.size)
+    solar_irradiance = np.full_like(wavelengths.nm, 150.0)
+
+    radiance_spec = Spectrum.from_radiance(wavelengths, radiance_values)
+    reflectance = radiance_to_toa_reflectance(
+        radiance_spec,
+        esun_band=solar_irradiance,
+        d_au=d_au,
+        solar_zenith_deg=solar_zenith_deg,
+    )
+    recovered = toa_reflectance_to_radiance(
+        reflectance,
+        esun_band=solar_irradiance,
+        d_au=d_au,
+        solar_zenith_deg=solar_zenith_deg,
+    )
+
+    assert np.allclose(recovered.values, radiance_values, atol=1e-8)
