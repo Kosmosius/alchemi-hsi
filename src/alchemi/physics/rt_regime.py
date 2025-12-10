@@ -12,6 +12,8 @@ from dataclasses import replace
 from enum import Enum
 from typing import Any, Mapping
 
+import numpy as np
+
 __all__ = [
     "SWIRRegime",
     "classify_swir_regime",
@@ -20,6 +22,7 @@ __all__ = [
     "attach_swir_regime",
     "trusted_swir",
     "classify_rt_regime",
+    "is_trusted_swir",
 ]
 
 
@@ -47,25 +50,61 @@ def classify_swir_regime(
     view_zenith_max: float = DEFAULT_VIEW_ZENITH_MAX,
     pwv_max_cm: float = DEFAULT_PWV_MAX_CM,
     aod550_max: float = DEFAULT_AOD550_MAX,
-) -> SWIRRegime:
-    """Classify geometry/atmosphere metadata into trusted vs heavy SWIR regime."""
+) -> SWIRRegime | np.ndarray:
+    """Classify geometry/atmosphere metadata into trusted vs heavy SWIR regime.
 
-    if solar_zenith_deg is not None and solar_zenith_deg > solar_zenith_max:
-        return SWIRRegime.HEAVY
+    Scalar inputs return a :class:`SWIRRegime` whereas array-like inputs are
+    vectorised and return an ``np.ndarray`` of ``SWIRRegime`` instances. Missing
+    metadata (``None``) are treated as "unknown" and therefore do not
+    contribute to a heavy classification unless ``has_heavy_cloud_or_haze`` is
+    explicitly flagged.
+    """
 
-    if view_zenith_deg is not None and view_zenith_deg > view_zenith_max:
-        return SWIRRegime.HEAVY
+    def _maybe_broadcast(value: Any, fill_value: float) -> tuple[np.ndarray, tuple[int, ...]]:
+        if value is None:
+            arr = np.asarray(fill_value)
+        else:
+            arr = np.asarray(value)
+        return arr, arr.shape
 
-    if pwv_cm is not None and pwv_cm > pwv_max_cm:
-        return SWIRRegime.HEAVY
+    candidates = []
+    shapes = []
+    solar_arr, shape = _maybe_broadcast(solar_zenith_deg, -np.inf)
+    candidates.append((solar_arr.astype(float), solar_zenith_max))
+    shapes.append(shape)
+    view_arr, shape = _maybe_broadcast(view_zenith_deg, -np.inf)
+    candidates.append((view_arr.astype(float), view_zenith_max))
+    shapes.append(shape)
+    pwv_arr, shape = _maybe_broadcast(pwv_cm, -np.inf)
+    candidates.append((pwv_arr.astype(float), pwv_max_cm))
+    shapes.append(shape)
+    aod_arr, shape = _maybe_broadcast(aod_550, -np.inf)
+    candidates.append((aod_arr.astype(float), aod550_max))
+    shapes.append(shape)
 
-    if aod_550 is not None and aod_550 > aod550_max:
-        return SWIRRegime.HEAVY
+    cloud_arr = np.asarray(False if has_heavy_cloud_or_haze is None else has_heavy_cloud_or_haze)
+    shapes.append(cloud_arr.shape)
 
-    if has_heavy_cloud_or_haze:
-        return SWIRRegime.HEAVY
+    shape = ()
+    for candidate_shape in shapes:
+        if candidate_shape != ():
+            shape = np.broadcast_shapes(shape, candidate_shape)
 
-    return SWIRRegime.TRUSTED
+    heavy = np.zeros(shape, dtype=bool)
+    for arr, threshold in candidates:
+        arr = np.broadcast_to(arr, shape)
+        heavy |= arr > threshold
+
+    cloud_flag = np.broadcast_to(cloud_arr, shape)
+    heavy |= cloud_flag
+
+    if heavy.shape == ():
+        return SWIRRegime.HEAVY if bool(heavy) else SWIRRegime.TRUSTED
+
+    trusted = np.empty(shape, dtype=object)
+    trusted[...] = SWIRRegime.TRUSTED
+    trusted[heavy] = SWIRRegime.HEAVY
+    return trusted
 
 
 def _extract_from_mapping(mapping: Mapping[str, Any] | None, key: str) -> Any:
@@ -145,7 +184,7 @@ def attach_swir_regime(sample: Any, **kwargs: Any) -> Any:
         return sample_copy
 
 
-def trusted_swir(sample_or_meta: Mapping[str, Any] | Any) -> bool:
+def trusted_swir(sample_or_meta: Mapping[str, Any] | Any) -> bool | np.ndarray:
     """Return ``True`` only if the SWIR regime is trusted for the input."""
 
     if isinstance(sample_or_meta, Mapping):
@@ -159,7 +198,17 @@ def trusted_swir(sample_or_meta: Mapping[str, Any] | Any) -> bool:
     if stored is not None:
         return stored == SWIRRegime.TRUSTED.value or stored == SWIRRegime.TRUSTED
 
-    return swir_regime_for_sample(sample_or_meta) == SWIRRegime.TRUSTED
+    result = swir_regime_for_sample(sample_or_meta)
+    if isinstance(result, np.ndarray):
+        return result == SWIRRegime.TRUSTED
+
+    return result == SWIRRegime.TRUSTED
+
+
+def is_trusted_swir(sample_or_meta: Mapping[str, Any] | Any) -> bool | np.ndarray:
+    """Alias for :func:`trusted_swir` for readability in diagnostics."""
+
+    return trusted_swir(sample_or_meta)
 
 
 def classify_rt_regime(

@@ -10,13 +10,16 @@ single source of truth for:
   centre interpolation when SRFs are unavailable.
 * Earth-Sun distance computation for specific acquisition dates or samples.
 
-The reference irradiance table is a lightweight, smooth approximation of the
-ASTM G-173 AM0 spectrum sampled at 1 nm from 350-2500 nm, stored under
+The reference irradiance table is a smooth approximation of the ASTM G-173 AM0
+spectrum sampled at 1 nm from 350–2500 nm, stored under
 ``resources/solar/esun_reference.csv``. Values are expressed as
-W·m⁻²·nm⁻¹. Because the canonical :class:`~alchemi.types.Spectrum` only
-recognises radiance/reflectance/BT quantity kinds, the Esun spectrum is tagged
-with ``QuantityKind.RADIANCE`` while its metadata records that the values are
-irradiance.
+W·m⁻²·nm⁻¹ on a strictly increasing nanometre grid. Because the canonical
+:class:`~alchemi.types.Spectrum` only recognises radiance/reflectance/BT
+quantity kinds, the Esun spectrum is tagged with ``QuantityKind.RADIANCE``
+while its metadata records that the values are irradiance and preserves the
+source name. Downstream resampling always flows through
+``alchemi.physics.resampling`` to guarantee the same SRF normalisation and
+flat-spectrum invariants used for general spectra.
 """
 
 from __future__ import annotations
@@ -58,7 +61,8 @@ def get_reference_esun() -> Spectrum:
     The returned spectrum uses a strictly increasing nanometre grid with
     irradiance values in W·m⁻²·nm⁻¹. The quantity kind is stored as radiance for
     compatibility with :class:`~alchemi.types.Spectrum`; ``meta['quantity']`` is
-    set to ``"irradiance"`` to prevent confusion with true sensor radiance.
+    set to ``"irradiance"`` to prevent confusion with true sensor radiance and
+    ``meta['units']`` echoes the irradiance units.
     """
 
     global _ESUN_CACHE
@@ -86,7 +90,11 @@ def get_reference_esun() -> Spectrum:
             values=irradiance,
             kind=QuantityKind.RADIANCE,
             units=RadianceUnits.W_M2_SR_NM,
-            meta={"quantity": "irradiance", "source": "ASTM G-173 inspired"},
+            meta={
+                "quantity": "irradiance",
+                "units": "W·m⁻²·nm⁻¹",
+                "source": "ASTM G-173 inspired",
+            },
         )
 
     return _ESUN_CACHE
