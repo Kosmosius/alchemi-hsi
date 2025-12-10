@@ -80,20 +80,20 @@ _UNIT_ALIASES: dict[ValueUnits, Iterable[str]] = {
     ),
 }
 
-_EXPECTED_UNITS: dict[QuantityKind, set[ValueUnits]] = {
-    QuantityKind.RADIANCE: {
+_EXPECTED_UNITS: dict[QuantityKind, tuple[ValueUnits, ...]] = {
+    QuantityKind.RADIANCE: (
         ValueUnits.RADIANCE_W_M2_SR_NM,
         ValueUnits.RADIANCE_W_M2_SR_UM,
-    },
-    QuantityKind.REFLECTANCE: {
+    ),
+    QuantityKind.REFLECTANCE: (
         ValueUnits.REFLECTANCE_FRACTION,
         ValueUnits.REFLECTANCE_PERCENT,
-    },
-    QuantityKind.BRIGHTNESS_T: {
+    ),
+    QuantityKind.BRIGHTNESS_T: (
         ValueUnits.TEMPERATURE_K,
         ValueUnits.TEMPERATURE_C,
         ValueUnits.TEMPERATURE_F,
-    },
+    ),
 }
 
 
