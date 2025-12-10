@@ -24,7 +24,8 @@ import numpy as np
 import xarray as xr
 
 from alchemi.registry import srfs
-from alchemi.spectral import BandMetadata, Sample, Spectrum
+from alchemi.spectral import BandMetadata, Sample, Spectrum, ViewingGeometry
+from alchemi.spectral.sample import GeoMeta
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
 from alchemi.types import QuantityKind, ValueUnits
 from alchemi.physics import units as qty_units
@@ -70,6 +71,63 @@ def _ensure_wavelengths_nm(ds: xr.Dataset) -> np.ndarray:
     if coord_units not in {"", "nm", "nanometer", "nanometre"}:
         raise ValueError(f"wavelength_nm must be expressed in nanometres, got {coord_units!r}")
     return wavelengths
+
+
+def _extract_viewing_geometry(ds: xr.Dataset, y: int | None = None, x: int | None = None) -> ViewingGeometry | None:
+    def _value(name: str) -> float | None:
+        if name in ds:
+            arr = np.asarray(ds[name].values)
+            if arr.size == 1:
+                return float(arr.ravel()[0])
+            if y is not None and x is not None and arr.ndim >= 2:
+                return float(arr[y, x])
+        if name in ds.attrs:
+            try:
+                return float(ds.attrs[name])
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    solar_zenith = _value("solar_zenith")
+    solar_azimuth = _value("solar_azimuth")
+    view_zenith = _value("view_zenith")
+    view_azimuth = _value("view_azimuth")
+    earth_sun_distance = _value("earth_sun_distance_au")
+
+    if all(val is None for val in (solar_zenith, solar_azimuth, view_zenith, view_azimuth)):
+        return None
+
+    return ViewingGeometry(
+        solar_zenith_deg=float(solar_zenith) if solar_zenith is not None else np.nan,
+        solar_azimuth_deg=float(solar_azimuth) if solar_azimuth is not None else np.nan,
+        view_zenith_deg=float(view_zenith) if view_zenith is not None else np.nan,
+        view_azimuth_deg=float(view_azimuth) if view_azimuth is not None else np.nan,
+        earth_sun_distance_au=None if earth_sun_distance is None else float(earth_sun_distance),
+    )
+
+
+def _extract_geo(ds: xr.Dataset, y: int, x: int) -> GeoMeta | None:
+    def _coord(names: list[str]) -> float | None:
+        for name in names:
+            if name in ds.coords:
+                arr = np.asarray(ds.coords[name].values)
+            elif name in ds:
+                arr = np.asarray(ds[name].values)
+            else:
+                continue
+            if arr.size == 1:
+                return float(arr.ravel()[0])
+            if arr.ndim == 2:
+                return float(arr[y, x])
+        return None
+
+    lat = _coord(["lat", "latitude"])
+    lon = _coord(["lon", "longitude"])
+    elev = _coord(["elev", "elevation", "height"])
+
+    if lat is None or lon is None:
+        return None
+    return GeoMeta(lat=float(lat), lon=float(lon), elev=None if elev is None else float(elev))
 
 
 def _deep_water_vapour_mask(wavelengths_nm: np.ndarray) -> np.ndarray:
@@ -207,6 +265,8 @@ def iter_emit_pixels(
                 units=ValueUnits.RADIANCE_W_M2_SR_NM,
             )
             quality_masks = {name: mask[y, x, :] for name, mask in quality_base.items()}
+            viewing_geometry = _extract_viewing_geometry(ds, y=y, x=x)
+            geo = _extract_geo(ds, y, x)
             yield Sample(
                 spectrum=spectrum,
                 sensor_id="emit",
@@ -218,8 +278,21 @@ def iter_emit_pixels(
                     "x": int(x),
                     "srf_source": srf_source,
                     "srf_mode": srf_mode,
+                    **(
+                        {"solar_zenith_deg": float(viewing_geometry.solar_zenith_deg)}
+                        if viewing_geometry is not None and viewing_geometry.solar_zenith_deg is not None
+                        else {}
+                    ),
+                    **(
+                        {"earth_sun_distance_au": float(viewing_geometry.earth_sun_distance_au)}
+                        if viewing_geometry is not None
+                        and viewing_geometry.earth_sun_distance_au is not None
+                        else {}
+                    ),
                 },
                 band_meta=band_meta,
+                viewing_geometry=viewing_geometry,
+                geo=geo,
             )
 
 
@@ -307,6 +380,8 @@ def iter_emit_l2a_pixels(
                 units=ValueUnits.REFLECTANCE_FRACTION,
             )
             quality_masks = {name: mask[y, x, :] for name, mask in quality_base.items()}
+            viewing_geometry = _extract_viewing_geometry(ds, y=y, x=x)
+            geo = _extract_geo(ds, y, x)
             yield Sample(
                 spectrum=spectrum,
                 sensor_id="emit",
@@ -318,8 +393,21 @@ def iter_emit_l2a_pixels(
                     "x": int(x),
                     "srf_source": srf_source,
                     "srf_mode": srf_mode,
+                    **(
+                        {"solar_zenith_deg": float(viewing_geometry.solar_zenith_deg)}
+                        if viewing_geometry is not None and viewing_geometry.solar_zenith_deg is not None
+                        else {}
+                    ),
+                    **(
+                        {"earth_sun_distance_au": float(viewing_geometry.earth_sun_distance_au)}
+                        if viewing_geometry is not None
+                        and viewing_geometry.earth_sun_distance_au is not None
+                        else {}
+                    ),
                 },
                 band_meta=band_meta,
+                viewing_geometry=viewing_geometry,
+                geo=geo,
             )
 
 

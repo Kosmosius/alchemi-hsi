@@ -22,7 +22,8 @@ import xarray as xr
 
 from alchemi.physics import planck
 from alchemi.registry import srfs
-from alchemi.spectral import BandMetadata, Sample, Spectrum
+from alchemi.spectral import BandMetadata, Sample, Spectrum, ViewingGeometry
+from alchemi.spectral.sample import GeoMeta
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
 from alchemi.types import ValueUnits
 from alchemi.srf.utils import build_gaussian_srf_matrix, default_band_widths, validate_srf_alignment
@@ -127,6 +128,63 @@ def _valid_band_mask(
     return valid, quality
 
 
+def _extract_viewing_geometry(ds: xr.Dataset, y: int | None = None, x: int | None = None) -> ViewingGeometry | None:
+    def _value(name: str) -> float | None:
+        if name in ds:
+            arr = np.asarray(ds[name].values)
+            if arr.size == 1:
+                return float(arr.ravel()[0])
+            if y is not None and x is not None and arr.ndim >= 2:
+                return float(arr[y, x])
+        if name in ds.attrs:
+            try:
+                return float(ds.attrs[name])
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    solar_zenith = _value("solar_zenith")
+    solar_azimuth = _value("solar_azimuth")
+    view_zenith = _value("view_zenith")
+    view_azimuth = _value("view_azimuth")
+    earth_sun_distance = _value("earth_sun_distance_au")
+
+    if all(val is None for val in (solar_zenith, solar_azimuth, view_zenith, view_azimuth)):
+        return None
+
+    return ViewingGeometry(
+        solar_zenith_deg=float(solar_zenith) if solar_zenith is not None else np.nan,
+        solar_azimuth_deg=float(solar_azimuth) if solar_azimuth is not None else np.nan,
+        view_zenith_deg=float(view_zenith) if view_zenith is not None else np.nan,
+        view_azimuth_deg=float(view_azimuth) if view_azimuth is not None else np.nan,
+        earth_sun_distance_au=None if earth_sun_distance is None else float(earth_sun_distance),
+    )
+
+
+def _extract_geo(ds: xr.Dataset, y: int, x: int) -> GeoMeta | None:
+    def _coord(names: list[str]) -> float | None:
+        for name in names:
+            if name in ds.coords:
+                arr = np.asarray(ds.coords[name].values)
+            elif name in ds:
+                arr = np.asarray(ds[name].values)
+            else:
+                continue
+            if arr.size == 1:
+                return float(arr.ravel()[0])
+            if arr.ndim == 2:
+                return float(arr[y, x])
+        return None
+
+    lat = _coord(["lat", "latitude"])
+    lon = _coord(["lon", "longitude"])
+    elev = _coord(["elev", "elevation", "height"])
+
+    if lat is None or lon is None:
+        return None
+    return GeoMeta(lat=float(lat), lon=float(lon), elev=None if elev is None else float(elev))
+
+
 def _extract_detector_mask(ds: xr.Dataset) -> np.ndarray | None:
     for key in ("detector_mask", "bad_detector_mask", "bad_detector"):
         if key in ds:
@@ -194,6 +252,8 @@ def iter_hytes_pixels(path: str, *, srf_blind: bool = False) -> Iterable[Sample]
                 units=ValueUnits.TEMPERATURE_K,
             )
             quality_masks = {name: mask.copy() for name, mask in quality_base.items()}
+            viewing_geometry = _extract_viewing_geometry(ds, y=y, x=x)
+            geo = _extract_geo(ds, y, x)
             sample = Sample(
                 spectrum=spec,
                 sensor_id="hytes",
@@ -206,7 +266,20 @@ def iter_hytes_pixels(path: str, *, srf_blind: bool = False) -> Iterable[Sample]
                     "x": int(x),
                     "srf_source": srf_source,
                     "srf_mode": "srf-blind" if srf_blind else "srf-aware",
+                    **(
+                        {"solar_zenith_deg": float(viewing_geometry.solar_zenith_deg)}
+                        if viewing_geometry is not None and viewing_geometry.solar_zenith_deg is not None
+                        else {}
+                    ),
+                    **(
+                        {"earth_sun_distance_au": float(viewing_geometry.earth_sun_distance_au)}
+                        if viewing_geometry is not None
+                        and viewing_geometry.earth_sun_distance_au is not None
+                        else {}
+                    ),
                 },
+                viewing_geometry=viewing_geometry,
+                geo=geo,
             )
             yield sample
 
