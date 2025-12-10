@@ -1,12 +1,16 @@
 import numpy as np
 
-from ..types import Spectrum, SpectrumKind, SRFMatrix, WavelengthGrid
+from ..types import QuantityKind, Spectrum, SpectrumKind, SRFMatrix, WavelengthGrid
 from .resample import resample_values_with_srf
 from .sensor import SensorSRF
 
 
 def convolve_lab_to_sensor(lab: Spectrum, srf: SRFMatrix) -> Spectrum:
-    assert lab.kind == SpectrumKind.REFLECTANCE
+    assert lab.kind in {
+        QuantityKind.SURFACE_REFLECTANCE,
+        QuantityKind.TOA_REFLECTANCE,
+        QuantityKind.REFLECTANCE,
+    }
     srfs = np.vstack(
         [
             np.interp(lab.wavelengths.nm, nm_band, resp, left=0.0, right=0.0)
@@ -25,7 +29,7 @@ def convolve_lab_to_sensor(lab: Spectrum, srf: SRFMatrix) -> Spectrum:
             sensor_srf.band_centers_nm if sensor_srf.band_centers_nm is not None else srf.centers_nm
         ),
         values,
-        SpectrumKind.REFLECTANCE,
+        QuantityKind.SURFACE_REFLECTANCE,
         "unitless",
         None,
         {"sensor": srf.sensor},

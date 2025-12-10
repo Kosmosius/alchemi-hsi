@@ -58,13 +58,13 @@ class SyntheticAlignmentDataset:
             lab_spectrum = Spectrum(
                 wavelength_nm=lab_wavelengths,
                 values=lab_values,
-                kind=QuantityKind.REFLECTANCE,
+                kind=QuantityKind.SURFACE_REFLECTANCE,
                 units=ReflectanceUnits.FRACTION,
             )
             sensor_spectrum = Spectrum(
                 wavelength_nm=lab_wavelengths,
                 values=sensor_values,
-                kind=QuantityKind.REFLECTANCE,
+                kind=QuantityKind.SURFACE_REFLECTANCE,
                 units=ReflectanceUnits.FRACTION,
             )
             lab_spectra.append(lab_spectrum)

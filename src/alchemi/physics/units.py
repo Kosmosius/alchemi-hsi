@@ -32,7 +32,11 @@ def is_radiance(kind: QuantityKind) -> bool:
 
 
 def is_reflectance(kind: QuantityKind) -> bool:
-    return kind == QuantityKind.REFLECTANCE
+    return kind in {
+        QuantityKind.REFLECTANCE,
+        QuantityKind.TOA_REFLECTANCE,
+        QuantityKind.SURFACE_REFLECTANCE,
+    }
 
 
 def is_brightness_temp(kind: QuantityKind) -> bool:
@@ -84,6 +88,14 @@ _EXPECTED_UNITS: dict[QuantityKind, tuple[ValueUnits, ...]] = {
     QuantityKind.RADIANCE: (
         ValueUnits.RADIANCE_W_M2_SR_NM,
         ValueUnits.RADIANCE_W_M2_SR_UM,
+    ),
+    QuantityKind.TOA_REFLECTANCE: (
+        ValueUnits.REFLECTANCE_FRACTION,
+        ValueUnits.REFLECTANCE_PERCENT,
+    ),
+    QuantityKind.SURFACE_REFLECTANCE: (
+        ValueUnits.REFLECTANCE_FRACTION,
+        ValueUnits.REFLECTANCE_PERCENT,
     ),
     QuantityKind.REFLECTANCE: (
         ValueUnits.REFLECTANCE_FRACTION,
@@ -157,7 +169,11 @@ def normalize_values_to_canonical(
             )
         return values, ValueUnits.RADIANCE_W_M2_SR_NM
 
-    if quantity == QuantityKind.REFLECTANCE:
+    if quantity in {
+        QuantityKind.REFLECTANCE,
+        QuantityKind.TOA_REFLECTANCE,
+        QuantityKind.SURFACE_REFLECTANCE,
+    }:
         if units == ValueUnits.REFLECTANCE_PERCENT:
             return values / 100.0, ValueUnits.REFLECTANCE_FRACTION
         return values, ValueUnits.REFLECTANCE_FRACTION

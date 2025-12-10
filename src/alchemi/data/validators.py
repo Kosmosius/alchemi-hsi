@@ -100,7 +100,11 @@ def check_cube_health(
                 "Radiance cube has very large values",
                 extra={"max": max_val, "sensor": resolved_sensor},
             )
-    elif cube.value_kind == QuantityKind.REFLECTANCE:
+    elif cube.value_kind in {
+        QuantityKind.REFLECTANCE,
+        QuantityKind.SURFACE_REFLECTANCE,
+        QuantityKind.TOA_REFLECTANCE,
+    }:
         q99 = float(np.quantile(finite_values, 0.99))
         if q99 < 0 or q99 > 1.5:
             log.warning(

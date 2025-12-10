@@ -19,13 +19,7 @@ from alchemi.physics.solar import (
     get_reference_esun,
 )
 from alchemi.spectral.sample import Sample
-from alchemi.types import (
-    QuantityKind,
-    RadianceUnits,
-    ReflectanceUnits,
-    Spectrum,
-    WavelengthGrid,
-)
+from alchemi.types import QuantityKind, RadianceUnits, ReflectanceUnits, Spectrum, WavelengthGrid
 
 __all__ = [
     "radiance_to_toa_reflectance",
@@ -83,9 +77,13 @@ def _radiance_values_nm(spectrum: Spectrum) -> np.ndarray:
 
 
 def _validate_reflectance_units(spectrum: Spectrum) -> None:
-    if spectrum.kind != QuantityKind.REFLECTANCE:
-        raise ValueError("Input spectrum must represent reflectance")
-    if spectrum.units != ReflectanceUnits.FRACTION:
+    if spectrum.kind != QuantityKind.TOA_REFLECTANCE:
+        msg = "Input spectrum must represent TOA reflectance"
+        raise ValueError(msg)
+    normalized_units = units.normalize_units(
+        spectrum.units or ReflectanceUnits.FRACTION, QuantityKind.TOA_REFLECTANCE
+    )
+    if normalized_units != units.ValueUnits.REFLECTANCE_FRACTION:
         msg = "Reflectance spectrum must be dimensionless fraction"
         raise ValueError(msg)
 
@@ -128,7 +126,7 @@ def radiance_to_toa_reflectance(
     reflectance = (np.pi * radiance_values * distance2) / (E_sun * cos_theta)
     _diagnose_reflectance(reflectance)
 
-    return Spectrum.from_reflectance(
+    return Spectrum.from_toa_reflectance(
         WavelengthGrid(wavelengths),
         reflectance,
         units=ReflectanceUnits.FRACTION,

@@ -31,7 +31,13 @@ from alchemi.types import (
 __all__ = ["Cube", "GeoInfo", "geo_from_attrs"]
 
 _ALLOWED_AXIS_UNITS = {"wavelength_nm", "wavenumber_cm1"}
-_ALLOWED_VALUE_KINDS = {QuantityKind.RADIANCE, QuantityKind.REFLECTANCE, QuantityKind.BRIGHTNESS_T}
+_ALLOWED_VALUE_KINDS = {
+    QuantityKind.RADIANCE,
+    QuantityKind.TOA_REFLECTANCE,
+    QuantityKind.SURFACE_REFLECTANCE,
+    QuantityKind.REFLECTANCE,
+    QuantityKind.BRIGHTNESS_T,
+}
 
 
 @dataclass(slots=True)

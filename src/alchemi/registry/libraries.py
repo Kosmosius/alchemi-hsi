@@ -30,7 +30,7 @@ def _load_entry(path: Path) -> LibraryEntry:
     spectrum = Spectrum(
         wavelengths=WavelengthGrid(wavelengths),
         values=values,
-        kind=QuantityKind.REFLECTANCE,
+        kind=QuantityKind.SURFACE_REFLECTANCE,
         units=ValueUnits.REFLECTANCE,
         meta=data.get("meta", {}),
     )

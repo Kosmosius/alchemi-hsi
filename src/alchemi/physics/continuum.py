@@ -148,7 +148,11 @@ def build_continuum(
         cubic spline through the hull vertices.
     """
 
-    if spectrum.kind != QuantityKind.REFLECTANCE:
+    if spectrum.kind not in {
+        QuantityKind.REFLECTANCE,
+        QuantityKind.SURFACE_REFLECTANCE,
+        QuantityKind.TOA_REFLECTANCE,
+    }:
         raise ValueError("Continuum removal expects a reflectance-like spectrum")
 
     wl = np.asarray(spectrum.wavelengths.nm, dtype=np.float64)
