@@ -12,6 +12,7 @@ import logging
 
 import numpy as np
 
+from alchemi.physics import units
 from alchemi.physics.solar import (
     earth_sun_distance_for_sample,
     esun_for_sample,
@@ -60,12 +61,25 @@ def _validate_shapes(
     return wavelengths, cos_theta
 
 
-def _validate_radiance_units(spectrum: Spectrum) -> None:
+def _radiance_values_nm(spectrum: Spectrum) -> np.ndarray:
     if spectrum.kind != QuantityKind.RADIANCE:
         raise ValueError("Input spectrum must represent radiance")
-    if spectrum.units != RadianceUnits.W_M2_SR_NM:
-        msg = "Radiance spectrum must use W·m⁻²·sr⁻¹·nm⁻¹ units"
+
+    normalized_units = units.normalize_units(
+        spectrum.units or RadianceUnits.W_M2_SR_NM, QuantityKind.RADIANCE
+    )
+    values, canonical_units = units.normalize_values_to_canonical(
+        np.asarray(spectrum.values, dtype=np.float64),
+        normalized_units,
+        QuantityKind.RADIANCE,
+    )
+    if canonical_units != units.ValueUnits.RADIANCE_W_M2_SR_NM:
+        msg = (
+            "Radiance spectrum must be W·m⁻²·sr⁻¹·nm⁻¹; use alchemi.physics.units"
+            " helpers to normalise."
+        )
         raise ValueError(msg)
+    return values
 
 
 def _validate_reflectance_units(spectrum: Spectrum) -> None:
@@ -105,14 +119,13 @@ def radiance_to_toa_reflectance(
 ) -> Spectrum:
     """Convert radiance to TOA reflectance using Eq. (17) in Section 5.2."""
 
-    _validate_radiance_units(spectrum)
+    radiance_values = _radiance_values_nm(spectrum)
     wavelengths, cos_theta = _validate_shapes(spectrum, esun_band, solar_zenith_deg)
 
-    L = np.asarray(spectrum.values, dtype=np.float64)
     E_sun = np.asarray(esun_band, dtype=np.float64)
     distance2 = float(d_au) ** 2
 
-    reflectance = (np.pi * L * distance2) / (E_sun * cos_theta)
+    reflectance = (np.pi * radiance_values * distance2) / (E_sun * cos_theta)
     _diagnose_reflectance(reflectance)
 
     return Spectrum.from_reflectance(
