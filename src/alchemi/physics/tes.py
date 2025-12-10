@@ -131,8 +131,17 @@ def radiance_sample_to_bt_sample(
     )
 
 
-def compute_lwir_emissivity_proxy(bt_spectrum: Spectrum) -> tuple[float, Spectrum]:
-    """Compute a simple emissivity-like proxy from a BT spectrum."""
+def compute_lwir_emissivity_proxy(
+    bt_spectrum: Spectrum,
+) -> tuple[float | np.ndarray, Spectrum]:
+    """Compute LWIR brightness-temperature shape proxies.
+
+    The TES-lite proxy used in v1.1 treats the maximum per-pixel brightness
+    temperature as a crude temperature proxy (``T_proxy``) and normalises the
+    spectrum to obtain a relative shape proxy ``ε̂_k = T_b,k / T_proxy``. This is
+    **not** a physical emissivity estimate; it captures only relative spectral
+    shape for qualitative anomaly detection and coarse mapping.
+    """
 
     if bt_spectrum.kind != QuantityKind.BRIGHTNESS_T:
         raise ValueError("Input spectrum must be a brightness temperature spectrum")
@@ -148,14 +157,21 @@ def compute_lwir_emissivity_proxy(bt_spectrum: Spectrum) -> tuple[float, Spectru
         masked = ~np.asarray(bt_spectrum.mask, dtype=bool)
         values = np.where(masked, np.nan, values)
 
-    if not np.any(np.isfinite(values)):
-        raise ValueError("Brightness temperature spectrum contains only NaNs")
+    finite_mask = np.isfinite(values)
+    if values.ndim == 1:
+        if not np.any(finite_mask):
+            raise ValueError("Brightness temperature spectrum contains only NaNs")
+        T_proxy = float(np.nanmax(values))
+    else:
+        valid_pixels = np.any(finite_mask, axis=-1)
+        if not np.all(valid_pixels):
+            raise ValueError("At least one pixel contains only NaNs")
+        T_proxy = np.nanmax(values, axis=-1)
 
-    T_proxy = float(np.nanmax(values))
-    if T_proxy <= 0:
+    if np.any(T_proxy <= 0):
         raise ValueError("Proxy temperature must be positive")
 
-    emissivity_values = values / T_proxy
+    emissivity_values = values / np.expand_dims(T_proxy, axis=-1)
     meta = dict(bt_spectrum.meta)
     meta["role"] = "lwir_emissivity_proxy"
 
@@ -167,7 +183,7 @@ def compute_lwir_emissivity_proxy(bt_spectrum: Spectrum) -> tuple[float, Spectru
         meta=meta,
     )
 
-    return T_proxy, emissivity_spectrum
+    return (T_proxy if np.ndim(T_proxy) else float(T_proxy)), emissivity_spectrum
 
 
 def lwir_pipeline_for_sample(
@@ -176,8 +192,16 @@ def lwir_pipeline_for_sample(
     srf_matrix: np.ndarray | None = None,
     srf_wavelength_nm: np.ndarray | None = None,
     method: str = "central_lambda",
-) -> Dict[str, Spectrum | float | None]:
-    """Run the LWIR radiance → BT → emissivity-proxy pipeline for a sample."""
+) -> Sample:
+    """Attach LWIR TES-lite proxies to a sample.
+
+    This pipeline ingests radiance or brightness-temperature spectra, converts
+    radiance to per-band BT using :mod:`alchemi.physics.planck`, and derives the
+    TES-lite proxies ``T_proxy = max_k T_b,k`` and ``ε̂_k = T_b,k / T_proxy``.
+    Both quantities are **proxies only**—they capture spectral shape for anomaly
+    detection, coarse land cover cues, and qualitative temperature mapping. v1.1
+    explicitly does **not** perform full TES retrieval.
+    """
 
     if sample.spectrum.kind == QuantityKind.RADIANCE:
         bt_sample = radiance_sample_to_bt_sample(
@@ -186,21 +210,33 @@ def lwir_pipeline_for_sample(
             srf_wavelength_nm=srf_wavelength_nm,
             method=method,
         )
-        radiance_spec: Spectrum | None = sample.spectrum
     elif sample.spectrum.kind == QuantityKind.BRIGHTNESS_T:
         bt_sample = sample
-        radiance_spec = None
     else:
         raise ValueError("Sample spectrum must be radiance or brightness temperature")
 
     T_proxy, emissivity_proxy = compute_lwir_emissivity_proxy(bt_sample.spectrum)
 
-    return {
-        "radiance": radiance_spec,
-        "bt": bt_sample.spectrum,
-        "emissivity_proxy": emissivity_proxy,
-        "T_proxy": T_proxy,
-    }
+    ancillary = dict(sample.ancillary)
+    ancillary.update(
+        {
+            "lwir_bt_spectrum": bt_sample.spectrum,
+            "lwir_emissivity_proxy": emissivity_proxy,
+            "lwir_T_proxy_K": T_proxy,
+        }
+    )
+
+    return Sample(
+        spectrum=sample.spectrum,
+        sensor_id=sample.sensor_id,
+        acquisition_time=sample.acquisition_time,
+        geo=sample.geo,
+        viewing_geometry=sample.viewing_geometry,
+        band_meta=sample.band_meta,
+        srf_matrix=sample.srf_matrix,
+        quality_masks=sample.quality_masks,
+        ancillary=ancillary,
+    )
 
 
 def tes_lwirt(
