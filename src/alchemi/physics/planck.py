@@ -219,24 +219,19 @@ def inverse_planck_central_lambda(
 ) -> np.ndarray:
     """Numerically invert Planck's law at fixed wavelength(s)."""
 
+    if t_max <= t_min:
+        raise ValueError("t_max must be greater than t_min")
+
     L_arr, wl_arr = _as_float64_arrays(radiance_W_m2_sr_nm, wavelength_nm)
     L_b, wl_b = np.broadcast_arrays(L_arr, wl_arr)
 
-    out = np.empty_like(L_b, dtype=np.float64)
-    it = np.nditer(
-        [L_b, wl_b, out],
-        flags=["multi_index"],
-        op_flags=[["readonly"], ["readonly"], ["writeonly"]],
-    )
-    for L_val, wl_val, out_ref in it:
-        evaluator = lambda temp, wl_val=wl_val: float(
-            planck_radiance_wavelength(float(wl_val), temp)
-        )
-        out_ref[...] = _binary_search_temperature(
-            float(L_val), float(wl_val), evaluator=evaluator, t_min=t_min, t_max=t_max
-        )
+    # Closed-form inversion of Planck's law avoids the per-element Python loop
+    # previously used for binary search while remaining consistent with the
+    # wavelength formulation of :func:`planck_radiance_wavelength`.
+    temps = radiance_to_bt_K(L_b, wl_b)
 
-    return out
+    temps = np.clip(temps, t_min, t_max)
+    return temps
 
 
 # ----------------------------------------------------------------------------
@@ -432,7 +427,8 @@ def invert_band_averaged_radiance_to_bt(
         Optional 1-D array of temperatures in Kelvin used to tabulate the
         band-averaged radiance look-up. If omitted a default grid spanning
         200–350 K in 0.25 K steps is used. Values must be strictly positive and
-        strictly increasing.
+        strictly increasing. Finer grids reduce interpolation error at the cost
+        of additional compute during table construction.
     strict:
         If ``True``, radiances that fall outside the look-up table range raise a
         ``ValueError``. If ``False`` (default) the inversion saturates to the
