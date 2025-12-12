@@ -26,7 +26,7 @@ from alchemi.spectral import BandMetadata, Sample, Spectrum, ViewingGeometry
 from alchemi.spectral.sample import GeoMeta
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
 from alchemi.types import ValueUnits
-from alchemi.srf.utils import build_gaussian_srf_matrix, default_band_widths, validate_srf_alignment
+from alchemi.srf.utils import build_gaussian_srf_matrix, resolve_band_widths, validate_srf_alignment
 
 from ..io.hytes import _ensure_kelvin, load_hytes_l1b_bt
 
@@ -48,15 +48,22 @@ def _load_ds(path: str) -> xr.Dataset:
 def _coerce_srf_matrix(
     wavelengths_nm: np.ndarray, *, srf_blind: bool
 ) -> tuple[
-    DenseSRFMatrix | None, str, np.ndarray | None, list[tuple[float, float]] | None, np.ndarray
+    DenseSRFMatrix | None,
+    str,
+    np.ndarray | None,
+    list[tuple[float, float]] | None,
+    np.ndarray,
+    np.ndarray,
 ]:
-    widths = default_band_widths("hytes", wavelengths_nm)
+    sensor_srf = None
     if not srf_blind:
         try:
             sensor_srf = srfs.get_sensor_srf("hytes")
         except Exception:
             sensor_srf = None
 
+    widths, width_from_default, _ = resolve_band_widths("hytes", wavelengths_nm, srf=sensor_srf)
+    if not srf_blind:
         if sensor_srf is not None and sensor_srf.band_centers_nm.shape[0] == wavelengths_nm.shape[0]:
             if np.allclose(sensor_srf.band_centers_nm, wavelengths_nm, atol=0.75):
                 dense = sensor_srf.as_matrix()
@@ -70,10 +77,10 @@ def _coerce_srf_matrix(
                 srf_bad_mask = None if sensor_srf.valid_mask is None else ~sensor_srf.valid_mask
                 raw_windows = sensor_srf.meta.get("bad_band_windows_nm") if sensor_srf.meta else None
                 srf_windows = None if raw_windows is None else [(float(a), float(b)) for a, b in raw_windows]
-                return dense, provenance, srf_bad_mask, srf_windows, raw_widths
+                return dense, provenance, srf_bad_mask, srf_windows, raw_widths, width_from_default
 
     dense = build_gaussian_srf_matrix(wavelengths_nm, widths, sensor="hytes")
-    return dense, "gaussian", None, None, widths
+    return dense, "gaussian", None, None, widths, width_from_default
 
 
 def _edge_mask(length: int) -> np.ndarray:
@@ -194,12 +201,20 @@ def _extract_detector_mask(ds: xr.Dataset) -> np.ndarray | None:
     return None
 
 
-def _band_metadata(wavelengths: np.ndarray, valid: np.ndarray, *, srf_source: str) -> BandMetadata:
+def _band_metadata(
+    wavelengths: np.ndarray,
+    valid: np.ndarray,
+    *,
+    srf_source: str,
+    widths: np.ndarray,
+    width_from_default: np.ndarray,
+) -> BandMetadata:
     return BandMetadata(
         center_nm=np.asarray(wavelengths, dtype=np.float64),
-        width_nm=np.full_like(wavelengths, np.nan, dtype=np.float64),
+        width_nm=np.asarray(widths, dtype=np.float64),
         valid_mask=np.asarray(valid, dtype=bool),
         srf_source=np.full_like(wavelengths, srf_source, dtype=object),
+        width_from_default=np.asarray(width_from_default, dtype=bool),
     )
 
 
@@ -226,7 +241,7 @@ def iter_hytes_pixels(path: str, *, srf_blind: bool = False) -> Iterable[Sample]
     band_mask = np.asarray(ds["band_mask"].values, dtype=bool) if "band_mask" in ds else None
     detector_mask = _extract_detector_mask(ds)
 
-    srf_matrix, srf_source, srf_bad_mask, srf_windows, widths = _coerce_srf_matrix(
+    srf_matrix, srf_source, srf_bad_mask, srf_windows, widths, width_from_default = _coerce_srf_matrix(
         wavelengths, srf_blind=srf_blind
     )
     valid, quality_base = _valid_band_mask(
@@ -236,11 +251,12 @@ def iter_hytes_pixels(path: str, *, srf_blind: bool = False) -> Iterable[Sample]
         srf_windows=srf_windows,
         detector_mask=detector_mask,
     )
-    band_meta = BandMetadata(
-        center_nm=np.asarray(wavelengths, dtype=np.float64),
-        width_nm=widths,
-        valid_mask=np.asarray(valid, dtype=bool),
-        srf_source=np.full_like(wavelengths, srf_source, dtype=object),
+    band_meta = _band_metadata(
+        wavelengths,
+        valid,
+        srf_source=srf_source,
+        widths=widths,
+        width_from_default=width_from_default,
     )
 
     for y in range(values.shape[0]):

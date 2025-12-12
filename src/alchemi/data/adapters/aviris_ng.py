@@ -28,7 +28,7 @@ from alchemi.spectral.sample import GeoMeta
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
 from alchemi.spectral.srf import SRFProvenance
 from alchemi.srf.registry import sensor_srf_from_legacy
-from alchemi.srf.utils import build_gaussian_srf_matrix, default_band_widths, validate_srf_alignment
+from alchemi.srf.utils import build_gaussian_srf_matrix, resolve_band_widths, validate_srf_alignment
 
 from ..io import load_avirisng_l1b
 
@@ -87,8 +87,8 @@ def _quality_masks(
 
 def _srf_matrix_for_avirisng(
     wavelengths: np.ndarray, *, srf_blind: bool, fwhm: np.ndarray | None
-) -> tuple[DenseSRFMatrix | None, SRFProvenance, np.ndarray]:
-    widths = fwhm if fwhm is not None else default_band_widths("avirisng", wavelengths)
+) -> tuple[DenseSRFMatrix | None, SRFProvenance, np.ndarray, np.ndarray]:
+    sensor_srf = None
     if not srf_blind:
         try:
             legacy = srfs.get_srf("aviris-ng")
@@ -98,15 +98,17 @@ def _srf_matrix_for_avirisng(
             sensor_srf = sensor_srf_from_legacy(
                 legacy, grid=wavelengths, provenance=SRFProvenance.OFFICIAL
             )
-            if sensor_srf.band_centers_nm.shape[0] == wavelengths.shape[0] and np.allclose(
-                sensor_srf.band_centers_nm, wavelengths, atol=0.75
-            ):
+
+    widths, width_from_default, _ = resolve_band_widths("avirisng", wavelengths, fwhm=fwhm, srf=sensor_srf)
+    if not srf_blind:
+        if sensor_srf is not None and sensor_srf.band_centers_nm.shape[0] == wavelengths.shape[0]:
+            if np.allclose(sensor_srf.band_centers_nm, wavelengths, atol=0.75):
                 matrix = sensor_srf.as_matrix()
                 validate_srf_alignment(wavelengths, matrix.matrix, centers_nm=wavelengths)
-                return matrix, sensor_srf.provenance, widths
+                return matrix, sensor_srf.provenance, widths, width_from_default
 
     gaussian = build_gaussian_srf_matrix(wavelengths, widths, sensor="aviris-ng")
-    return gaussian, SRFProvenance.GAUSSIAN, widths
+    return gaussian, SRFProvenance.GAUSSIAN, widths, width_from_default
 
 
 def _band_meta(
@@ -114,6 +116,7 @@ def _band_meta(
     valid_mask: np.ndarray,
     width_nm: np.ndarray,
     provenance: SRFProvenance,
+    width_from_default: np.ndarray,
 ) -> dict[str, np.ndarray]:
     srf_source = np.full(wavelengths.shape[0], provenance.value, dtype=object)
     return {
@@ -121,6 +124,7 @@ def _band_meta(
         "width_nm": width_nm,
         "valid_mask": valid_mask,
         "srf_source": srf_source,
+        "width_from_default": width_from_default,
     }
 
 
@@ -205,7 +209,7 @@ def _build_sample(
     band_mask = np.asarray(band_mask, dtype=bool)
     valid_mask = band_mask & ~deep_water_vapour
     fwhm = np.asarray(ds["fwhm_nm"].values, dtype=np.float64) if "fwhm_nm" in ds else None
-    srf_matrix, provenance, widths = _srf_matrix_for_avirisng(
+    srf_matrix, provenance, widths, width_from_default = _srf_matrix_for_avirisng(
         wavelengths, srf_blind=srf_blind, fwhm=fwhm
     )
 
@@ -232,7 +236,7 @@ def _build_sample(
         spectrum=spectrum,
         sensor_id=str(ds.attrs.get("sensor", "aviris-ng")),
         srf_matrix=srf_matrix,
-        band_meta=_band_meta(wavelengths, valid_mask, widths, provenance),
+        band_meta=_band_meta(wavelengths, valid_mask, widths, provenance, width_from_default),
         quality_masks=_quality_masks(valid_mask, deep_water_vapour=deep_water_vapour),
         ancillary=ancillary,
         viewing_geometry=viewing_geometry,

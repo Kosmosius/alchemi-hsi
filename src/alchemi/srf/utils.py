@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 from ..types import SRFMatrix
 from ..utils.integrate import np_integrate as _np_integrate
 from .fallback import gaussian_srf
-from ..spectral.srf import SRFMatrix as DenseSRFMatrix
+from ..spectral.srf import SRFMatrix as DenseSRFMatrix, SensorSRF
 from .synthetic import estimate_fwhm
 
 if TYPE_CHECKING:
@@ -240,6 +240,95 @@ def default_band_widths(
     return np.asarray(widths, dtype=np.float64)
 
 
+def _widths_from_srf(axis_nm: np.ndarray, srf: object) -> NDArray[np.float64] | None:
+    """Derive band widths from a concrete SRF payload when aligned."""
+
+    wavelengths = np.asarray(axis_nm, dtype=np.float64)
+    if wavelengths.ndim != 1:
+        raise ValueError("axis_nm must be one-dimensional")
+
+    if isinstance(srf, SensorSRF):
+        centers = np.asarray(srf.band_centers_nm, dtype=np.float64)
+        if centers.shape != wavelengths.shape or not np.allclose(centers, wavelengths, atol=1e-3):
+            return None
+        if srf.band_widths_nm is not None:
+            widths = np.asarray(srf.band_widths_nm, dtype=np.float64)
+        else:
+            widths = np.asarray(
+                [estimate_fwhm(srf.wavelength_grid_nm, row) for row in srf.srfs], dtype=np.float64
+            )
+        return widths
+
+    if isinstance(srf, DenseSRFMatrix):
+        wl = np.asarray(srf.wavelength_nm, dtype=np.float64)
+        matrix = np.asarray(srf.matrix, dtype=np.float64)
+        if matrix.shape[0] != wavelengths.shape[0] or matrix.shape[1] != wl.shape[0]:
+            return None
+        if not np.allclose(wavelengths, wl, atol=1e-6):
+            return None
+        return np.asarray([estimate_fwhm(wl, row) for row in matrix], dtype=np.float64)
+
+    try:
+        from alchemi.types import SRFMatrix as LegacySRFMatrix
+    except Exception:  # pragma: no cover - defensive
+        LegacySRFMatrix = None  # type: ignore[assignment]
+
+    if LegacySRFMatrix is not None and isinstance(srf, LegacySRFMatrix):
+        centers = np.asarray(srf.centers_nm, dtype=np.float64)
+        if centers.shape != wavelengths.shape or not np.allclose(centers, wavelengths, atol=1e-3):
+            return None
+        widths = [estimate_fwhm(nm, resp) for nm, resp in zip(srf.bands_nm, srf.bands_resp, strict=True)]
+        return np.asarray(widths, dtype=np.float64)
+
+    return None
+
+
+def resolve_band_widths(
+    sensor_id: str | None,
+    axis_nm: np.ndarray,
+    *,
+    fwhm: np.ndarray | None = None,
+    registry: "SRFRegistry" | None = None,
+    srf: object | None = None,
+) -> tuple[NDArray[np.float64], NDArray[np.bool_], str]:
+    """Resolve band widths following the SRF-first policy.
+
+    Returns
+    -------
+    widths:
+        Array of per-band widths aligned with ``axis_nm``.
+    width_from_default:
+        Boolean mask indicating which bands relied on the default heuristic
+        (True when no SRF or FWHM information was available).
+    source:
+        Text label describing the winning source (``"srf"``, ``"fwhm"``, or
+        ``"default"``).
+    """
+
+    wavelengths = np.asarray(axis_nm, dtype=np.float64)
+    sensor = sensor_id.lower() if sensor_id else None
+
+    sensor_srf = srf
+    if sensor_srf is None and sensor in _KNOWN_SENSORS:
+        sensor_srf = load_sensor_srf(sensor, registry=registry)
+
+    widths_from_srf = _widths_from_srf(wavelengths, sensor_srf) if sensor_srf is not None else None
+    if widths_from_srf is not None:
+        return np.asarray(widths_from_srf, dtype=np.float64), np.zeros_like(wavelengths, dtype=bool), "srf"
+
+    if fwhm is not None:
+        fwhm_arr = np.asarray(fwhm, dtype=np.float64)
+        if fwhm_arr.ndim == 0:
+            fwhm_arr = np.full(wavelengths.shape, float(fwhm_arr), dtype=np.float64)
+        if fwhm_arr.shape != wavelengths.shape:
+            msg = f"fwhm must align with axis_nm; expected {wavelengths.shape}, got {fwhm_arr.shape}"
+            raise ValueError(msg)
+        return fwhm_arr, np.zeros_like(wavelengths, dtype=bool), "fwhm"
+
+    widths = default_band_widths(sensor, wavelengths, registry=registry, srf=None)
+    return widths, np.ones_like(wavelengths, dtype=bool), "default"
+
+
 def build_gaussian_srf_matrix(
     axis_nm: np.ndarray,
     width_nm: np.ndarray,
@@ -327,6 +416,7 @@ def _band_spacing(axis_nm: np.ndarray) -> NDArray[np.float64]:
 
 __all__ = [
     "build_srf_band_embeddings",
+    "resolve_band_widths",
     "default_band_widths",
     "check_flat_spectrum_invariant",
     "build_gaussian_srf_matrix",
