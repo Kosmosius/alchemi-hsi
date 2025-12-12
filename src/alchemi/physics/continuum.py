@@ -395,6 +395,30 @@ def _extract_value(wl: np.ndarray, vals: np.ndarray, target: float) -> float:
     return float(np.interp(target, wl[valid], vals[valid]))
 
 
+def _interp_scalar_all(wl: np.ndarray, vals: np.ndarray, target: float) -> np.ndarray:
+    """Vectorised scalar interpolation along the spectral axis.
+
+    ``vals`` may contain arbitrary leading spatial dimensions with wavelengths on
+    the last axis. A single target wavelength is interpolated for all spectra
+    in one pass, avoiding Python loops over pixels.
+    """
+
+    if vals.shape[-1] != wl.size:
+        msg = "values last dimension must match wavelength grid length"
+        raise ValueError(msg)
+
+    idx = np.searchsorted(wl, target, side="left")
+    idx = np.clip(idx, 1, wl.size - 1)
+
+    x0 = wl[idx - 1]
+    x1 = wl[idx]
+    y0 = vals[..., idx - 1]
+    y1 = vals[..., idx]
+
+    weight = (target - x0) / (x1 - x0)
+    return y0 + weight * (y1 - y0)
+
+
 def _mask_values(values: np.ndarray, mask: np.ndarray | None) -> np.ndarray:
     return np.where(mask, np.nan, values) if mask is not None else values
 
@@ -431,29 +455,20 @@ def _ensure_continuum_removed(
 def _band_window(wl: np.ndarray, values: np.ndarray, band: BandDefinition) -> tuple[np.ndarray, np.ndarray]:
     within = (wl >= band.lambda_left_nm) & (wl <= band.lambda_right_nm)
     wl_band = wl[within]
-    vals_band = values[within]
+    vals_band = values[..., within]
     if wl_band.size < 2:
         wl_band = np.asarray([band.lambda_left_nm, band.lambda_right_nm], dtype=np.float64)
-        vals_band = np.asarray(
-            [
-                _extract_value(wl, values, band.lambda_left_nm),
-                _extract_value(wl, values, band.lambda_right_nm),
-            ]
-        )
-    return wl_band, vals_band
+        left = _interp_scalar_all(wl, values, band.lambda_left_nm)
+        right = _interp_scalar_all(wl, values, band.lambda_right_nm)
+        vals_band = np.stack([left, right], axis=-1)
+    return wl_band, np.asarray(vals_band)
 
 
 def _band_depth_from_removed(continuum_removed: Spectrum, band: BandDefinition) -> float | np.ndarray:
     wl, vals = _validate_reflectance_spectrum(continuum_removed)
     vals = _mask_values(vals, continuum_removed.mask)
-    flat_vals = vals.reshape(-1, wl.size)
-    depths: list[float] = []
-
-    for spec_vals in flat_vals:
-        center_val = _extract_value(wl, spec_vals, band.lambda_center_nm)
-        depths.append(1.0 - center_val)
-
-    return _reshape_output(depths, vals.shape[:-1])
+    center_vals = _interp_scalar_all(wl, vals, band.lambda_center_nm)
+    return 1.0 - center_vals
 
 
 def _compute_band_depth_removed(continuum_removed: Spectrum, band: BandDefinition) -> float | np.ndarray:
@@ -465,19 +480,13 @@ def compute_band_area(continuum_removed: Spectrum, band: BandDefinition) -> floa
 
     wl, vals = _validate_reflectance_spectrum(continuum_removed)
     vals = _mask_values(vals, continuum_removed.mask)
-    flat_vals = vals.reshape(-1, wl.size)
-    areas: list[float] = []
+    wl_band, removed_band = _band_window(wl, vals, band)
+    valid = np.asarray(np.count_nonzero(np.isfinite(removed_band), axis=-1))
+    if wl_band.size < 2 or np.min(valid, initial=2) < 2:
+        return np.full(vals.shape[:-1], float("nan"))
 
-    for spec_vals in flat_vals:
-        wl_band, removed_band = _band_window(wl, spec_vals, band)
-        valid = np.isfinite(removed_band)
-        if np.count_nonzero(valid) < 2:
-            areas.append(float("nan"))
-            continue
-        area = np.trapezoid(1.0 - removed_band[valid], wl_band[valid])
-        areas.append(float(area))
-
-    return _reshape_output(areas, vals.shape[:-1])
+    area = np.trapezoid(1.0 - removed_band, wl_band, axis=-1)
+    return area
 
 
 def compute_band_asymmetry(continuum_removed: Spectrum, band: BandDefinition) -> float | np.ndarray:
@@ -485,24 +494,22 @@ def compute_band_asymmetry(continuum_removed: Spectrum, band: BandDefinition) ->
 
     wl, vals = _validate_reflectance_spectrum(continuum_removed)
     vals = _mask_values(vals, continuum_removed.mask)
-    flat_vals = vals.reshape(-1, wl.size)
-    asym: list[float] = []
+    wl_band, removed_band = _band_window(wl, vals, band)
+    valid = np.asarray(np.count_nonzero(np.isfinite(removed_band), axis=-1))
+    if wl_band.size < 2 or np.min(valid, initial=2) < 2:
+        return np.full(vals.shape[:-1], float("nan"))
 
-    for spec_vals in flat_vals:
-        wl_band, removed_band = _band_window(wl, spec_vals, band)
-        valid = np.isfinite(removed_band)
-        if np.count_nonzero(valid) < 2:
-            asym.append(float("nan"))
-            continue
-        wl_band = wl_band[valid]
-        removed_band = removed_band[valid]
-        left_mask = wl_band <= band.lambda_center_nm
-        right_mask = wl_band >= band.lambda_center_nm
-        left_area = np.trapezoid(1.0 - removed_band[left_mask], wl_band[left_mask]) if np.any(left_mask) else 0.0
-        right_area = np.trapezoid(1.0 - removed_band[right_mask], wl_band[right_mask]) if np.any(right_mask) else 0.0
-        asym.append(float(left_area / right_area) if right_area != 0 else float("nan"))
+    left_mask = wl_band <= band.lambda_center_nm
+    right_mask = wl_band >= band.lambda_center_nm
 
-    return _reshape_output(asym, vals.shape[:-1])
+    left_area = np.trapezoid(1.0 - removed_band[..., left_mask], wl_band[left_mask], axis=-1)
+    right_area = np.trapezoid(1.0 - removed_band[..., right_mask], wl_band[right_mask], axis=-1)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        asymmetry = left_area / right_area
+
+    asymmetry = np.where(right_area == 0, np.nan, asymmetry)
+    return asymmetry
 
 
 def compute_band_metrics(
