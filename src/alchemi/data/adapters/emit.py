@@ -256,11 +256,14 @@ def iter_emit_pixels(
     valid_mask = np.asarray(quality_base["valid_band"], dtype=bool)
     if valid_mask.ndim == 3:
         valid_mask = valid_mask[0, 0, :]
+    provenance = np.full_like(wavelengths, srf_source, dtype=object)
     band_meta = BandMetadata(
         center_nm=wavelengths,
         width_nm=widths,
         valid_mask=valid_mask,
-        srf_source=np.full_like(wavelengths, srf_source, dtype=object),
+        srf_source=provenance,
+        srf_provenance=provenance,
+        srf_approximate=np.full_like(wavelengths, srf_source != "official", dtype=bool),
         width_from_default=width_from_default,
     )
 

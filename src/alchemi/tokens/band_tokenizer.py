@@ -43,6 +43,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ..srf.utils import resolve_band_widths
+from ..spectral.srf import SRFProvenance
 
 AxisUnit = Literal["nm", "cm-1"]
 ValueNorm = Literal["none", "per_spectrum_zscore", "global_zscore", "robust"]
@@ -66,9 +67,11 @@ class BandTokConfig:
     lambda_unit: AxisUnit = "nm"
     include_width: bool = True
     include_srf_embed: bool = False
+    include_srf_provenance: bool = False
     token_dim: int = 0
     axis_norm: Literal["zscore", "minmax"] = "zscore"
     srf_embed_dim: int = 8
+    srf_provenance_embed_dim: int = 3
     projection_seed: int = 7
     sensor_id: str | None = None
     epsilon: float = 1e-6
@@ -84,6 +87,7 @@ class TokenMeta:
     n_fourier_frequencies: int
     include_width: bool
     include_srf_embed: bool
+    include_srf_provenance: bool
     invalid_mask: np.ndarray
     used_default_width: bool
 
@@ -109,6 +113,7 @@ class BandTokenizer:
         self._stats = stats
         self._feature_proj: FloatArray | None = None
         self._srf_proj: FloatArray | None = None
+        self._srf_prov_embed: FloatArray | None = None
 
     @property
     def config(self) -> BandTokConfig:
@@ -123,6 +128,7 @@ class BandTokenizer:
         width: npt.ArrayLike | float | None = None,
         width_from_default: npt.ArrayLike | bool | None = None,
         srf_row: np.ndarray | None = None,
+        srf_provenance: npt.ArrayLike | str | None = None,
     ) -> Tokens:
         cfg = self._config
 
@@ -167,11 +173,17 @@ class BandTokenizer:
         if cfg.include_srf_embed and srf_row is not None:
             srf_features = self._compress_srf_features(srf_row)
 
+        provenance_features = None
+        if cfg.include_srf_provenance and srf_provenance is not None:
+            provenance_features = self._encode_provenance(srf_provenance, channels)
+
         features = [norm_values[:, None], axis_features[:, None], fourier]
         if width_features is not None:
             features.append(width_features[:, None])
         if srf_features is not None:
             features.append(srf_features)
+        if provenance_features is not None:
+            features.append(provenance_features)
         raw = np.concatenate([feat for feat in features if feat.size], axis=1).astype(
             np.float64, copy=False
         )
@@ -186,6 +198,7 @@ class BandTokenizer:
             n_fourier_frequencies=cfg.n_fourier_frequencies,
             include_width=cfg.include_width,
             include_srf_embed=cfg.include_srf_embed,
+            include_srf_provenance=cfg.include_srf_provenance,
             invalid_mask=invalid_mask,
             used_default_width=used_default,
         )
@@ -323,6 +336,32 @@ class BandTokenizer:
             proj = proj / norms
             self._srf_proj = proj
         return (rows @ proj).astype(np.float64, copy=False)
+
+    def _encode_provenance(
+        self, provenance: npt.ArrayLike | str, channels: int
+    ) -> FloatArray:
+        cfg = self._config
+        prov_arr = np.asarray(provenance, dtype=object)
+        if prov_arr.ndim == 0:
+            prov_arr = np.full(channels, prov_arr.item(), dtype=object)
+        prov_arr = prov_arr.reshape(-1)
+        if prov_arr.shape[0] != channels:
+            msg = f"srf_provenance must align with spectral axis; expected {channels}, got {prov_arr.shape[0]}"
+            raise ValueError(msg)
+
+        embed = self._srf_prov_embed
+        if embed is None or embed.shape[1] != cfg.srf_provenance_embed_dim:
+            rng = np.random.default_rng(cfg.projection_seed + 2)
+            embed = rng.standard_normal((len(SRFProvenance), cfg.srf_provenance_embed_dim))
+            self._srf_prov_embed = embed
+
+        idx_map = {prov.value: idx for idx, prov in enumerate(SRFProvenance)}
+        encoded = np.empty((channels, cfg.srf_provenance_embed_dim), dtype=np.float64)
+        for i, label in enumerate(prov_arr):
+            key = str(label).lower()
+            idx = idx_map.get(key, idx_map[SRFProvenance.NONE.value])
+            encoded[i] = embed[idx]
+        return encoded.astype(np.float64, copy=False)
 
     def _project_features(self, features: FloatArray) -> FloatArray:
         cfg = self._config

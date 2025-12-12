@@ -13,7 +13,7 @@ class SensorSpec:
     wavelength_range_nm: Tuple[float, float]
     band_centers_nm: np.ndarray
     band_widths_nm: np.ndarray
-    srf_source: Literal["official", "gaussian", "none"]
+    srf_source: Literal["official", "gaussian", "none", "synthetic"]
     bad_band_mask: np.ndarray | None = None
     absorption_windows_nm: Sequence[tuple[float, float]] | None = None
     notes: str | None = None
