@@ -7,3 +7,4 @@ srf_robustness: true
 heavy_atmosphere: false
 teacher_noise: false
 coverage: true
+perturbation_mode: axis
