@@ -11,10 +11,11 @@ import numpy as np
 
 from alchemi.spectral import Sample, Spectrum
 from alchemi.spectral.sample import BandMetadata
-from alchemi.srf.registry import get_srf
+from alchemi.srf.registry import get_srf, sensor_srf_from_legacy
 from alchemi.srf.resample import resample_values_with_srf
+from alchemi.srf.synthetic import SRFJitterConfig, jitter_sensor_srf
 from alchemi.srf.utils import resolve_band_widths
-from alchemi.types import QuantityKind, ReflectanceUnits
+from alchemi.types import QuantityKind, ReflectanceUnits, SRFMatrix
 
 
 @dataclass(slots=True)
@@ -168,6 +169,35 @@ def _apply_noise(
     return out[0] if squeeze else out
 
 
+def _maybe_jitter_srf(
+    sensor_srf: Any, jitter_cfg: SRFJitterConfig | None
+) -> Any:
+    if jitter_cfg is None or not jitter_cfg.enabled:
+        return sensor_srf
+
+    canonical = sensor_srf
+    if isinstance(sensor_srf, SRFMatrix):
+        canonical = sensor_srf_from_legacy(sensor_srf)
+    if not hasattr(canonical, "band_centers_nm"):
+        return sensor_srf
+
+    return jitter_sensor_srf(canonical, jitter_cfg, rng=jitter_cfg.generator())
+
+
+def _ensure_sensor_srf(sensor_srf: Any) -> Any:
+    if isinstance(sensor_srf, SRFMatrix):
+        return sensor_srf_from_legacy(sensor_srf)
+    return sensor_srf
+
+
+def _sensor_identifier(sensor_srf: Any) -> str:
+    if hasattr(sensor_srf, "sensor_id"):
+        return str(getattr(sensor_srf, "sensor_id"))
+    if hasattr(sensor_srf, "sensor"):
+        return str(getattr(sensor_srf, "sensor"))
+    return "unknown"
+
+
 def _pairs_from_projection(
     lab_batch: Sequence[_LabSpectrum],
     lab_wavelengths: np.ndarray,
@@ -246,6 +276,7 @@ def build_emit_pairs(
     lab_batch: Sequence[_LabSpectrum],
     *,
     srf: str = "emit",
+    srf_jitter_cfg: SRFJitterConfig | None = None,
     noise_cfg: NoiseConfig | None = None,
 ) -> list[PairBatch]:
     """Project high-resolution lab spectra onto EMIT bands and bundle pairs."""
@@ -261,6 +292,8 @@ def build_emit_pairs(
 
         sensor_srf = build_emit_sensor_srf(wavelength_grid_nm=lab_wl)  # type: ignore[arg-type]
         register_sensor_srf(sensor_srf)
+    sensor_srf = _ensure_sensor_srf(sensor_srf)
+    sensor_srf = _maybe_jitter_srf(sensor_srf, srf_jitter_cfg)
     sensor, centers = resample_values_with_srf(lab_vals, lab_wl, sensor_srf)
     if sensor.ndim == 1:
         sensor = sensor[None, :]
@@ -271,7 +304,7 @@ def build_emit_pairs(
 
     sensor_wl = centers.astype(np.float64, copy=True)
 
-    sensor_name = sensor_srf.sensor_id
+    sensor_name = _sensor_identifier(sensor_srf)
     return _pairs_from_projection(
         lab_batch,
         lab_wl,
@@ -290,6 +323,7 @@ def build_enmap_pairs(
     cache_dir: str | Path | None = "data/srf",
     noise_level_rel_vnir: float = 0.0,
     noise_level_rel_swir: float = 0.0,
+    srf_jitter_cfg: SRFJitterConfig | None = None,
     noise_cfg: NoiseConfig | None = None,
 ) -> list[PairBatch]:
     """Project lab spectra to the EnMAP VNIR+SWIR grid with optional noise."""
@@ -304,6 +338,8 @@ def build_enmap_pairs(
         from alchemi.srf.enmap import build_enmap_sensor_srf
 
         sensor_srf = build_enmap_sensor_srf(cache_dir=cache_root)
+    sensor_srf = _ensure_sensor_srf(sensor_srf)
+    sensor_srf = _maybe_jitter_srf(sensor_srf, srf_jitter_cfg)
     sensor, centers = resample_values_with_srf(lab_vals, lab_wl, sensor_srf)
     mask = getattr(sensor_srf, "valid_mask", None)
 
@@ -316,7 +352,7 @@ def build_enmap_pairs(
     rng = cfg.generator()
     sensor_noisy = _apply_noise(sensor, cfg, rng=rng, override_levels=override_levels)
 
-    sensor_name = sensor_srf.sensor_id
+    sensor_name = _sensor_identifier(sensor_srf)
     return _pairs_from_projection(
         lab_batch,
         lab_wl,
@@ -334,6 +370,7 @@ def build_avirisng_pairs(
     *,
     cache_dir: str | Path | None = None,
     noise: float | Sequence[float] | np.ndarray | None = None,
+    srf_jitter_cfg: SRFJitterConfig | None = None,
     noise_cfg: NoiseConfig | None = None,
 ) -> list[PairBatch]:
     """Project lab spectra onto the AVIRIS-NG grid and optionally inject noise."""
@@ -347,15 +384,17 @@ def build_avirisng_pairs(
         from alchemi.srf.avirisng import build_avirisng_sensor_srf
 
         sensor_srf = build_avirisng_sensor_srf(cache_dir=cache_dir)
+    sensor_srf = _ensure_sensor_srf(sensor_srf)
     centers = np.asarray(sensor_srf.band_centers_nm, dtype=np.float64)
     mask = getattr(sensor_srf, "valid_mask", None)
 
+    sensor_srf = _maybe_jitter_srf(sensor_srf, srf_jitter_cfg)
     sensor, _ = resample_values_with_srf(lab_vals, lab_wl, sensor_srf)
     cfg = noise_cfg or NoiseConfig()
     rng = cfg.generator()
     sensor_noisy = _apply_noise(sensor, cfg, rng=rng, override_levels=noise)
 
-    sensor_name = sensor_srf.sensor_id
+    sensor_name = _sensor_identifier(sensor_srf)
     return _pairs_from_projection(
         lab_batch,
         lab_wl,
@@ -375,6 +414,7 @@ build_emits_pairs = build_emit_pairs
 __all__ = [
     "NoiseConfig",
     "PairBatch",
+    "SRFJitterConfig",
     "build_avirisng_pairs",
     "build_emit_pairs",
     "build_emits_pairs",
