@@ -1,4 +1,24 @@
-"""Continuum removal and absorption feature metrics."""
+"""Continuum removal and absorption feature metrics.
+
+This module implements the continuum-removal pipeline described in Section 5.4
+of the ALCHEMI spec. It provides helpers to derive convex-hull or anchor-based
+continua, perform continuum normalisation, and quantify absorption features via
+band depth, area, asymmetry, and composite ratios. All functions expect
+reflectance-like spectra (surface, TOA, or laboratory) on a monotonically
+increasing nanometre grid and treat reflectance values as dimensionless
+fractions. Public entry points:
+
+* :func:`continuum_remove` for dividing a spectrum by its continuum.
+* :func:`compute_band_depth`, :func:`compute_band_area`,
+  :func:`compute_band_asymmetry`, and :func:`compute_band_metrics` for band
+  analytics on continuum-removed spectra.
+* :func:`build_continuum` / :func:`compute_anchor_continuum` for explicitly
+  constructing continua prior to removal.
+
+Continuum estimation assumes broad, concave absorption features; convex hulls
+are used by default with optional spline smoothing. Values are not clipped, so
+input validation (e.g., non-negative reflectance) should be handled upstream.
+"""
 
 from __future__ import annotations
 

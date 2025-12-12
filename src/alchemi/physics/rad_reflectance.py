@@ -1,21 +1,26 @@
 """Radiance and top-of-atmosphere reflectance conversions.
 
-All helpers operate on canonical :class:`~alchemi.spectral.sample.Sample`
-payloads: radiance in W·m⁻²·sr⁻¹·nm⁻¹ on a nanometre grid and reflectance as a
-unitless fraction. The routines mirror Section-4 semantics and preserve masks
-and metadata when moving between radiance and TOA reflectance.
+This module contains the recommended entry points for moving between Level-1B
+radiance and TOA reflectance as described in Section 5.2. Public functions:
 
-Notes on physical validity
---------------------------
-These conversions use the simplified TOA formulation from Section 5.2 which
-assumes moderate atmospheres (``SWIRRegime.TRUSTED``). Under heavy atmospheric
-conditions (e.g., high PWV/AOD or severe haze) the approximation can introduce
-spectral distortions.
+* :func:`radiance_to_toa_reflectance` /
+  :func:`radiance_sample_to_toa_reflectance` for forward conversion using Esun,
+  Earth–Sun distance, and solar zenith.
+* :func:`toa_reflectance_to_radiance` /
+  :func:`toa_reflectance_sample_to_radiance` for the inverse.
+
+Assumptions and units
+---------------------
+Radiance must be W·m⁻²·sr⁻¹·nm⁻¹ on a nanometre grid and reflectance is treated
+as a dimensionless fraction. Callers are responsible for supplying band-matched
+solar irradiance (E_sun) and solar geometry metadata; helpers will resample
+Esun using the standard SRF machinery. Conversions assume the trusted SWIR
+regime (``SWIRRegime.TRUSTED``) with moderate atmospheres—heavy haze, large PWV,
+or high AOD can degrade accuracy.
 
 The physics layer **does not perform atmospheric correction**—surface
 reflectance retrieval must come from upstream L2A products produced by mission
-pipelines or external radiative transfer tools. The helpers here are TOA-only
-and rely on caller-provided solar geometry metadata.
+pipelines or external radiative transfer tools. The helpers here are TOA-only.
 """
 
 from __future__ import annotations

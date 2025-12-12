@@ -1,10 +1,13 @@
 """Planck-law utilities for spectral radiance and brightness temperature.
 
-This module implements wavelength-form Planck conversions, their inverses, and
-helpers for band-averaged brightness temperatures consistent with the ALCHEMI
-design doc (Section 5.1). Functions operate on canonical
-``alchemi.spectral.Spectrum``/``Sample`` payloads and dense SRF matrices without
-relying on SciPy.
+Implements the LWIR radiance ↔ brightness-temperature conversions from Section
+5.1, including per-wavelength evaluations and SRF-aware band-averaged inverses.
+Use :func:`radiance_to_bt` / :func:`bt_to_radiance` for scalar wavelengths,
+:func:`radiance_spectrum_to_bt` / :func:`bt_spectrum_to_radiance` for spectral
+payloads, and the ``*_band``/``band_averaged_radiance`` helpers when SRFs are
+available. Wavelength inputs are nanometres and radiance is expected in
+W·m⁻²·sr⁻¹·nm⁻¹; brightness temperatures are Kelvin by default but other units
+are supported through :class:`~alchemi.types.TemperatureUnits`.
 """
 
 from __future__ import annotations
