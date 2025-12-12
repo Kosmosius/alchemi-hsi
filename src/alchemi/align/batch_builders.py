@@ -13,6 +13,7 @@ from alchemi.spectral import Sample, Spectrum
 from alchemi.spectral.sample import BandMetadata
 from alchemi.srf.registry import get_srf
 from alchemi.srf.resample import resample_values_with_srf
+from alchemi.srf.utils import resolve_band_widths
 from alchemi.types import QuantityKind, ReflectanceUnits
 
 
@@ -200,16 +201,17 @@ def _pairs_from_projection(
     else:
         valid_mask = np.ones_like(sensor_wl, dtype=bool)
 
-    widths = (
-        np.zeros_like(sensor_wl)
-        if band_widths_nm is None
-        else np.asarray(band_widths_nm, dtype=np.float64)
-    )
+    if band_widths_nm is None:
+        widths, width_from_default, _ = resolve_band_widths(sensor_id, sensor_wl)
+    else:
+        widths = np.asarray(band_widths_nm, dtype=np.float64)
+        width_from_default = np.zeros_like(widths, dtype=bool)
     band_meta = BandMetadata(
         center_nm=sensor_wl,
         width_nm=widths,
         valid_mask=valid_mask,
         srf_source=np.full(sensor_wl.shape, sensor_id),
+        width_from_default=width_from_default,
     )
 
     pairs: list[PairBatch] = []

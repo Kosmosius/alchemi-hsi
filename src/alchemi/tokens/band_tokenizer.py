@@ -42,7 +42,7 @@ from typing import Literal, TypeAlias
 import numpy as np
 import numpy.typing as npt
 
-from ..srf.utils import default_band_widths
+from ..srf.utils import resolve_band_widths
 
 AxisUnit = Literal["nm", "cm-1"]
 ValueNorm = Literal["none", "per_spectrum_zscore", "global_zscore", "robust"]
@@ -121,6 +121,7 @@ class BandTokenizer:
         *,
         axis_unit: AxisUnit,
         width: npt.ArrayLike | float | None = None,
+        width_from_default: npt.ArrayLike | bool | None = None,
         srf_row: np.ndarray | None = None,
     ) -> Tokens:
         cfg = self._config
@@ -157,7 +158,9 @@ class BandTokenizer:
         width_features = None
         used_default = False
         if cfg.include_width:
-            width_nm, used_default = self._resolve_width(width, axis_nm, axis_unit)
+            width_nm, used_default = self._resolve_width(
+                width, axis_nm, axis_unit, width_from_default=width_from_default
+            )
             width_features = self._normalise_width(width_nm)
 
         srf_features = None
@@ -259,6 +262,8 @@ class BandTokenizer:
         width: Sequence[float] | float | None,
         axis_nm: FloatArray,
         axis_unit: AxisUnit,
+        *,
+        width_from_default: Sequence[bool] | bool | None = None,
     ) -> tuple[FloatArray, bool]:
         cfg = self._config
         if width is not None:
@@ -275,10 +280,22 @@ class BandTokenizer:
                 # Convert from wavenumber (cm^-1) to nanometres via derivative dλ/dnu.
                 nu = 1.0e7 / axis_nm
                 arr = (1.0e7 / (nu**2)) * arr
-            return arr.astype(np.float64, copy=False), False
+            if width_from_default is None:
+                default_mask = np.zeros_like(arr, dtype=bool)
+            else:
+                default_mask = np.asarray(width_from_default, dtype=bool)
+                if default_mask.ndim == 0:
+                    default_mask = np.full(arr.shape, bool(default_mask), dtype=bool)
+                if default_mask.shape != arr.shape:
+                    raise ValueError(
+                        "width_from_default must be broadcastable to the spectral axis"
+                    )
+            return arr.astype(np.float64, copy=False), bool(np.any(default_mask))
 
-        widths = default_band_widths(cfg.sensor_id, axis_nm)
-        return widths.astype(np.float64, copy=False), True
+        resolved, default_mask, _ = resolve_band_widths(
+            cfg.sensor_id, axis_nm, registry=None, srf=None
+        )
+        return resolved.astype(np.float64, copy=False), bool(np.any(default_mask))
 
     def _normalise_width(self, width_nm: FloatArray) -> FloatArray:
         eps = self._config.epsilon

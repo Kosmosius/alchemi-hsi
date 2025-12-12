@@ -29,7 +29,7 @@ from alchemi.spectral.sample import GeoMeta
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
 from alchemi.types import QuantityKind, ValueUnits, WavelengthGrid
 from alchemi.physics import units as qty_units
-from alchemi.srf.utils import build_gaussian_srf_matrix, default_band_widths, validate_srf_alignment
+from alchemi.srf.utils import build_gaussian_srf_matrix, resolve_band_widths, validate_srf_alignment
 
 from ..io.emit import WATER_VAPOR_WINDOWS_NM, load_emit_l1b
 from ...io.emit_l2b import iter_high_confident_pixels, load_emit_l2b
@@ -175,30 +175,38 @@ def _resolve_emit_srf(
     *,
     srf_blind: bool,
 ) -> tuple[
-    DenseSRFMatrix | None, np.ndarray, str, str, np.ndarray | None, list[tuple[float, float]] | None
+    DenseSRFMatrix | None,
+    np.ndarray,
+    str,
+    str,
+    np.ndarray | None,
+    list[tuple[float, float]] | None,
+    np.ndarray,
 ]:
-    widths = default_band_widths("emit", wavelengths)
     srf_matrix: DenseSRFMatrix | None = None
     srf_source = "none"
     srf_mode = "srf-blind" if srf_blind else "srf-aware"
     srf_bad_mask: np.ndarray | None = None
     srf_bad_windows: list[tuple[float, float]] | None = None
+    sensor_srf = None
 
     if not srf_blind:
         try:
             sensor_srf = srfs.get_sensor_srf("emit")
         except FileNotFoundError:
             sensor_srf = None
-        if sensor_srf is not None and sensor_srf.band_centers_nm.shape[0] == wavelengths.shape[0]:
-            if np.allclose(sensor_srf.band_centers_nm, wavelengths, atol=0.5):
-                dense = sensor_srf.as_matrix()
-                validate_srf_alignment(wavelengths, dense.matrix, centers_nm=wavelengths)
-                srf_matrix = dense
-                srf_source = sensor_srf.provenance.value
-                srf_bad_mask = None if sensor_srf.valid_mask is None else ~sensor_srf.valid_mask
-                raw_windows = sensor_srf.meta.get("bad_band_windows_nm") if sensor_srf.meta else None
-                if raw_windows is not None:
-                    srf_bad_windows = [(float(lo), float(hi)) for lo, hi in raw_windows]
+
+    widths, width_from_default, _ = resolve_band_widths("emit", wavelengths, srf=sensor_srf)
+
+    if not srf_blind and sensor_srf is not None:
+        dense = sensor_srf.as_matrix()
+        validate_srf_alignment(wavelengths, dense.matrix, centers_nm=wavelengths)
+        srf_matrix = dense
+        srf_source = sensor_srf.provenance.value
+        srf_bad_mask = None if sensor_srf.valid_mask is None else ~sensor_srf.valid_mask
+        raw_windows = sensor_srf.meta.get("bad_band_windows_nm") if sensor_srf.meta else None
+        if raw_windows is not None:
+            srf_bad_windows = [(float(lo), float(hi)) for lo, hi in raw_windows]
 
     if srf_matrix is None and np.all(np.isfinite(widths)):
         srf_matrix = build_gaussian_srf_matrix(wavelengths, widths, sensor="emit")
@@ -206,7 +214,7 @@ def _resolve_emit_srf(
         srf_bad_mask = None
         srf_bad_windows = None
 
-    return srf_matrix, widths, srf_source, srf_mode, srf_bad_mask, srf_bad_windows
+    return srf_matrix, widths, srf_source, srf_mode, srf_bad_mask, srf_bad_windows, width_from_default
 
 
 def iter_emit_pixels(
@@ -225,7 +233,7 @@ def iter_emit_pixels(
     radiance = ds["radiance"]
     scaled = _normalize_radiance_units(radiance, ds)
 
-    srf_matrix, widths, srf_source, srf_mode, srf_bad_mask, srf_windows = _resolve_emit_srf(
+    srf_matrix, widths, srf_source, srf_mode, srf_bad_mask, srf_windows, width_from_default = _resolve_emit_srf(
         wavelengths, srf_blind=srf_blind
     )
     srf_masks: list[np.ndarray] = []
@@ -253,6 +261,7 @@ def iter_emit_pixels(
         width_nm=widths,
         valid_mask=valid_mask,
         srf_source=np.full_like(wavelengths, srf_source, dtype=object),
+        width_from_default=width_from_default,
     )
 
     for y in range(scaled.shape[0]):
@@ -341,7 +350,7 @@ def iter_emit_l2a_pixels(
         raise KeyError("Dataset does not contain 'reflectance' variable")
 
     scaled = _normalize_reflectance_values(reflectance)
-    srf_matrix, widths, srf_source, srf_mode, srf_bad_mask, srf_windows = _resolve_emit_srf(
+    srf_matrix, widths, srf_source, srf_mode, srf_bad_mask, srf_windows, width_from_default = _resolve_emit_srf(
         wavelengths, srf_blind=srf_blind
     )
     srf_masks: list[np.ndarray] = []
@@ -368,6 +377,7 @@ def iter_emit_l2a_pixels(
         width_nm=widths,
         valid_mask=valid_mask,
         srf_source=np.full_like(wavelengths, srf_source, dtype=object),
+        width_from_default=width_from_default,
     )
 
     for y in range(scaled.shape[0]):

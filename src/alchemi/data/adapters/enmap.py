@@ -29,7 +29,11 @@ from alchemi.spectral import BandMetadata, Sample, Spectrum, ViewingGeometry
 from alchemi.spectral.sample import GeoMeta
 from alchemi.spectral.srf import SRFMatrix as DenseSRFMatrix
 from alchemi.types import SRFMatrix as LegacySRFMatrix, ValueUnits, WavelengthGrid
-from alchemi.srf.utils import build_gaussian_srf_matrix, default_band_widths, validate_srf_alignment
+from alchemi.srf.utils import (
+    build_gaussian_srf_matrix,
+    resolve_band_widths,
+    validate_srf_alignment,
+)
 
 from ..io import enmap as io_enmap
 from ..io import enmap_pixel, load_enmap_l1b
@@ -268,12 +272,16 @@ def _band_metadata(
     valid_mask: np.ndarray,
     *,
     srf_source: str,
+    width_from_default: np.ndarray | None = None,
 ) -> BandMetadata:
     return BandMetadata(
         center_nm=np.asarray(wavelengths_nm, dtype=np.float64),
         width_nm=None if fwhm is None else np.asarray(fwhm, dtype=np.float64),
         valid_mask=np.asarray(valid_mask, dtype=bool),
         srf_source=np.full_like(wavelengths_nm, srf_source, dtype=object),
+        width_from_default=width_from_default
+        if width_from_default is not None
+        else np.zeros_like(wavelengths_nm, dtype=bool),
     )
 
 
@@ -282,11 +290,11 @@ def _resolve_enmap_srf(
     fwhm: np.ndarray | None,
     *,
     srf_blind: bool,
-) -> tuple[DenseSRFMatrix | None, np.ndarray, str, str]:
-    widths = fwhm if fwhm is not None else default_band_widths("enmap", wavelengths)
+) -> tuple[DenseSRFMatrix | None, np.ndarray, str, str, np.ndarray]:
     srf_matrix: DenseSRFMatrix | None = None
     srf_source = "none"
     srf_mode = "srf-blind" if srf_blind else "srf-aware"
+    raw_srf = None
 
     if not srf_blind:
         try:
@@ -295,11 +303,13 @@ def _resolve_enmap_srf(
             raw_srf = None
         srf_matrix, srf_source = _coerce_srf_matrix(raw_srf, wavelengths)
 
+    widths, width_from_default, _ = resolve_band_widths("enmap", wavelengths, fwhm=fwhm, srf=raw_srf)
+
     if srf_matrix is None and widths is not None:
         srf_matrix = build_gaussian_srf_matrix(wavelengths, widths, sensor="enmap")
         srf_source = "gaussian"
 
-    return srf_matrix, widths, srf_source, srf_mode
+    return srf_matrix, widths, srf_source, srf_mode, width_from_default
 
 
 def iter_enmap_pixels(
@@ -321,7 +331,7 @@ def iter_enmap_pixels(
 
     dataset_mask = np.asarray(ds["band_mask"].values, dtype=bool) if "band_mask" in ds else None
     fwhm = np.asarray(ds["fwhm_nm"].values, dtype=np.float64) if "fwhm_nm" in ds else None
-    srf_matrix, widths, srf_source, srf_mode = _resolve_enmap_srf(
+    srf_matrix, widths, srf_source, srf_mode, width_from_default = _resolve_enmap_srf(
         wavelengths, fwhm, srf_blind=srf_blind
     )
     raw_srf = None
@@ -354,7 +364,11 @@ def iter_enmap_pixels(
             )
             quality_masks = {name: mask.copy() for name, mask in quality_base.items()}
             band_meta = _band_metadata(
-                wavelengths, widths, quality_masks["valid_band"], srf_source=srf_source
+                wavelengths,
+                widths,
+                quality_masks["valid_band"],
+                srf_source=srf_source,
+                width_from_default=width_from_default,
             )
 
             viewing_geometry = _extract_viewing_geometry(ds, y=y, x=x)
@@ -427,7 +441,7 @@ def iter_enmap_l2a_pixels(
 
     dataset_mask = np.asarray(ds["band_mask"].values, dtype=bool) if "band_mask" in ds else None
     fwhm = np.asarray(ds["fwhm_nm"].values, dtype=np.float64) if "fwhm_nm" in ds else None
-    srf_matrix, widths, srf_source, srf_mode = _resolve_enmap_srf(
+    srf_matrix, widths, srf_source, srf_mode, width_from_default = _resolve_enmap_srf(
         wavelengths, fwhm, srf_blind=srf_blind
     )
     raw_srf = None
@@ -462,7 +476,11 @@ def iter_enmap_l2a_pixels(
             )
             quality_masks = {name: mask.copy() for name, mask in quality_base.items()}
             band_meta = _band_metadata(
-                wavelengths, widths, quality_masks["valid_band"], srf_source=srf_source
+                wavelengths,
+                widths,
+                quality_masks["valid_band"],
+                srf_source=srf_source,
+                width_from_default=width_from_default,
             )
 
             viewing_geometry = _extract_viewing_geometry(ds, y=y, x=x)

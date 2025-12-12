@@ -53,12 +53,16 @@ class BandMetadata:
     * ``srf_source`` may be a scalar or length-``L`` array and records the SRF
       provenance (e.g., ``"official"``, ``"gaussian"``, ``"none"``) used when
       constructing SRF matrices and downstream resampling.
+    * ``width_from_default`` is a boolean mask (or scalar) indicating whether
+      each band's width came from the heuristic fallback rather than SRF/FWHM
+      sources.
     """
 
     center_nm: NDArray[np.floating]
     width_nm: NDArray[np.floating] | None
     valid_mask: NDArray[np.bool_]
     srf_source: NDArray[np.object_] | NDArray[np.str_] | list[str] | str = ""
+    width_from_default: NDArray[np.bool_] | bool = False
 
     def __post_init__(self) -> None:
         self.center_nm = np.atleast_1d(np.asarray(self.center_nm, dtype=float)).reshape(-1)
@@ -67,6 +71,10 @@ class BandMetadata:
             if self.width_nm is None
             else np.atleast_1d(np.asarray(self.width_nm, dtype=float)).reshape(-1)
         )
+        default_flag = np.asarray(self.width_from_default)
+        if default_flag.ndim == 0:
+            default_flag = np.full(self.center_nm.shape, bool(default_flag), dtype=bool)
+        self.width_from_default = np.atleast_1d(default_flag.astype(bool)).reshape(-1)
         srf_source = self.srf_source if self.srf_source is not None else ""
         srf_source_arr = np.atleast_1d(np.asarray(srf_source, dtype=object)).reshape(-1)
         if srf_source_arr.size == 1:
@@ -83,6 +91,8 @@ class BandMetadata:
             raise ValueError("srf_source length must match spectrum length")
         if self.valid_mask.shape[0] != length:
             raise ValueError("valid_mask length must match spectrum length")
+        if self.width_from_default.shape[0] != length:
+            raise ValueError("width_from_default length must match spectrum length")
 
 
 @dataclass
@@ -190,6 +200,7 @@ class Sample:
                 "width_nm": _array_to_list(self.band_meta.width_nm),
                 "valid_mask": _array_to_list(self.band_meta.valid_mask),
                 "srf_source": _array_to_list(self.band_meta.srf_source),
+                "width_from_default": _array_to_list(self.band_meta.width_from_default),
             }
         else:
             band_meta = None
