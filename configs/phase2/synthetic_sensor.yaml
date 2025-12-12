@@ -1,13 +1,27 @@
-# Synthetic sensor projection configuration stub.
-# Fill in dataset-specific wavelength grids before use.
-augmentations:
-  random_sensor_project:
-    _target_: alchemi.align.RandomSensorProject
-    config:
-      _target_: alchemi.srf.synthetic.SyntheticSensorConfig
-      highres_axis_nm: ${lab_grid_nm}
-      n_bands: 64
-      center_jitter_nm: 5.0
-      fwhm_range_nm: [8.0, 20.0]
-      shape: gaussian
-      seed: 1337
+# Opt-in synthetic sensor pipeline enabling SRF-randomised MAE/task training.
+dataset_names: ["synthetic_sensor"]
+sensors: ["synthetic"]
+splits:
+  train: ["train"]
+  val: ["val"]
+  test: ["test"]
+sample:
+  chip_size: 1
+  patch_size: 1
+  stride: 1
+augmentation:
+  band_masking: false
+  srf_jitter: false
+  noise_injection: false
+  geometric_transforms: false
+synthetic_sensor:
+  enabled: true
+  sensor_id: "synthetic"
+  n_bands: 32
+  wavelength_min: 400.0
+  wavelength_max: 2500.0
+  resolution: 1.0
+  center_jitter_nm: 2.0
+  fwhm_range_nm: [8.0, 20.0]
+  shape: gaussian
+  seed: 123

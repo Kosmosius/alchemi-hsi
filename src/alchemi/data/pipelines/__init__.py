@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Callable, Iterable
 
+import numpy as np
+
 from torch.utils.data import DataLoader
 
 from alchemi.config import DataConfig
@@ -15,8 +17,12 @@ from ..datasets import (
     EmitSolidsDataset,
     HytesDataset,
     SpectralEarthDataset,
+    SyntheticSensorDataset,
 )
 from ..transforms import GeometricAugment, RandomBandDropout, SpectralNoise, compose
+from ...srf.synthetic import SyntheticSensorConfig
+from ...spectral import Sample, Spectrum
+from ...types import QuantityKind
 
 
 def _build_transforms(cfg: DataConfig) -> Callable:
@@ -72,6 +78,45 @@ def build_enmap_mae_pipeline(
     )
 
 
+def _synthetic_lab_spectra(data_cfg: DataConfig) -> list[Sample]:
+    cfg = data_cfg.synthetic_sensor
+    axis = np.arange(cfg.wavelength_min, cfg.wavelength_max + cfg.resolution, cfg.resolution)
+    rng = np.random.default_rng(cfg.seed)
+    base_values = [np.sin(axis / 150.0), np.cos(axis / 210.0), rng.normal(scale=0.05, size=axis.size)]
+    samples: list[Sample] = []
+    for idx, values in enumerate(base_values):
+        spectrum = Spectrum(wavelength_nm=axis, values=values.astype(np.float64), kind="reflectance")
+        samples.append(Sample(spectrum=spectrum, sensor_id=f"lab_{idx}"))
+    return samples
+
+
+def build_synthetic_sensor_pipeline(
+    data_cfg: DataConfig,
+) -> DataLoader:
+    if not data_cfg.synthetic_sensor.enabled:
+        msg = "Synthetic sensor pipeline requested but synthetic_sensor.enabled is False"
+        raise ValueError(msg)
+
+    synth_cfg = data_cfg.synthetic_sensor
+    highres_samples = _synthetic_lab_spectra(data_cfg)
+    sensor_cfg = SyntheticSensorConfig(
+        highres_axis_nm=highres_samples[0].spectrum.wavelength_nm,
+        n_bands=synth_cfg.n_bands,
+        center_jitter_nm=synth_cfg.center_jitter_nm,
+        fwhm_range_nm=synth_cfg.fwhm_range_nm,
+        shape=synth_cfg.shape,
+        seed=synth_cfg.seed,
+    )
+    dataset = SyntheticSensorDataset(
+        highres_samples,
+        sensor_cfg,
+        sensor_id=synth_cfg.sensor_id,
+        quantity_kind=QuantityKind.REFLECTANCE,
+    )
+
+    return DataLoader(dataset, batch_size=data_cfg.sample.batch_size, shuffle=True)
+
+
 def build_aviris_gas_pipeline(
     data_cfg: DataConfig, *, catalog: SceneCatalog | None = None
 ) -> DataLoader:
@@ -102,4 +147,5 @@ __all__ = [
     "build_enmap_mae_pipeline",
     "build_aviris_gas_pipeline",
     "build_hytes_pipeline",
+    "build_synthetic_sensor_pipeline",
 ]

@@ -132,11 +132,26 @@ class AnySensorIngest(nn.Module):
         sensor_ids: Tensor | Sequence[int] | None,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         if isinstance(sample, Sample):
-            values = torch.as_tensor(sample.values)
-            wl = torch.as_tensor(sample.wavelengths)
-            bw = torch.as_tensor(getattr(sample, "bandwidths", torch.zeros_like(wl)))
-            qty = torch.tensor([int(sample.quantity_kind.value != QuantityKind.RADIANCE.value)])
-            sensor = torch.tensor([getattr(sample, "sensor_id", 0)], dtype=torch.long)
+            if hasattr(sample, "spectrum"):
+                values = torch.as_tensor(sample.spectrum.values)
+                wl = torch.as_tensor(sample.spectrum.wavelength_nm)
+                widths = None
+                if getattr(sample, "band_meta", None) is not None:
+                    widths = getattr(sample.band_meta, "width_nm", None)
+                bw = torch.as_tensor(widths) if widths is not None else torch.zeros_like(wl)
+                qty = torch.tensor(
+                    [int(sample.spectrum.kind.value != QuantityKind.RADIANCE.value)]
+                )
+                sensor_id = getattr(sample, "sensor_id", 0)
+                if isinstance(sensor_id, str):
+                    sensor_id = 0
+                sensor = torch.tensor([sensor_id], dtype=torch.long)
+            else:
+                values = torch.as_tensor(sample.values)
+                wl = torch.as_tensor(sample.wavelengths)
+                bw = torch.as_tensor(getattr(sample, "bandwidths", torch.zeros_like(wl)))
+                qty = torch.tensor([int(sample.quantity_kind.value != QuantityKind.RADIANCE.value)])
+                sensor = torch.tensor([getattr(sample, "sensor_id", 0)], dtype=torch.long)
         else:
             values = sample
             wl = _as_tensor(wavelengths, values.device, values.dtype)
@@ -163,6 +178,15 @@ class AnySensorIngest(nn.Module):
             else torch.linspace(0, 1, values.shape[-1], device=values.device, dtype=values.dtype)
         )
         bw = bw if bw.numel() > 0 else torch.full_like(wl, 1.0 / max(values.shape[-1], 1))
+        values = values.to(dtype=torch.float32)
+        wl = wl.to(dtype=torch.float32)
+        bw = bw.to(dtype=torch.float32)
+        if values.dim() == 1:
+            values = values.unsqueeze(0)
+        if wl.dim() == 1:
+            wl = wl.unsqueeze(0)
+        if bw.dim() == 1:
+            bw = bw.unsqueeze(0)
         if wl.dim() == 1:
             wl = wl.unsqueeze(0).expand(values.shape[0], -1)
         if bw.dim() == 1:

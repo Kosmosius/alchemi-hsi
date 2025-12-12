@@ -68,6 +68,27 @@ class AugmentationConfig(BaseModel):
     )
 
 
+class SyntheticSensorDataConfig(BaseModel):
+    """Configuration for synthetic sensor generation from lab spectra."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(False, description="Toggle synthetic sensor projection")
+    sensor_id: str = Field("synthetic", description="Identifier assigned to virtual sensors")
+    n_bands: int = Field(48, description="Number of bands to sample per synthetic sensor")
+    wavelength_min: float = Field(400.0, description="Lower bound of synthetic wavelength range")
+    wavelength_max: float = Field(2500.0, description="Upper bound of synthetic wavelength range")
+    resolution: float = Field(1.0, description="High-resolution step used for lab spectra (nm)")
+    center_jitter_nm: float = Field(0.0, description="Uniform jitter applied to band centres")
+    fwhm_range_nm: tuple[float, float] = Field(
+        (5.0, 15.0), description="Range of FWHM values sampled per band (nm)"
+    )
+    shape: Literal["gaussian", "box", "hamming"] = Field(
+        "gaussian", description="SRF envelope used for synthetic sensors"
+    )
+    seed: int | None = Field(None, description="Optional RNG seed")
+
+
 class DataConfig(BaseModel):
     """Dataset- and sensor-related configuration.
 
@@ -95,6 +116,7 @@ class DataConfig(BaseModel):
     )
     sample: SampleConfig = Field(default_factory=SampleConfig)
     augmentation: AugmentationConfig = Field(default_factory=AugmentationConfig)
+    synthetic_sensor: SyntheticSensorDataConfig = Field(default_factory=SyntheticSensorDataConfig)
     data_roots: list[Path] = Field(
         default_factory=lambda: [Path("data")],
         description="Root directories for dataset storage",
