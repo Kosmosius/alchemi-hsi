@@ -2,9 +2,9 @@ from importlib import import_module
 
 from . import io
 from .cube import Cube, GeoInfo, geo_from_attrs
-from .datasets import PairingDataset, SpectrumDataset
+from .datasets import PairingDataset, SpectrumDataset, SyntheticSensorDataset
 from .gas_sim import inject_synthetic_plume
-from .transforms import RandomBandDropout, SpectralNoise
+from .transforms import RandomBandDropout, SpectralNoise, SyntheticSensorProject
 from .validators import validate_dataset, validate_srf_dir
 
 __all__ = [
@@ -15,6 +15,8 @@ __all__ = [
     "PairingDataset",
     "RandomBandDropout",
     "SpectralNoise",
+    "SyntheticSensorDataset",
+    "SyntheticSensorProject",
     "SpectrumDataset",
     "geo_from_attrs",
     "inject_synthetic_plume",

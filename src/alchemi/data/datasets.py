@@ -7,12 +7,15 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from alchemi.spectral import Sample
+from alchemi.spectral import Sample, Spectrum
+from alchemi.srf.synthetic import SyntheticSensorConfig
+from alchemi.types import QuantityKind
 
 from .adapters import iter_aviris_ng_pixels, iter_emit_pixels, iter_enmap_pixels, iter_hytes_pixels
 from .catalog import SceneCatalog
 from .io import load_emit_l1b
 from .tiling import iter_tiles
+from .transforms import SyntheticSensorProject
 
 
 class SpectrumDataset(Dataset[dict[str, Any]]):
@@ -75,6 +78,52 @@ class PairingDataset(Dataset[dict[str, dict[str, Any]]]):
             }
 
         return {"field": pack(self.field[i]), "lab": pack(self.lab[i])}
+
+
+class SyntheticSensorDataset(Dataset[dict[str, Any]]):
+    """Dataset wrapper that emits synthetic-sensor projections for MAE/tasks."""
+
+    def __init__(
+        self,
+        lab_spectra: Sequence[Sample | Spectrum],
+        config: SyntheticSensorConfig,
+        *,
+        sensor_id: str = "synthetic",
+        quantity_kind: QuantityKind = QuantityKind.REFLECTANCE,
+    ) -> None:
+        if not lab_spectra:
+            msg = "lab_spectra must contain at least one high-resolution sample"
+            raise ValueError(msg)
+        self.lab_spectra = list(lab_spectra)
+        self.project = SyntheticSensorProject(config, sensor_id=sensor_id, quantity_kind=quantity_kind)
+
+    def __len__(self) -> int:  # pragma: no cover - container
+        return len(self.lab_spectra)
+
+    def __getitem__(self, i: int) -> dict[str, Any]:
+        lab = self.lab_spectra[i]
+        spectrum = lab.spectrum if isinstance(lab, Sample) else lab  # type: ignore[assignment]
+        sample = self.project(spectrum)
+
+        bandwidths = sample.band_meta.width_nm if sample.band_meta is not None else None
+        widths = (
+            torch.from_numpy(np.asarray(bandwidths, dtype=np.float32))
+            if bandwidths is not None
+            else torch.empty(0)
+        )
+        srf = sample.srf_matrix.matrix if sample.srf_matrix is not None else None
+        srf_tensor = (
+            torch.from_numpy(np.asarray(srf, dtype=np.float32)) if srf is not None else None
+        )
+
+        return {
+            "tokens": torch.from_numpy(sample.spectrum.values.astype("float32")),
+            "wavelengths": torch.from_numpy(sample.spectrum.wavelength_nm.astype("float32")),
+            "bandwidths": widths,
+            "band_mask": torch.from_numpy(sample.band_meta.valid_mask.astype("bool")),
+            "srf": srf_tensor,
+            "sample": sample,
+        }
 
 
 class RealMAEDataset(Dataset[dict[str, torch.Tensor]]):
