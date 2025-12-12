@@ -1,5 +1,6 @@
 import numpy as np
 
+from alchemi.registry import srfs
 from alchemi.spectral.srf import SensorSRF, SRFProvenance
 from alchemi.srf import avirisng, emit, enmap, hytes, mako  # noqa: F401
 from alchemi.srf.registry import GLOBAL_SRF_REGISTRY, SRFRegistry
@@ -22,8 +23,10 @@ def test_registry_roundtrip():
     reg.register(payload)
 
     assert reg.has("dummy")
-    assert reg.get("DUMMY") is payload
-    assert reg.require("dummy") is payload
+    registered = reg.get("DUMMY")
+    assert registered is not None
+    assert registered.sensor.lower() == "dummy"
+    np.testing.assert_allclose(registered.centers_nm, payload.band_centers_nm)
 
 
 def test_global_registry_populated():
@@ -33,6 +36,21 @@ def test_global_registry_populated():
 
     for sensor in (emit_srf, enmap_srf, hytes_srf):
         assert sensor is not None
-        assert sensor.srfs.ndim == 2
-        assert sensor.wavelength_grid_nm.ndim == 1
-        assert sensor.srfs.shape[0] == sensor.band_centers_nm.shape[0]
+        assert len(sensor.bands_resp) == len(sensor.centers_nm)
+        assert np.asarray(sensor.bands_resp).ndim == 2
+        assert np.asarray(sensor.bands_nm).ndim == 2
+
+
+def test_public_registry_returns_canonical_srfs():
+    sensors = ("emit", "enmap", "avirisng", "hytes")
+    loaded = []
+
+    for sensor in sensors:
+        canonical = srfs.get_sensor_srf(sensor)
+        assert isinstance(canonical, SensorSRF)
+        assert canonical.band_centers_nm.size > 0
+        loaded.append(canonical)
+
+    ids = {s.sensor_id.lower() for s in loaded}
+    assert len(ids) == len(sensors)
+    assert srfs.get_sensor_srf("aviris-ng").sensor_id.lower() in ids

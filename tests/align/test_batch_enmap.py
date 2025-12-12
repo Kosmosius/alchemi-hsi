@@ -4,7 +4,8 @@ from alchemi.align.batch_builders import NoiseConfig, PairBatch, build_enmap_pai
 from alchemi.srf.batch_convolve import batch_convolve_lab_to_sensor
 
 from alchemi.srf.enmap import build_enmap_sensor_srf
-from alchemi.srf.registry import get_srf, register_sensor_srf
+from alchemi.registry import srfs
+from alchemi.srf.registry import register_sensor_srf
 from alchemi.srf.resample import resample_values_with_srf
 
 
@@ -56,7 +57,10 @@ def test_enmap_convolution_matches_reference(tmp_path) -> None:
         noise_level_rel_swir=0.0,
     )
 
-    sensor_srf = get_srf("enmap")
+    try:
+        sensor_srf = srfs.get_sensor_srf("enmap")
+    except FileNotFoundError:
+        sensor_srf = None
     if sensor_srf is None:
         sensor_srf = build_enmap_sensor_srf(cache_dir=tmp_path)
         register_sensor_srf(sensor_srf)

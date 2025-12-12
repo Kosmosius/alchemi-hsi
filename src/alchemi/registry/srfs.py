@@ -1,3 +1,14 @@
+"""Public registry for spectral response functions (SRFs).
+
+This module exposes the canonical SRF loading API used across ingestion,
+alignment, and robustness evaluation. It wraps legacy ``SRFMatrix`` resources
+in :class:`~alchemi.spectral.srf.SensorSRF` instances while preserving
+Section 6 terminology: SRFs, virtual sensors, and SRF provenance flags
+(``SRFProvenance``). All adapters and evaluation utilities should prefer this
+module over :mod:`alchemi.srf.registry`, which remains only as a compatibility
+shim.
+"""
+
 from __future__ import annotations
 
 import json
@@ -11,6 +22,19 @@ from ..srf.registry import sensor_srf_from_legacy
 from ..types import SRFMatrix
 
 _SRF_ROOT = Path("resources/srfs")
+_SENSOR_ALIASES: dict[str, str] = {
+    "avirisng": "aviris-ng",
+    "aviris-ng": "aviris-ng",
+    "emit": "emit",
+    "enmap": "enmap",
+    "hytes": "hytes",
+}
+
+
+def _normalize_sensor_id(sensor_id: str) -> str:
+    """Map user-provided sensor identifiers onto canonical registry keys."""
+
+    return _SENSOR_ALIASES.get(sensor_id.lower(), sensor_id.lower())
 
 
 def _validate_srf_matrix(data: dict[str, Any]) -> SRFMatrix:
@@ -78,7 +102,7 @@ def _infer_provenance(sensor_id: str, legacy: SRFMatrix) -> SRFProvenance:
 
 
 def _resolve_path(sensor_id: str, base_path: Path) -> Path:
-    base = sensor_id.lower()
+    base = _normalize_sensor_id(sensor_id)
     candidates = [
         base_path / f"{base}.json",
         base_path / f"{base}.npy",

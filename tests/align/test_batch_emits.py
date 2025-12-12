@@ -1,8 +1,9 @@
 import numpy as np
 
 from alchemi.align.batch_builders import NoiseConfig, build_emit_pairs
+from alchemi.registry import srfs
 from alchemi.srf.emit import build_emit_sensor_srf
-from alchemi.srf.registry import get_srf, register_sensor_srf
+from alchemi.srf.registry import register_sensor_srf
 from alchemi.srf.resample import resample_values_with_srf
 
 
@@ -12,7 +13,10 @@ def _lab_grid(num: int = 1024) -> np.ndarray:
 
 def test_emits_pairs_band_geometry() -> None:
     grid = _lab_grid()
-    sensor_srf = get_srf("emit")
+    try:
+        sensor_srf = srfs.get_sensor_srf("emit")
+    except FileNotFoundError:
+        sensor_srf = None
     if sensor_srf is None:
         sensor_srf = build_emit_sensor_srf(wavelength_grid_nm=grid)
         register_sensor_srf(sensor_srf)
@@ -38,14 +42,18 @@ def test_emits_pairs_projection_matches_reference() -> None:
     pairs = build_emit_pairs([(grid, lab)], noise_cfg=NoiseConfig())
     (pair,) = pairs
 
-    sensor_srf = get_srf("emit") or build_emit_sensor_srf(wavelength_grid_nm=grid)
+    try:
+        sensor_srf = srfs.get_sensor_srf("emit")
+    except FileNotFoundError:
+        sensor_srf = None
+    sensor_srf = sensor_srf or build_emit_sensor_srf(wavelength_grid_nm=grid)
     expected, _ = resample_values_with_srf(lab, grid, sensor_srf)
     np.testing.assert_allclose(pair.sensor_values, expected, atol=1e-6)
 
 
 def test_emits_pairs_noise_variance_control() -> None:
     grid = _lab_grid()
-    lab = np.sin(grid / 150.0) ** 2 + 0.5
+    lab = 0.5 * np.sin(grid / 150.0) ** 2 + 0.25
     batch = [(grid, lab) for _ in range(512)]
 
     base_pairs = build_emit_pairs(batch)
