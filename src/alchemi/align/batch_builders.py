@@ -211,6 +211,8 @@ def _pairs_from_projection(
         width_nm=widths,
         valid_mask=valid_mask,
         srf_source=np.full(sensor_wl.shape, sensor_id),
+        srf_provenance=np.full(sensor_wl.shape, "none", dtype=object),
+        srf_approximate=np.full(sensor_wl.shape, True, dtype=bool),
         width_from_default=width_from_default,
     )
 

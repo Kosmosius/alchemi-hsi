@@ -119,11 +119,14 @@ def _band_meta(
     width_from_default: np.ndarray,
 ) -> dict[str, np.ndarray]:
     srf_source = np.full(wavelengths.shape[0], provenance.value, dtype=object)
+    approximate = np.full(wavelengths.shape[0], provenance != SRFProvenance.OFFICIAL, dtype=bool)
     return {
         "center_nm": wavelengths,
         "width_nm": width_nm,
         "valid_mask": valid_mask,
         "srf_source": srf_source,
+        "srf_provenance": srf_source,
+        "srf_approximate": approximate,
         "width_from_default": width_from_default,
     }
 

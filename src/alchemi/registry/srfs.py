@@ -64,6 +64,19 @@ def _load_npy(path: Path) -> SRFMatrix:
     return _validate_srf_matrix(payload)
 
 
+def _infer_provenance(sensor_id: str, legacy: SRFMatrix) -> SRFProvenance:
+    version = str(getattr(legacy, "version", "")).lower()
+    sensor = sensor_id.lower()
+    official_override = {"emit", "enmap", "aviris-ng"}
+    if sensor in official_override:
+        return SRFProvenance.OFFICIAL
+    if "gaussian" in version:
+        return SRFProvenance.GAUSSIAN
+    if "synthetic" in version or sensor.startswith("synthetic"):
+        return SRFProvenance.SYNTHETIC
+    return SRFProvenance.OFFICIAL
+
+
 def _resolve_path(sensor_id: str, base_path: Path) -> Path:
     base = sensor_id.lower()
     candidates = [
@@ -130,9 +143,11 @@ def get_sensor_srf(sensor_id: str, base_path: str | Path | None = None) -> Senso
     if legacy.bad_band_mask is not None:
         valid_mask = ~np.asarray(legacy.bad_band_mask, dtype=bool)
 
+    provenance = _infer_provenance(sensor_id, legacy)
+
     sensor_srf = sensor_srf_from_legacy(
         legacy,
-        provenance=SRFProvenance.OFFICIAL,
+        provenance=provenance,
         valid_mask=valid_mask,
     )
     meta = dict(sensor_srf.meta)

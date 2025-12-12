@@ -51,8 +51,13 @@ class BandMetadata:
     * ``width_nm`` may be ``None`` (unknown) or length ``L``; if provided it
       records the spectral width or FWHM per band.
     * ``srf_source`` may be a scalar or length-``L`` array and records the SRF
-      provenance (e.g., ``"official"``, ``"gaussian"``, ``"none"``) used when
-      constructing SRF matrices and downstream resampling.
+      identifier used when constructing SRF matrices and downstream resampling
+      (e.g., sensor ID or registry key).
+    * ``srf_provenance`` records where the SRF came from (e.g., ``"official"``,
+      ``"gaussian"``, ``"synthetic"``, ``"none"``) and is broadcast to all
+      bands if provided as a scalar.
+    * ``srf_approximate`` is a boolean (or boolean array) flagging whether the
+      SRF was approximated or otherwise low fidelity (e.g., Gaussian fallback).
     * ``width_from_default`` is a boolean mask (or scalar) indicating whether
       each band's width came from the heuristic fallback rather than SRF/FWHM
       sources.
@@ -62,6 +67,8 @@ class BandMetadata:
     width_nm: NDArray[np.floating] | None
     valid_mask: NDArray[np.bool_]
     srf_source: NDArray[np.object_] | NDArray[np.str_] | list[str] | str = ""
+    srf_provenance: NDArray[np.object_] | NDArray[np.str_] | list[str] | str = "none"
+    srf_approximate: NDArray[np.bool_] | bool = False
     width_from_default: NDArray[np.bool_] | bool = False
 
     def __post_init__(self) -> None:
@@ -80,6 +87,15 @@ class BandMetadata:
         if srf_source_arr.size == 1:
             srf_source_arr = np.full(self.center_nm.shape[0], srf_source_arr.item(), dtype=object)
         self.srf_source = srf_source_arr
+        srf_provenance = self.srf_provenance if self.srf_provenance is not None else "none"
+        srf_prov_arr = np.atleast_1d(np.asarray(srf_provenance, dtype=object)).reshape(-1)
+        if srf_prov_arr.size == 1:
+            srf_prov_arr = np.full(self.center_nm.shape[0], srf_prov_arr.item(), dtype=object)
+        self.srf_provenance = srf_prov_arr
+        approx_flag = np.asarray(self.srf_approximate)
+        if approx_flag.ndim == 0:
+            approx_flag = np.full(self.center_nm.shape, bool(approx_flag), dtype=bool)
+        self.srf_approximate = np.atleast_1d(approx_flag.astype(bool)).reshape(-1)
         self.valid_mask = np.atleast_1d(np.asarray(self.valid_mask, dtype=bool)).reshape(-1)
 
     def validate_length(self, length: int) -> None:
@@ -89,6 +105,10 @@ class BandMetadata:
             raise ValueError("width_nm length must match spectrum length")
         if self.srf_source.shape[0] != length:
             raise ValueError("srf_source length must match spectrum length")
+        if self.srf_provenance.shape[0] != length:
+            raise ValueError("srf_provenance length must match spectrum length")
+        if self.srf_approximate.shape[0] != length:
+            raise ValueError("srf_approximate length must match spectrum length")
         if self.valid_mask.shape[0] != length:
             raise ValueError("valid_mask length must match spectrum length")
         if self.width_from_default.shape[0] != length:
@@ -200,6 +220,8 @@ class Sample:
                 "width_nm": _array_to_list(self.band_meta.width_nm),
                 "valid_mask": _array_to_list(self.band_meta.valid_mask),
                 "srf_source": _array_to_list(self.band_meta.srf_source),
+                "srf_provenance": _array_to_list(self.band_meta.srf_provenance),
+                "srf_approximate": _array_to_list(self.band_meta.srf_approximate),
                 "width_from_default": _array_to_list(self.band_meta.width_from_default),
             }
         else:

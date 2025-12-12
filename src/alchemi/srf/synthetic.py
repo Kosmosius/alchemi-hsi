@@ -405,7 +405,7 @@ def make_virtual_sensor(
         srfs=normalized,
         band_centers_nm=centers,
         band_widths_nm=widths,
-        provenance=SRFProvenance.GAUSSIAN,
+        provenance=SRFProvenance.SYNTHETIC,
         meta=meta,
     )
 

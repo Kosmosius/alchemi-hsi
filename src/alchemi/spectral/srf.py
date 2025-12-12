@@ -87,6 +87,7 @@ class SRFProvenance(str, Enum):
 
     OFFICIAL = "official"
     GAUSSIAN = "gaussian"
+    SYNTHETIC = "synthetic"
     NONE = "none"
 
 

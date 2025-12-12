@@ -214,6 +214,8 @@ def _band_metadata(
         width_nm=np.asarray(widths, dtype=np.float64),
         valid_mask=np.asarray(valid, dtype=bool),
         srf_source=np.full_like(wavelengths, srf_source, dtype=object),
+        srf_provenance=np.full_like(wavelengths, srf_source, dtype=object),
+        srf_approximate=np.full_like(wavelengths, srf_source != "official", dtype=bool),
         width_from_default=np.asarray(width_from_default, dtype=bool),
     )
 

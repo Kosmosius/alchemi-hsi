@@ -278,6 +278,8 @@ class Cube:
             width_nm=np.full_like(wavelengths_nm, np.nan, dtype=float),
             valid_mask=valid_mask,
             srf_source=np.array(["unknown"] * wavelengths_nm.shape[0], dtype=object),
+            srf_provenance=np.full(wavelengths_nm.shape[0], "none", dtype=object),
+            srf_approximate=np.full(wavelengths_nm.shape[0], True, dtype=bool),
             width_from_default=np.ones_like(wavelengths_nm, dtype=bool),
         )
 
