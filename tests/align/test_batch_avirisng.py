@@ -2,7 +2,8 @@ import numpy as np
 
 from alchemi.align.batch_builders import NoiseConfig, build_avirisng_pairs
 from alchemi.srf.avirisng import build_avirisng_sensor_srf
-from alchemi.srf.registry import get_srf, register_sensor_srf
+from alchemi.registry import srfs
+from alchemi.srf.registry import register_sensor_srf
 from alchemi.srf.resample import resample_values_with_srf
 
 
@@ -22,7 +23,10 @@ def test_aviris_pairs_projection_matches(tmp_path) -> None:
     batch = _lab_batch()
     pairs = build_avirisng_pairs(batch, cache_dir=tmp_path)
 
-    sensor_srf = get_srf("avirisng")
+    try:
+        sensor_srf = srfs.get_sensor_srf("aviris-ng")
+    except FileNotFoundError:
+        sensor_srf = None
     if sensor_srf is None:
         sensor_srf = build_avirisng_sensor_srf(cache_dir=tmp_path)
         register_sensor_srf(sensor_srf)

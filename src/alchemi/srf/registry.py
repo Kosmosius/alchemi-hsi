@@ -1,4 +1,10 @@
-"""Process-wide SRF registry backed by canonical :class:`SensorSRF` objects."""
+"""Compatibility shim around the public SRF registry.
+
+New code should import :mod:`alchemi.registry.srfs`, which exposes the
+canonical SRF lookup helpers used across ingestion and robustness experiments.
+This module remains to preserve older call sites and to ease migration toward
+the Section 6 SRF terminology (SRFs, virtual sensors, SRF provenance).
+"""
 
 from __future__ import annotations
 
@@ -153,6 +159,22 @@ def get_srf(sensor_id: str, **_: object) -> SRFMatrix | None:
     return GLOBAL_SRF_REGISTRY.get(sensor_id)
 
 
+def get_sensor_srf(sensor_id: str, **kwargs: object) -> SensorSRF | None:
+    """Compatibility wrapper returning the canonical :class:`SensorSRF`.
+
+    This shim mirrors :func:`alchemi.registry.srfs.get_sensor_srf` while using
+    the same tolerant lookup rules as :func:`get_srf` for legacy adapters.
+    """
+
+    try:
+        from alchemi.registry import srfs
+
+        return srfs.get_sensor_srf(sensor_id, **kwargs)
+    except FileNotFoundError:
+        legacy = get_srf(sensor_id, **kwargs)
+        return sensor_srf_from_legacy(legacy) if legacy is not None else None
+
+
 def register_sensor_srf(sensor_srf: SensorSRF) -> None:
     GLOBAL_SRF_REGISTRY.register(sensor_srf)
 
@@ -169,6 +191,7 @@ __all__ = [
     "SensorSRF",
     "SRFProvenance",
     "get_srf",
+    "get_sensor_srf",
     "register_sensor_srf",
     "register_virtual_sensor",
     "sensor_srf_from_legacy",

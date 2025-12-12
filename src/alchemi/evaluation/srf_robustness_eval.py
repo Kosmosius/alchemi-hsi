@@ -7,7 +7,8 @@ from typing import Literal
 
 import numpy as np
 
-from alchemi.srf.registry import get_srf, sensor_srf_from_legacy
+from alchemi.registry import srfs
+from alchemi.srf.registry import sensor_srf_from_legacy
 from alchemi.srf.resample import resample_values_with_srf
 from alchemi.srf.synthetic import SRFJitterConfig, jitter_sensor_srf
 from alchemi.srf.utils import load_sensor_srf
@@ -79,7 +80,7 @@ def apply_srf_perturbations(
 
     resolved_srf = base_sensor_srf
     if resolved_srf is None:
-        resolved_srf = load_sensor_srf(sensor_id) or get_srf(sensor_id or "")
+        resolved_srf = load_sensor_srf(sensor_id) or srfs.get_sensor_srf(sensor_id or "")
     if resolved_srf is None:
         raise ValueError("A sensor SRF must be provided for 'srf' mode")
 
@@ -133,7 +134,7 @@ def sweep_perturbations(
 
         resolved_srf = base_sensor_srf
         if resolved_srf is None:
-            resolved_srf = load_sensor_srf(sensor_id) or get_srf(sensor_id or "")
+        resolved_srf = load_sensor_srf(sensor_id) or srfs.get_sensor_srf(sensor_id or "")
         if resolved_srf is None:
             raise ValueError("A sensor SRF must be provided for 'srf' mode")
 

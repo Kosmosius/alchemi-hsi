@@ -9,9 +9,10 @@ from typing import Any
 
 import numpy as np
 
+from alchemi.registry import srfs
 from alchemi.spectral import Sample, Spectrum
 from alchemi.spectral.sample import BandMetadata
-from alchemi.srf.registry import get_srf, sensor_srf_from_legacy
+from alchemi.srf.registry import sensor_srf_from_legacy
 from alchemi.srf.resample import resample_values_with_srf
 from alchemi.srf.synthetic import SRFJitterConfig, jitter_sensor_srf
 from alchemi.srf.utils import resolve_band_widths
@@ -285,7 +286,10 @@ def build_emit_pairs(
         return []
 
     lab_wl, lab_vals, _ = _normalize_lab_batch(lab_batch)
-    sensor_srf = get_srf(srf)
+    try:
+        sensor_srf = srfs.get_sensor_srf(srf)
+    except FileNotFoundError:
+        sensor_srf = None
     if sensor_srf is None:
         from alchemi.srf.emit import build_emit_sensor_srf
         from alchemi.srf.registry import register_sensor_srf
@@ -333,7 +337,10 @@ def build_enmap_pairs(
 
     lab_wl, lab_vals, _ = _normalize_lab_batch(lab_batch)
     cache_root = cache_dir if cache_dir is not None else "data/srf"
-    sensor_srf = get_srf("enmap")
+    try:
+        sensor_srf = srfs.get_sensor_srf("enmap")
+    except FileNotFoundError:
+        sensor_srf = None
     if sensor_srf is None:
         from alchemi.srf.enmap import build_enmap_sensor_srf
 
@@ -379,7 +386,10 @@ def build_avirisng_pairs(
         return []
 
     lab_wl, lab_vals, _ = _normalize_lab_batch(lab_batch)
-    sensor_srf = get_srf("avirisng")
+    try:
+        sensor_srf = srfs.get_sensor_srf("aviris-ng")
+    except FileNotFoundError:
+        sensor_srf = None
     if sensor_srf is None:
         from alchemi.srf.avirisng import build_avirisng_sensor_srf
 
