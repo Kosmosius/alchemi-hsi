@@ -87,6 +87,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the resolved experiment configuration as JSON",
     )
+    parser.add_argument(
+        "--force-accept-sensor",
+        action="store_true",
+        help="Permit training to proceed even if a sensor fails acceptance checks",
+    )
     return parser
 
 
@@ -102,6 +107,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(json.dumps(cfg.model_dump(mode="json"), indent=2))
 
     trainer = Trainer(cfg, runtime)
+    if args.force_accept_sensor:
+        print("[trainer] Sensor acceptance overrides enabled; risky sensors will not block training")
     trainer.run()
 
 
