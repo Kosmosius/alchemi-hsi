@@ -1,4 +1,21 @@
-"""LWIR utilities and TES placeholder implementations."""
+"""LWIR utilities and TES placeholder implementations.
+
+This module sketches the temperature–emissivity separation (TES) roadmap from
+Section 5.7. It provides convenience wrappers for converting LWIR radiance
+spectra to brightness temperatures via :mod:`alchemi.physics.planck`, an emissivity
+proxy for quick-look analysis, and a minimal pipeline scaffold that can be
+swapped for a mission-specific TES implementation. Assumptions:
+
+* Inputs use nanometre wavelength grids and radiance in W·m⁻²·sr⁻¹·nm⁻¹.
+* Brightness temperatures are returned in Kelvin unless units are explicitly
+  requested.
+* The emissivity proxy is heuristic and not a full TES solver; treat outputs as
+  exploratory diagnostics rather than retrieval-quality products.
+
+Primary entry points are :func:`radiance_spectrum_to_bt_spectrum`,
+:func:`bt_spectrum_to_radiance_spectrum`, :func:`compute_lwir_emissivity_proxy`,
+and :func:`lwir_pipeline_for_sample`.
+"""
 
 from __future__ import annotations
 

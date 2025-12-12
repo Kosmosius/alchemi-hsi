@@ -1,4 +1,21 @@
-"""Spectral resampling utilities (convolution, interpolation, virtual sensors)."""
+"""Spectral resampling utilities (convolution, interpolation, virtual sensors).
+
+Section 5.6 details how high-resolution lab spectra are projected onto sensor
+bandpasses. This module concentrates that logic: SRF-aware convolution, centre
+interpolation for sparse SRFs, and generation of synthetic SRFs for robustness
+tests. All functions assume wavelengths are provided in nanometres on a
+monotonically increasing grid. Key entry points:
+
+* :func:`convolve_to_bands` / :func:`convolve_to_bands_batched` for SRF-matrix
+  convolution that preserves flat-spectrum invariants.
+* :func:`interpolate_to_centers` when only band centres are available.
+* :func:`simulate_virtual_sensor` with :class:`SyntheticSensorConfig` to draw
+  reproducible Gaussian SRFs for data augmentation or domain randomisation.
+
+Inputs are treated as unitless unless otherwise encoded in the
+:class:`~alchemi.types.Spectrum`; callers are responsible for ensuring the
+appropriate quantity kind (radiance/reflectance) accompanies each spectrum.
+"""
 
 from __future__ import annotations
 

@@ -1,9 +1,17 @@
 """Simple SWIR radiative-transfer regime tagging.
 
-This module implements the ``trusted`` vs ``heavy`` atmosphere heuristic from
-ALCHEMI Section 5.3. The classifier is intentionally conservative and relies on
-common geometry and atmospheric proxies that are typically available in
-ancillary metadata.
+Implements the ``trusted`` vs ``heavy`` atmosphere heuristic from Section 5.3.
+The classifier is intentionally conservative and uses common geometry and
+atmospheric proxies (solar/view zenith, PWV, AOD, cloud/haze flags) to decide
+when simplified TOA reflectance formulas are applicable. Entry points:
+
+* :func:`classify_swir_regime` for scalar or vectorised metadata inputs.
+* :func:`swir_regime_for_sample` / :func:`swir_regime_for_scene` to pull fields
+  from :class:`~alchemi.spectral.sample.Sample` objects or scene dictionaries.
+* :func:`attach_swir_regime` / :func:`trusted_swir` helpers for tagging samples.
+
+Outputs are coarse tags (``SWIRRegime.TRUSTED`` or ``SWIRRegime.HEAVY``); they
+do not replace full radiative-transfer modelling.
 """
 
 from __future__ import annotations
