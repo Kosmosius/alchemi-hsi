@@ -44,6 +44,33 @@ class ProjectedSpectrum:
     srf_axis_nm: NDArray[np.float64]
 
 
+@dataclass(slots=True)
+class SRFJitterConfig:
+    """Configuration controlling real-sensor SRF jitter."""
+
+    enabled: bool = False
+    center_shift_std_nm: float = 0.0
+    width_scale_std: float = 0.0
+    shape_jitter_std: float = 0.0
+    seed: int | None = None
+    rng: np.random.Generator | None = None
+
+    def __post_init__(self) -> None:
+        if self.center_shift_std_nm < 0:
+            raise ValueError("center_shift_std_nm must be non-negative")
+        if self.width_scale_std < 0:
+            raise ValueError("width_scale_std must be non-negative")
+        if self.shape_jitter_std < 0:
+            raise ValueError("shape_jitter_std must be non-negative")
+
+    def generator(self, fallback: np.random.Generator | None = None) -> np.random.Generator:
+        if fallback is not None:
+            return fallback
+        if self.rng is None:
+            self.rng = np.random.default_rng(self.seed)
+        return self.rng
+
+
 @dataclass(frozen=True)
 class _RandomSpec:
     centers_nm: NDArray[np.float64]
@@ -427,8 +454,10 @@ def perturb_sensor_srf(
     if shape_noise_frac < 0:
         raise ValueError("shape_noise_frac must be non-negative")
 
-    centers = np.asarray(sensor_srf.band_centers_nm, dtype=np.float64).copy()
-    widths = np.asarray(sensor_srf.band_widths_nm, dtype=np.float64).copy()
+    base_centers = np.asarray(sensor_srf.band_centers_nm, dtype=np.float64)
+    base_widths = np.asarray(sensor_srf.band_widths_nm, dtype=np.float64)
+    centers = base_centers.copy()
+    widths = base_widths.copy()
     srfs = np.asarray(sensor_srf.srfs, dtype=np.float64).copy()
 
     if center_jitter_nm > 0:
@@ -460,15 +489,105 @@ def perturb_sensor_srf(
         band_centers_nm=centers,
         band_widths_nm=widths,
         provenance=sensor_srf.provenance,
+        valid_mask=sensor_srf.valid_mask,
+        meta=meta,
+    )
+
+
+def jitter_sensor_srf(
+    sensor_srf: SensorSRF,
+    jitter_cfg: SRFJitterConfig,
+    *,
+    rng: np.random.Generator | None = None,
+) -> SensorSRF:
+    """Apply Gaussian-distributed jitter to a sensor SRF copy."""
+
+    if not jitter_cfg.enabled:
+        return sensor_srf
+
+    rng = jitter_cfg.generator(rng)
+
+    base_centers = np.asarray(sensor_srf.band_centers_nm, dtype=np.float64)
+    base_widths = np.asarray(sensor_srf.band_widths_nm, dtype=np.float64)
+    centers = base_centers.copy()
+    widths = base_widths.copy()
+    srfs = np.asarray(sensor_srf.srfs, dtype=np.float64).copy()
+
+    if jitter_cfg.center_shift_std_nm > 0:
+        centers += rng.normal(scale=jitter_cfg.center_shift_std_nm, size=centers.shape)
+        np.clip(
+            centers,
+            sensor_srf.wavelength_grid_nm[0],
+            sensor_srf.wavelength_grid_nm[-1],
+            out=centers,
+        )
+        centers = np.maximum.accumulate(centers)
+
+        positive_diffs = np.diff(np.asarray(sensor_srf.band_centers_nm, dtype=np.float64))
+        min_spacing = float(np.min(positive_diffs[positive_diffs > 0])) if positive_diffs.size else 0.0
+        min_step = max(min_spacing * 0.2, np.finfo(np.float64).eps)
+
+        for idx in range(1, centers.size):
+            if centers[idx] <= centers[idx - 1]:
+                centers[idx] = min(
+                    centers[idx - 1] + min_step,
+                    sensor_srf.wavelength_grid_nm[-1],
+                )
+
+    if jitter_cfg.width_scale_std > 0:
+        widths *= np.exp(rng.normal(scale=jitter_cfg.width_scale_std, size=widths.shape))
+        widths = np.clip(widths, np.finfo(np.float64).eps, None)
+
+    width_scale = widths / base_widths
+
+    if centers.shape[0] == srfs.shape[0]:
+        for idx, (row, delta, scale, base_center) in enumerate(
+            zip(srfs, centers - base_centers, width_scale, base_centers, strict=True)
+        ):
+            if delta == 0.0 and scale == 1.0:
+                continue
+            source_axis = (sensor_srf.wavelength_grid_nm - delta - base_center) / scale + base_center
+            srfs[idx] = np.interp(
+                sensor_srf.wavelength_grid_nm,
+                source_axis,
+                row,
+                left=0.0,
+                right=0.0,
+            )
+
+    if jitter_cfg.shape_jitter_std > 0:
+        noise = rng.normal(scale=jitter_cfg.shape_jitter_std, size=srfs.shape)
+        srfs = np.clip(srfs * (1.0 + noise), 0.0, None)
+
+    normalized = _normalize_and_validate_srf(sensor_srf.wavelength_grid_nm, srfs)
+
+    meta = dict(sensor_srf.meta)
+    meta["jitter"] = {
+        "center_shift_std_nm": jitter_cfg.center_shift_std_nm,
+        "width_scale_std": jitter_cfg.width_scale_std,
+        "shape_jitter_std": jitter_cfg.shape_jitter_std,
+        "seed": jitter_cfg.seed,
+    }
+
+    return SensorSRF(
+        sensor_id=sensor_srf.sensor_id,
+        wavelength_grid_nm=sensor_srf.wavelength_grid_nm.copy(),
+        srfs=normalized,
+        band_centers_nm=centers,
+        band_widths_nm=widths,
+        provenance=sensor_srf.provenance,
+        valid_mask=sensor_srf.valid_mask,
         meta=meta,
     )
 
 
 __all__ = [
     "ProjectedSpectrum",
+    "SRFJitterConfig",
     "SyntheticSensorConfig",
     "estimate_fwhm",
     "make_gaussian_srf",
+    "jitter_sensor_srf",
     "make_virtual_sensor",
     "perturb_sensor_srf",
     "project_lab_to_synthetic",
