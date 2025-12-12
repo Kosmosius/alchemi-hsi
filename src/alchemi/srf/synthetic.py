@@ -45,6 +45,16 @@ class ProjectedSpectrum:
 
 
 @dataclass(slots=True)
+class SyntheticSensorSpec:
+    """Description of a sampled synthetic sensor."""
+
+    centers_nm: NDArray[np.float64]
+    fwhm_nm: NDArray[np.float64]
+    srf_matrix: NDArray[np.float64]
+    srf_axis_nm: NDArray[np.float64]
+
+
+@dataclass(slots=True)
 class SRFJitterConfig:
     """Configuration controlling real-sensor SRF jitter."""
 
@@ -136,6 +146,7 @@ def project_lab_to_synthetic(
     cfg: SyntheticSensorConfig,
     *,
     seed: int | None = None,
+    sensor: SyntheticSensorSpec | None = None,
 ) -> ProjectedSpectrum:
     """Project a lab spectrum onto a randomly sampled synthetic sensor."""
 
@@ -144,27 +155,50 @@ def project_lab_to_synthetic(
     if lab_vals.ndim != 1 or lab_vals.shape[0] != lab_axis.shape[0]:
         raise ValueError("lab_values must align with lab_axis_nm")
 
-    highres = cfg.axis()
+    sensor_spec = sensor
+    if sensor_spec is None:
+        sensor_spec = sample_synthetic_sensor(cfg, seed=seed)
+
+    highres = _validate_grid(sensor_spec.srf_axis_nm)
     interp = np.interp(highres, lab_axis, lab_vals)
 
+    matrix = _dense_to_matrix(highres, sensor_spec.centers_nm, sensor_spec.srf_matrix, cfg.shape)
+    projected = project_to_sensor(highres, interp, sensor_spec.centers_nm, srf=matrix)
+
+    return ProjectedSpectrum(
+        values=np.asarray(projected, dtype=np.float64),
+        centers_nm=np.asarray(sensor_spec.centers_nm, dtype=np.float64).copy(),
+        fwhm_nm=np.asarray(sensor_spec.fwhm_nm, dtype=np.float64).copy(),
+        srf_matrix=np.asarray(sensor_spec.srf_matrix, dtype=np.float32).copy(),
+        srf_axis_nm=highres.copy(),
+    )
+
+
+def sample_synthetic_sensor(
+    cfg: SyntheticSensorConfig,
+    *,
+    seed: int | None = None,
+    rng: np.random.Generator | None = None,
+) -> SyntheticSensorSpec:
+    """Draw a random synthetic sensor using ``cfg``."""
+
+    highres = cfg.axis()
     rng_seed = seed if seed is not None else cfg.seed
-    centers, dense = rand_srf_grid(
+    generator = rng if rng is not None else np.random.default_rng(rng_seed)
+
+    spec = _generate_random_spec(
         highres,
         n_bands=cfg.n_bands,
         center_jitter_nm=cfg.center_jitter_nm,
         fwhm_range_nm=cfg.fwhm_range_nm,
         shape=cfg.shape,
-        seed=rng_seed,
+        rng=generator,
     )
-    matrix = _dense_to_matrix(highres, centers, dense, cfg.shape)
-    projected = project_to_sensor(highres, interp, centers, srf=matrix)
 
-    fwhm = np.asarray([estimate_fwhm(highres, row) for row in dense], dtype=np.float64)
-    return ProjectedSpectrum(
-        values=np.asarray(projected, dtype=np.float64),
-        centers_nm=centers,
-        fwhm_nm=fwhm,
-        srf_matrix=dense.astype(np.float32, copy=False),
+    return SyntheticSensorSpec(
+        centers_nm=spec.centers_nm.copy(),
+        fwhm_nm=spec.fwhm_nm.copy(),
+        srf_matrix=spec.dense_resp.copy(),
         srf_axis_nm=highres.copy(),
     )
 
