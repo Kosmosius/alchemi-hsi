@@ -7,6 +7,8 @@ from typing import Dict, Hashable, Iterable, Mapping, Optional, Sequence, Tuple
 import torch
 import torch.nn.functional as F
 
+from alchemi.registry.acceptance import AcceptanceVerdict
+
 
 def softmax_complement_score(logits: torch.Tensor) -> torch.Tensor:
     """1 - max softmax probability as an OOD score."""
@@ -65,6 +67,10 @@ def combine_ood_scores(
     weights: Optional[Mapping[str, float]] = None,
     aggregation: str = "mean",
     threshold: Optional[float] = None,
+    acceptance: AcceptanceVerdict | str | None = None,
+    force_accept_sensor: bool = False,
+    warning_scale: float = 1.25,
+    reject_score: float = 1e3,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """Combine multiple OOD components into a scalar score or decision.
 
@@ -95,5 +101,18 @@ def combine_ood_scores(
     decision = None
     if threshold is not None:
         decision = combined > threshold
+
+    if acceptance is not None:
+        verdict = acceptance
+        if isinstance(verdict, str):
+            verdict = AcceptanceVerdict(verdict)
+        if verdict == AcceptanceVerdict.ACCEPT_WITH_WARNINGS:
+            combined = combined * warning_scale
+            if decision is not None:
+                decision = combined > threshold  # type: ignore[operator]
+        elif verdict == AcceptanceVerdict.REJECT and not force_accept_sensor:
+            combined = torch.full_like(combined, reject_score)
+            if threshold is not None:
+                decision = torch.ones_like(combined, dtype=torch.bool)
 
     return combined, decision

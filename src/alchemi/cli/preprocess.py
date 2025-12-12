@@ -22,6 +22,7 @@ class Preprocessor:
     build_lab_index: bool
     build_datasets: bool
     config_root: str | None = None
+    force_accept_sensor: bool = False
 
     def run(self) -> None:
         cfg = load_experiment_config(self.experiment, config_root=self.config_root)
@@ -64,6 +65,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Precompute dataset indices or tiled chips",
     )
+    parser.add_argument(
+        "--force-accept-sensor",
+        action="store_true",
+        help="Allow preprocessing to continue even if a sensor fails acceptance checks",
+    )
     return parser
 
 
@@ -76,7 +82,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         build_lab_index=args.build_lab_index,
         build_datasets=args.build_datasets,
         config_root=args.config_root,
+        force_accept_sensor=args.force_accept_sensor,
     )
+    if args.force_accept_sensor:
+        print("[preprocess] Sensor acceptance overrides enabled; proceed with caution")
     preprocessor.run()
 
 
