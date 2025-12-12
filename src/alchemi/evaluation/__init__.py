@@ -16,6 +16,11 @@ from .srf_robustness_eval import (
     robustness_degradation,
     sweep_perturbations,
 )
+from .srf_blind_vs_aware import (
+    SrfBlindVsAwareConfig,
+    load_srf_blind_vs_aware_config,
+    run_srf_blind_vs_aware_experiment,
+)
 from .solids_eval import (
     compare_dominant_minerals,
     compute_reconstruction_errors,
@@ -36,6 +41,9 @@ __all__ = [
     "apply_srf_perturbations",
     "robustness_degradation",
     "sweep_perturbations",
+    "SrfBlindVsAwareConfig",
+    "load_srf_blind_vs_aware_config",
+    "run_srf_blind_vs_aware_experiment",
     "split_by_regime",
     "summarize_abstention",
     "calibration_summary",

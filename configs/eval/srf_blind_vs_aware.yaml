@@ -1,0 +1,10 @@
+# SRF-blind vs SRF-aware robustness experiment parameters.
+epochs: 8
+learning_rate: 0.05
+hidden_dim: 32
+embed_dim: 32
+num_samples: 6
+highres_points: 192
+seed: 13
+sensor_bands: 10
+fwhm_range_nm: [6.0, 14.0]
